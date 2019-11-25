@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.merger;
 
 import java.io.IOException;
@@ -170,8 +171,7 @@ public class RowResultMergerProcessor extends AbstractResultProcessor {
           }
         }
       }
-      if (isDataPresent)
-      {
+      if (isDataPresent) {
         this.dataHandler.finish();
       }
       mergeStatus = true;
@@ -238,7 +238,8 @@ public class RowResultMergerProcessor extends AbstractResultProcessor {
       }
     }
 
-    @Override public int compare(RawResultIterator o1, RawResultIterator o2) {
+    @Override
+    public int compare(RawResultIterator o1, RawResultIterator o2) {
 
       Object[] row1 = new Object[0];
       Object[] row2 = new Object[0];

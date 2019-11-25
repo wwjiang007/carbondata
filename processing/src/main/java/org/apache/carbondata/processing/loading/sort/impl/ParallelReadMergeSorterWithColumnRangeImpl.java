@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.sort.impl;
 
 import java.io.File;
@@ -91,7 +92,8 @@ public class ParallelReadMergeSorterWithColumnRangeImpl extends AbstractMergeSor
     }
   }
 
-  @Override public Iterator<CarbonRowBatch>[] sort(Iterator<CarbonRowBatch>[] iterators)
+  @Override
+  public Iterator<CarbonRowBatch>[] sort(Iterator<CarbonRowBatch>[] iterators)
       throws CarbonDataLoadingException {
     SortDataRows[] sortDataRows = new SortDataRows[columnRangeInfo.getNumOfRanges()];
     intermediateFileMergers = new SortIntermediateFileMerger[columnRangeInfo.getNumOfRanges()];
@@ -158,7 +160,8 @@ public class ParallelReadMergeSorterWithColumnRangeImpl extends AbstractMergeSor
         sortParameters);
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     for (int i = 0; i < intermediateFileMergers.length; i++) {
       intermediateFileMergers[i].close();
     }
@@ -260,7 +263,8 @@ public class ParallelReadMergeSorterWithColumnRangeImpl extends AbstractMergeSor
 
     private SingleThreadFinalSortFilesMerger finalMerger;
 
-    @Override public boolean hasNext() {
+    @Override
+    public boolean hasNext() {
       if (firstRow) {
         firstRow = false;
         finalMerger = getFinalMerger(sortParameters);
@@ -269,7 +273,8 @@ public class ParallelReadMergeSorterWithColumnRangeImpl extends AbstractMergeSor
       return finalMerger.hasNext();
     }
 
-    @Override public CarbonRowBatch next() {
+    @Override
+    public CarbonRowBatch next() {
       int counter = 0;
       CarbonRowBatch rowBatch = new CarbonRowBatch(batchSize);
       while (finalMerger.hasNext() && counter < batchSize) {

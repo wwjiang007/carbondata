@@ -241,8 +241,8 @@ public final class FilterUtil {
       MeasureColumnResolvedFilterInfo msrColResolvedFilterInfo,
       SegmentProperties segmentProperties) {
     if (null != msrColResolvedFilterInfo && msrColResolvedFilterInfo.getMeasure().isMeasure()) {
-      CarbonMeasure measuresFromCurrentBlock = segmentProperties
-          .getMeasureFromCurrentBlock(msrColResolvedFilterInfo.getMeasure().getColumnId());
+      CarbonMeasure measuresFromCurrentBlock =
+          segmentProperties.getMeasureFromCurrentBlock(msrColResolvedFilterInfo.getMeasure());
       if (null != measuresFromCurrentBlock) {
         // update dimension and column index according to the dimension position in current block
         MeasureColumnResolvedFilterInfo msrColResolvedFilterInfoCopyObject =
@@ -356,8 +356,8 @@ public final class FilterUtil {
     boolean replaceCurrentNodeWithTrueFilter = false;
     CarbonColumn columnFromCurrentBlock = null;
     if (isMeasure) {
-      columnFromCurrentBlock = segmentProperties
-          .getMeasureFromCurrentBlock(columnResolvedFilterInfo.getMeasure().getColumnId());
+      columnFromCurrentBlock =
+          segmentProperties.getMeasureFromCurrentBlock(columnResolvedFilterInfo.getMeasure());
     } else {
       columnFromCurrentBlock =
           segmentProperties.getDimensionFromCurrentBlock(columnResolvedFilterInfo.getDimension());
@@ -422,8 +422,8 @@ public final class FilterUtil {
       SegmentProperties segmentProperties) {
 
     if (null != msrColResolvedFilterInfo && msrColResolvedFilterInfo.getMeasure().isMeasure()) {
-      CarbonMeasure measuresFromCurrentBlock = segmentProperties
-          .getMeasureFromCurrentBlock(msrColResolvedFilterInfo.getMeasure().getColumnId());
+      CarbonMeasure measuresFromCurrentBlock =
+          segmentProperties.getMeasureFromCurrentBlock(msrColResolvedFilterInfo.getMeasure());
       if (null != measuresFromCurrentBlock) {
         // update dimension and column index according to the dimension position in current block
         MeasureColumnResolvedFilterInfo msrColResolvedFilterInfoCopyObject =
@@ -513,6 +513,7 @@ public final class FilterUtil {
     }
     return false;
   }
+
   /**
    * This method will check if a given expression contains a column expression
    * recursively.
@@ -609,7 +610,8 @@ public final class FilterUtil {
 
     java.util.Comparator<byte[]> filterNoDictValueComaparator = new java.util.Comparator<byte[]>() {
 
-      @Override public int compare(byte[] filterMember1, byte[] filterMember2) {
+      @Override
+      public int compare(byte[] filterMember1, byte[] filterMember2) {
         // TODO Auto-generated method stub
         return ByteUtil.UnsafeComparer.INSTANCE.compareTo(filterMember1, filterMember2);
       }
@@ -839,8 +841,6 @@ public final class FilterUtil {
     return excludeFilterList;
   }
 
-
-
   /**
    * This API will get the Dictionary value for the respective filter member
    * string.
@@ -895,7 +895,8 @@ public final class FilterUtil {
       List<String> evaluateResultListFinal) {
     java.util.Comparator<String> filterActualValueComaparator = new java.util.Comparator<String>() {
 
-      @Override public int compare(String filterMember1, String filterMember2) {
+      @Override
+      public int compare(String filterMember1, String filterMember2) {
         return compareFilterMembersBasedOnActualDataType(filterMember1, filterMember2,
             columnExpression.getDataType());
       }
@@ -1524,17 +1525,18 @@ public final class FilterUtil {
       DimColumnExecuterFilterInfo dimColumnExecuterInfo, CarbonMeasure measures,
       MeasureColumnExecuterFilterInfo msrColumnExecuterInfo) {
     if (null != measures) {
+      DataType filterColumnDataType = DataTypes.valueOf(measures.getDataType().getId());
       DataTypeConverterImpl converter = new DataTypeConverterImpl();
       Object[] keysBasedOnFilter = filterValues.getMeasuresFilterValuesList()
           .toArray((new Object[filterValues.getMeasuresFilterValuesList().size()]));
       for (int i = 0; i < keysBasedOnFilter.length; i++) {
         if (keysBasedOnFilter[i] != null) {
           keysBasedOnFilter[i] = DataTypeUtil
-              .getDataBasedOnDataType(keysBasedOnFilter[i].toString(), measures.getDataType(),
+              .getDataBasedOnDataType(keysBasedOnFilter[i].toString(), filterColumnDataType,
                   converter);
         }
       }
-      msrColumnExecuterInfo.setFilterKeys(keysBasedOnFilter,  measures.getDataType());
+      msrColumnExecuterInfo.setFilterKeys(keysBasedOnFilter, filterColumnDataType);
     } else {
       if (filterValues == null) {
         dimColumnExecuterInfo.setFilterKeys(new byte[0][]);
@@ -1549,8 +1551,6 @@ public final class FilterUtil {
       }
     }
   }
-
-
 
   /**
    * method will create a default end key in case of no end key is been derived using existing
@@ -2182,7 +2182,8 @@ public final class FilterUtil {
    */
   private static byte[][] getSortedEncodedFilters(List<byte[]> encodedFilters) {
     java.util.Comparator<byte[]> filterNoDictValueComaparator = new java.util.Comparator<byte[]>() {
-      @Override public int compare(byte[] filterMember1, byte[] filterMember2) {
+      @Override
+      public int compare(byte[] filterMember1, byte[] filterMember2) {
         return ByteUtil.UnsafeComparer.INSTANCE.compareTo(filterMember1, filterMember2);
       }
     };

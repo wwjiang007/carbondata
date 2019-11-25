@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.spark.readsupport;
 
 import java.io.IOException;
@@ -27,11 +28,13 @@ import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 
 public class SparkRowReadSupportImpl extends DictionaryDecodeReadSupport<InternalRow> {
 
-  @Override public void initialize(CarbonColumn[] carbonColumns,
+  @Override
+  public void initialize(CarbonColumn[] carbonColumns,
       CarbonTable carbonTable) throws IOException {
   }
 
-  @Override public InternalRow readRow(Object[] data) {
+  @Override
+  public InternalRow readRow(Object[] data) {
     return new GenericInternalRow(data);
   }
 }

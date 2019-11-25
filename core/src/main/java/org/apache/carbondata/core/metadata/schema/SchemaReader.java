@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.metadata.schema;
 
 import java.io.IOException;
@@ -53,6 +54,44 @@ public class SchemaReader {
       CarbonMetadata.getInstance().loadTableMetadata(wrapperTableInfo);
       return CarbonMetadata.getInstance().getCarbonTable(
           identifier.getCarbonTableIdentifier().getTableUniqueName());
+    } else {
+      throw new IOException("File does not exist: " + schemaFilePath);
+    }
+  }
+
+  /**
+   * Read specified schema file as CarbonTable
+   * @param schemaFilePath schema file path
+   * @param conf hadoop configuration
+   * @return CarbonTable object
+   * @throws IOException if IO error occurs
+   */
+  public static CarbonTable readCarbonTableFromSchema(String schemaFilePath, Configuration conf)
+      throws IOException {
+    TableInfo tableInfo = readTableInfoFromSchema(schemaFilePath, conf);
+    return CarbonTable.buildFromTableInfo(tableInfo);
+  }
+
+  /**
+   * Read specified schema file as TableInfo
+   * @param schemaFilePath schema file path
+   * @param conf hadoop configuration
+   * @return TableInfo object
+   * @throws IOException if IO error occurs
+   */
+  private static TableInfo readTableInfoFromSchema(String schemaFilePath, Configuration conf)
+      throws IOException {
+    if (FileFactory.isFileExist(schemaFilePath)) {
+      String tableName = "dummy";
+
+      org.apache.carbondata.format.TableInfo tableInfo = CarbonUtil.readSchemaFile(schemaFilePath);
+      SchemaConverter schemaConverter = new ThriftWrapperSchemaConverterImpl();
+      TableInfo wrapperTableInfo = schemaConverter.fromExternalToWrapperTableInfo(
+          tableInfo,
+          "dummy",
+          tableName,
+          "dummy");
+      return wrapperTableInfo;
     } else {
       throw new IOException("File does not exist: " + schemaFilePath);
     }

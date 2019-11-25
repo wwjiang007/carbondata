@@ -94,8 +94,11 @@ public final class CarbonDataProcessorUtil {
       if (dir.exists()) {
         LOGGER.warn("dir already exists, skip dir creation: " + loc);
       } else {
-        if (!dir.mkdirs()) {
+        if (!dir.mkdirs() && !dir.exists()) {
+          // concurrent scenario mkdir may fail, so checking dir
           LOGGER.error("Error occurs while creating dir: " + loc);
+        } else {
+          LOGGER.info("Successfully created dir: " + loc);
         }
       }
     }
@@ -129,7 +132,7 @@ public final class CarbonDataProcessorUtil {
     String[] baseTmpStorePathArray = StringUtils.split(baseTempStorePath, File.pathSeparator);
     String[] localDataFolderLocArray = new String[baseTmpStorePathArray.length];
 
-    for (int i = 0 ; i < baseTmpStorePathArray.length; i++) {
+    for (int i = 0; i < baseTmpStorePathArray.length; i++) {
       String tmpStore = baseTmpStorePathArray[i];
       String carbonDataDirectoryPath = CarbonTablePath.getSegmentPath(tmpStore, segmentId);
 
@@ -248,7 +251,6 @@ public final class CarbonDataProcessorUtil {
       }
     }
   }
-
 
   /**
    * Preparing the boolean [] to map whether the dimension use inverted index or not.
@@ -374,13 +376,12 @@ public final class CarbonDataProcessorUtil {
    */
   public static Set<String> getSchemaColumnNames(CarbonDataLoadSchema schema) {
     Set<String> columnNames = new HashSet<String>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
-    String factTableName = schema.getCarbonTable().getTableName();
     List<CarbonDimension> dimensions =
-        schema.getCarbonTable().getDimensionByTableName(factTableName);
+        schema.getCarbonTable().getVisibleDimensions();
     for (CarbonDimension dimension : dimensions) {
       columnNames.add(dimension.getColName());
     }
-    List<CarbonMeasure> measures = schema.getCarbonTable().getMeasureByTableName(factTableName);
+    List<CarbonMeasure> measures = schema.getCarbonTable().getVisibleMeasures();
     for (CarbonMeasure msr : measures) {
       columnNames.add(msr.getColName());
     }
@@ -392,7 +393,7 @@ public final class CarbonDataProcessorUtil {
     for (int i = 0; i < type.length; i++) {
       type[i] = DataTypes.DOUBLE;
     }
-    List<CarbonMeasure> measures = carbonTable.getMeasureByTableName(carbonTable.getTableName());
+    List<CarbonMeasure> measures = carbonTable.getVisibleMeasures();
     for (int i = 0; i < type.length; i++) {
       type[i] = measures.get(i).getDataType();
     }
@@ -406,8 +407,7 @@ public final class CarbonDataProcessorUtil {
    * @return
    */
   public static DataType[] getNoDictDataTypes(CarbonTable carbonTable) {
-    List<CarbonDimension> dimensions =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
+    List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
     List<DataType> type = new ArrayList<>();
     for (int i = 0; i < dimensions.size(); i++) {
       if (dimensions.get(i).isSortColumn() && !dimensions.get(i).hasEncoding(Encoding.DICTIONARY)) {
@@ -424,8 +424,7 @@ public final class CarbonDataProcessorUtil {
    * @return
    */
   public static boolean[] getNoDictSortColMapping(CarbonTable carbonTable) {
-    List<CarbonDimension> dimensions =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
+    List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
     List<Boolean> noDicSortColMap = new ArrayList<>();
     for (int i = 0; i < dimensions.size(); i++) {
       if (dimensions.get(i).isSortColumn()) {
@@ -436,12 +435,41 @@ public final class CarbonDataProcessorUtil {
         }
       }
     }
-    Boolean[] mapping = noDicSortColMap.toArray(new Boolean[noDicSortColMap.size()]);
+    Boolean[] mapping = noDicSortColMap.toArray(new Boolean[0]);
     boolean[] noDicSortColMapping = new boolean[mapping.length];
     for (int i = 0; i < mapping.length; i++) {
-      noDicSortColMapping[i] = mapping[i].booleanValue();
+      noDicSortColMapping[i] = mapping[i];
     }
     return noDicSortColMapping;
+  }
+
+  /**
+   * If the dimension is added in older version 1.1, by default it will be sort column, So during
+   * initial sorting, carbonrow will be in order where added sort column is at the beginning, But
+   * before final merger of sort, the data should be in schema order
+   * (org.apache.carbondata.processing.sort.SchemaBasedRowUpdater updates the carbonRow in schema
+   * order), so This method helps to find the index of no dictionary sort column in the carbonrow
+   * data.
+   */
+  public static int[] getColumnIdxBasedOnSchemaInRow(CarbonTable carbonTable) {
+    List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
+    List<Integer> noDicSortColMap = new ArrayList<>();
+    int counter = 0;
+    for (CarbonDimension dimension : dimensions) {
+      if (dimension.hasEncoding(Encoding.DICTIONARY)) {
+        continue;
+      }
+      if (dimension.isSortColumn() && DataTypeUtil.isPrimitiveColumn(dimension.getDataType())) {
+        noDicSortColMap.add(counter);
+      }
+      counter++;
+    }
+    Integer[] mapping = noDicSortColMap.toArray(new Integer[0]);
+    int[] columnIdxBasedOnSchemaInRow = new int[mapping.length];
+    for (int i = 0; i < mapping.length; i++) {
+      columnIdxBasedOnSchemaInRow[i] = mapping[i];
+    }
+    return columnIdxBasedOnSchemaInRow;
   }
 
   /**
@@ -451,8 +479,7 @@ public final class CarbonDataProcessorUtil {
    * @return
    */
   public static Map<String, DataType[]> getNoDictSortAndNoSortDataTypes(CarbonTable carbonTable) {
-    List<CarbonDimension> dimensions =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
+    List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
     List<DataType> noDictSortType = new ArrayList<>();
     List<DataType> noDictNoSortType = new ArrayList<>();
     for (int i = 0; i < dimensions.size(); i++) {
@@ -481,7 +508,6 @@ public final class CarbonDataProcessorUtil {
     return CarbonTablePath.getSegmentPath(carbonTable.getTablePath(), segmentId);
   }
 
-
   /**
    * initialise data type for measures for their storage format
    */
@@ -491,7 +517,7 @@ public final class CarbonDataProcessorUtil {
     for (int i = 0; i < type.length; i++) {
       type[i] = DataTypes.DOUBLE;
     }
-    List<CarbonMeasure> measures = carbonTable.getMeasureByTableName(tableName);
+    List<CarbonMeasure> measures = carbonTable.getVisibleMeasures();
     for (int i = 0; i < measureCount; i++) {
       type[i] = measures.get(i).getDataType();
     }
@@ -642,6 +668,7 @@ public final class CarbonDataProcessorUtil {
     }
     return errorMessage;
   }
+
   /**
    * The method returns true is either logger is enabled or action is redirect
    * @param configuration

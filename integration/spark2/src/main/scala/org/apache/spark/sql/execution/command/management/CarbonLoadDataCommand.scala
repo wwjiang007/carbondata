@@ -51,23 +51,25 @@ import org.apache.carbondata.common.Strings
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.converter.SparkDataTypeConverterImpl
 import org.apache.carbondata.core.constants.{CarbonCommonConstants, CarbonLoadOptionConstants, SortScopeOptions}
-import org.apache.carbondata.core.datamap.DataMapStoreManager
+import org.apache.carbondata.core.datamap.{DataMapStoreManager, Segment}
 import org.apache.carbondata.core.datastore.compression.CompressorFactory
 import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.dictionary.server.{DictionaryServer, NonSecureDictionaryServer}
 import org.apache.carbondata.core.dictionary.service.NonSecureDictionaryServiceProvider
 import org.apache.carbondata.core.indexstore.PartitionSpec
 import org.apache.carbondata.core.locks.{CarbonLockFactory, CarbonLockUtil, ICarbonLock, LockUsage}
-import org.apache.carbondata.core.metadata.SegmentFileStore
+import org.apache.carbondata.core.metadata.{AbsoluteTableIdentifier, SegmentFileStore}
 import org.apache.carbondata.core.metadata.encoder.Encoding
 import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, TableInfo}
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema
 import org.apache.carbondata.core.mutate.{CarbonUpdateUtil, TupleIdEnum}
+import org.apache.carbondata.core.readcommitter.TableStatusReadCommittedScope
 import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatus, SegmentStatusManager}
 import org.apache.carbondata.core.util._
 import org.apache.carbondata.core.util.path.CarbonTablePath
-import org.apache.carbondata.events.{BuildDataMapPostExecutionEvent, BuildDataMapPreExecutionEvent, OperationContext, OperationListenerBus}
+import org.apache.carbondata.events.{BuildDataMapPostExecutionEvent, BuildDataMapPreExecutionEvent, IndexServerLoadEvent, OperationContext, OperationListenerBus}
 import org.apache.carbondata.events.exception.PreEventException
+import org.apache.carbondata.indexserver.DistributedRDDUtils
 import org.apache.carbondata.processing.loading.{ComplexDelimitersEnum, TableProcessingOperations}
 import org.apache.carbondata.processing.loading.events.LoadEvents.{LoadMetadataEvent, LoadTablePostExecutionEvent, LoadTablePreExecutionEvent}
 import org.apache.carbondata.processing.loading.exception.NoRetryException
@@ -460,8 +462,7 @@ case class CarbonLoadDataCommand(
     val carbonTableIdentifier = carbonTable.getAbsoluteTableIdentifier
       .getCarbonTableIdentifier
     val dictFolderPath = CarbonTablePath.getMetadataPath(carbonLoadModel.getTablePath)
-    val dimensions = carbonTable.getDimensionByTableName(
-      carbonTable.getTableName).asScala.toArray
+    val dimensions = carbonTable.getVisibleDimensions().asScala.toArray
     val colDictFilePath = carbonLoadModel.getColDictFilePath
     if (!StringUtils.isEmpty(colDictFilePath)) {
       carbonLoadModel.initPredefDictMap()
@@ -671,8 +672,8 @@ case class CarbonLoadDataCommand(
     // input data from csv files. Convert to logical plan
     val allCols = new ArrayBuffer[String]()
     // get only the visible dimensions from table
-    allCols ++= table.getDimensionByTableName(table.getTableName).asScala.map(_.getColName)
-    allCols ++= table.getMeasureByTableName(table.getTableName).asScala.map(_.getColName)
+    allCols ++= table.getVisibleDimensions().asScala.map(_.getColName)
+    allCols ++= table.getVisibleMeasures.asScala.map(_.getColName)
     var attributes =
       StructType(
         allCols.filterNot(_.equals(CarbonCommonConstants.DEFAULT_INVISIBLE_DUMMY_MEASURE)).map(
@@ -866,6 +867,16 @@ case class CarbonLoadDataCommand(
           case _ =>
         }
       }
+
+      // Prepriming for Partition table here
+      if (!StringUtils.isEmpty(carbonLoadModel.getSegmentId)) {
+        DistributedRDDUtils.triggerPrepriming(sparkSession,
+          table,
+          Seq(),
+          operationContext,
+          hadoopConf,
+          List(carbonLoadModel.getSegmentId))
+      }
     }
     try {
       val compactedSegments = new util.ArrayList[String]()
@@ -922,7 +933,7 @@ case class CarbonLoadDataCommand(
     attributes = attributes.map { attr =>
       // Update attribute datatypes in case of dictionary columns, in case of dictionary columns
       // datatype is always int
-      val column = table.getColumnByName(table.getTableName, attr.name)
+      val column = table.getColumnByName(attr.name)
       if (column.hasEncoding(Encoding.DICTIONARY)) {
         CarbonToSparkAdapter.createAttributeReference(attr.name,
           IntegerType,
@@ -971,7 +982,7 @@ case class CarbonLoadDataCommand(
           CarbonProperties.getInstance().getGlobalSortRddStorageLevel))
       }
       val child = Project(output, LogicalRDD(attributes, updatedRdd)(sparkSession))
-      val sortColumns = table.getSortColumns(table.getTableName)
+      val sortColumns = table.getSortColumns()
       val sortPlan =
         Sort(
           output.filter(f => sortColumns.contains(f.name)).map(SortOrder(_, Ascending)),
@@ -1060,7 +1071,7 @@ case class CarbonLoadDataCommand(
     val dropAttributes = df.logicalPlan.output.dropRight(1)
     val finalOutput = catalogTable.schema.map { attr =>
       dropAttributes.find { d =>
-        val index = d.name.lastIndexOf("-updatedColumn")
+        val index = d.name.lastIndexOf(CarbonCommonConstants.UPDATED_COL_EXTENSION)
         if (index > 0) {
           d.name.substring(0, index).equalsIgnoreCase(attr.name)
         } else {
@@ -1082,7 +1093,7 @@ case class CarbonLoadDataCommand(
       operationContext: OperationContext): LogicalRelation = {
     val table = loadModel.getCarbonDataLoadSchema.getCarbonTable
     val metastoreSchema = StructType(catalogTable.schema.fields.map{f =>
-      val column = table.getColumnByName(table.getTableName, f.name)
+      val column = table.getColumnByName(f.name)
       if (column.hasEncoding(Encoding.DICTIONARY)) {
         f.copy(dataType = IntegerType)
       } else if (f.dataType == TimestampType || f.dataType == DateType) {
@@ -1100,7 +1111,7 @@ case class CarbonLoadDataCommand(
       catalog.filterPartitions(Nil) // materialize all the partitions in memory
     }
     var partitionSchema =
-      StructType(table.getPartitionInfo(table.getTableName).getColumnSchemaList.asScala.map(field =>
+      StructType(table.getPartitionInfo().getColumnSchemaList.asScala.map(field =>
         metastoreSchema.fields.find(_.name.equalsIgnoreCase(field.getColumnName))).map(_.get))
     val dataSchema =
       StructType(metastoreSchema

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.localdictionary.exception;
 
 import java.util.Locale;
@@ -73,7 +74,8 @@ public class DictionaryThresholdReachedException extends Exception {
   /**
    * getLocalizedMessage
    */
-  @Override public String getLocalizedMessage() {
+  @Override
+  public String getLocalizedMessage() {
     return super.getLocalizedMessage();
   }
 

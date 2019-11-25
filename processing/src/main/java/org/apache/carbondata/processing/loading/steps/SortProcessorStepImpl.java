@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.steps;
 
 import java.io.IOException;
@@ -65,7 +66,8 @@ public class SortProcessorStepImpl extends AbstractDataLoadProcessorStep {
     }
   }
 
-  @Override protected String getStepName() {
+  @Override
+  protected String getStepName() {
     return "Sort Processor";
   }
 }

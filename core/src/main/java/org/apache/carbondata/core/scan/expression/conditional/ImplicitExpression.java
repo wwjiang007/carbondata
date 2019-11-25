@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.expression.conditional;
 
 import java.util.HashMap;
@@ -69,7 +70,8 @@ public class ImplicitExpression extends Expression {
     blockletIds.add(Integer.parseInt(blockletPath.substring(blockId.length() + 1)));
   }
 
-  @Override public ExpressionResult evaluate(RowIntf value)
+  @Override
+  public ExpressionResult evaluate(RowIntf value)
       throws FilterUnsupportedException, FilterIllegalMemberException {
     throw new UnsupportedOperationException("Operation not supported for Implicit expression");
   }
@@ -78,14 +80,17 @@ public class ImplicitExpression extends Expression {
     return blockIdToBlockletIdMapping;
   }
 
-  @Override public ExpressionType getFilterExpressionType() {
+  @Override
+  public ExpressionType getFilterExpressionType() {
     return ExpressionType.IMPLICIT;
   }
 
-  @Override public void findAndSetChild(Expression oldExpr, Expression newExpr) {
+  @Override
+  public void findAndSetChild(Expression oldExpr, Expression newExpr) {
   }
 
-  @Override public String getString() {
+  @Override
+  public String getString() {
     StringBuilder value = new StringBuilder();
     value.append("ImplicitExpression(");
     for (Map.Entry<String, Set<Integer>> entry : blockIdToBlockletIdMapping.entrySet()) {
@@ -103,7 +108,8 @@ public class ImplicitExpression extends Expression {
     return value.toString();
   }
 
-  @Override public String getStatement() {
+  @Override
+  public String getStatement() {
     return getString();
   }
 }

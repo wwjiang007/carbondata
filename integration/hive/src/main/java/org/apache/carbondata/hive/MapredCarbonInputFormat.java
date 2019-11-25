@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.hive;
 
 import java.io.IOException;
@@ -102,7 +103,8 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
     return (CarbonTable) ObjectSerializationUtil.convertStringToObject(carbonTableStr);
   }
 
-  @Override public InputSplit[] getSplits(JobConf jobConf, int numSplits) throws IOException {
+  @Override
+  public InputSplit[] getSplits(JobConf jobConf, int numSplits) throws IOException {
     jobConf.set(DATABASE_NAME, "_dummyDb_" + UUID.randomUUID().toString());
     jobConf.set(TABLE_NAME, "_dummyTable_" + UUID.randomUUID().toString());
     org.apache.hadoop.mapreduce.JobContext jobContext = Job.getInstance(jobConf);
@@ -174,7 +176,7 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
     if (projection == null) {
       projection = configuration.get("hive.io.file.readcolumn.names");
     }
-    List<CarbonColumn> carbonColumns = carbonTable.getCreateOrderColumn(tableName);
+    List<CarbonColumn> carbonColumns = carbonTable.getCreateOrderColumn();
     List<String> carbonColumnNames = new ArrayList<>();
     StringBuilder allColumns = new StringBuilder();
     StringBuilder projectionColumns = new StringBuilder();
@@ -198,7 +200,8 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
     }
   }
 
-  @Override public boolean shouldSkipCombine(Path path, Configuration conf) throws IOException {
+  @Override
+  public boolean shouldSkipCombine(Path path, Configuration conf) throws IOException {
     return true;
   }
 }

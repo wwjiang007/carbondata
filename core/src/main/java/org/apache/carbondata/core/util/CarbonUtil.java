@@ -297,7 +297,8 @@ public final class CarbonUtil {
       throws IOException, InterruptedException {
     UserGroupInformation.getLoginUser().doAs(new PrivilegedExceptionAction<Void>() {
 
-      @Override public Void run() throws Exception {
+      @Override
+      public Void run() throws Exception {
         for (int i = 0; i < path.length; i++) {
           CarbonFile carbonFile = FileFactory.getCarbonFile(path[i].getAbsolutePath());
           boolean delete = carbonFile.delete();
@@ -314,7 +315,8 @@ public final class CarbonUtil {
       throws IOException, InterruptedException {
     UserGroupInformation.getLoginUser().doAs(new PrivilegedExceptionAction<Void>() {
 
-      @Override public Void run() throws Exception {
+      @Override
+      public Void run() throws Exception {
         for (int i = 0; i < file.length; i++) {
           boolean delete = file[i].delete();
           if (!delete) {
@@ -330,7 +332,8 @@ public final class CarbonUtil {
       throws IOException, InterruptedException {
     UserGroupInformation.getLoginUser().doAs(new PrivilegedExceptionAction<Void>() {
 
-      @Override public Void run() throws Exception {
+      @Override
+      public Void run() throws Exception {
         for (int i = 0; i < file.length; i++) {
           boolean delete = file[i].delete();
           if (!delete) {
@@ -467,7 +470,6 @@ public final class CarbonUtil {
     // key not found
     return -(low + 1);
   }
-
 
   /**
    * Method will identify the value which is lesser than the pivot element
@@ -686,7 +688,9 @@ public final class CarbonUtil {
       return "";
     }
   }
+
   public static String removeAKSK(String filePath) {
+
     if (null == filePath) {
       return "";
     }
@@ -756,7 +760,6 @@ public final class CarbonUtil {
     }
     return created;
   }
-
 
   /**
    * This method will return the size of a given file
@@ -1142,7 +1145,11 @@ public final class CarbonUtil {
       List<CarbonDimension> blockDimensions, CarbonDimension dimensionToBeSearched) {
     CarbonDimension currentBlockDimension = null;
     for (CarbonDimension blockDimension : blockDimensions) {
-      if (dimensionToBeSearched.getColumnId().equalsIgnoreCase(blockDimension.getColumnId())) {
+      // In case of SDK, columnId is same as columnName therefore the following check will
+      // ensure that if the dimensions columnName is same as the block columnName and the dimension
+      // columnId is the same as dimensions columnName then it's a valid column to be scanned.
+      if (dimensionToBeSearched.getColumnId().equalsIgnoreCase(blockDimension.getColumnId())
+          || blockDimension.isColmatchBasedOnId(dimensionToBeSearched)) {
         currentBlockDimension = blockDimension;
         break;
       }
@@ -1154,14 +1161,18 @@ public final class CarbonUtil {
    * This method will search for a given measure in the current block measures list
    *
    * @param blockMeasures
-   * @param columnId
+   * @param measureToBeSearched
    * @return
    */
   public static CarbonMeasure getMeasureFromCurrentBlock(List<CarbonMeasure> blockMeasures,
-      String columnId) {
+      CarbonMeasure measureToBeSearched) {
     CarbonMeasure currentBlockMeasure = null;
     for (CarbonMeasure blockMeasure : blockMeasures) {
-      if (columnId.equals(blockMeasure.getColumnId())) {
+      // In case of SDK, columnId is same as columnName therefore the following check will
+      // ensure that if the measures columnName is same as the block columnName and the measures
+      // columnId is the same as measures columnName then it's a valid column to be scanned.
+      if (measureToBeSearched.getColumnId().equalsIgnoreCase(blockMeasure.getColumnId())
+          || blockMeasure.isColmatchBasedOnId(measureToBeSearched)) {
         currentBlockMeasure = blockMeasure;
         break;
       }
@@ -1443,7 +1454,8 @@ public final class CarbonUtil {
 
   public static BlockletHeader readBlockletHeader(byte[] data) throws IOException {
     return (BlockletHeader) read(data, new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new BlockletHeader();
       }
     }, 0, data.length);
@@ -1453,7 +1465,8 @@ public final class CarbonUtil {
       throws IOException {
     byte[] data = dataChunkBuffer.array();
     return (DataChunk3) read(data, new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new DataChunk3();
       }
     }, offset, length);
@@ -1461,7 +1474,8 @@ public final class CarbonUtil {
 
   public static DataChunk3 readDataChunk3(InputStream stream) throws IOException {
     TBaseCreator creator = new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new DataChunk3();
       }
     };
@@ -1479,7 +1493,8 @@ public final class CarbonUtil {
       throws IOException {
     byte[] data = dataChunkBuffer.array();
     return (DataChunk2) read(data, new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new DataChunk2();
       }
     }, offset, length);
@@ -1772,6 +1787,7 @@ public final class CarbonUtil {
         throw new IllegalArgumentException("Int cannot be more than 4 bytes");
     }
   }
+
   /**
    * Validate boolean value configuration
    *
@@ -2040,13 +2056,19 @@ public final class CarbonUtil {
    */
   public static org.apache.carbondata.format.TableInfo readSchemaFile(String schemaFilePath)
       throws IOException {
+    return readSchemaFile(schemaFilePath, FileFactory.getConfiguration());
+  }
+
+  public static org.apache.carbondata.format.TableInfo readSchemaFile(String schemaFilePath,
+      Configuration conf)
+      throws IOException {
     TBaseCreator createTBase = new ThriftReader.TBaseCreator() {
       public org.apache.thrift.TBase<org.apache.carbondata.format.TableInfo,
           org.apache.carbondata.format.TableInfo._Fields> create() {
         return new org.apache.carbondata.format.TableInfo();
       }
     };
-    ThriftReader thriftReader = new ThriftReader(schemaFilePath, createTBase);
+    ThriftReader thriftReader = new ThriftReader(schemaFilePath, createTBase, conf);
     thriftReader.open();
     org.apache.carbondata.format.TableInfo tableInfo =
         (org.apache.carbondata.format.TableInfo) thriftReader.read();
@@ -2239,7 +2261,6 @@ public final class CarbonUtil {
     org.apache.carbondata.format.TableInfo tableInfo =
         new org.apache.carbondata.format.TableInfo(thriftFactTable,
             new ArrayList<org.apache.carbondata.format.TableSchema>());
-
     tableInfo.setDataMapSchemas(null);
     return tableInfo;
   }
@@ -2409,6 +2430,7 @@ public final class CarbonUtil {
     }
     return true;
   }
+
   /**
    * Below method will be used to check whether bitset applied on previous filter
    * can be used to apply on next column filter
@@ -2542,12 +2564,14 @@ public final class CarbonUtil {
   }
 
   // Get the total size of carbon data and the total size of carbon index
-  private static HashMap<String, Long> getDataSizeAndIndexSize(String tablePath,
-      String segmentId) throws IOException {
+  public static HashMap<String, Long> getDataSizeAndIndexSize(
+      String segmentPath) throws IOException {
+    if (segmentPath == null) {
+      throw new IllegalArgumentException("Argument [segmentPath] is null.");
+    }
     long carbonDataSize = 0L;
     long carbonIndexSize = 0L;
     HashMap<String, Long> dataAndIndexSize = new HashMap<String, Long>();
-    String segmentPath = CarbonTablePath.getSegmentPath(tablePath, segmentId);
     FileFactory.FileType fileType = FileFactory.getFileType(segmentPath);
     switch (fileType) {
       case HDFS:
@@ -2596,7 +2620,13 @@ public final class CarbonUtil {
   }
 
   // Get the total size of carbon data and the total size of carbon index
-  private static HashMap<String, Long> getDataSizeAndIndexSize(SegmentFileStore fileStore)
+  private static HashMap<String, Long> getDataSizeAndIndexSize(String tablePath,
+      String segmentId) throws IOException {
+    return getDataSizeAndIndexSize(CarbonTablePath.getSegmentPath(tablePath, segmentId));
+  }
+
+  // Get the total size of carbon data and the total size of carbon index
+  public static HashMap<String, Long> getDataSizeAndIndexSize(SegmentFileStore fileStore)
       throws IOException {
     long carbonDataSize = 0L;
     long carbonIndexSize = 0L;
@@ -2634,15 +2664,25 @@ public final class CarbonUtil {
       Set<String> carbonindexFiles = folderDetails.getFiles();
       String mergeFileName = folderDetails.getMergeFileName();
       if (null != mergeFileName) {
-        String mergeIndexPath =
-            fileStore.getTablePath() + entry.getKey() + CarbonCommonConstants.FILE_SEPARATOR
-                + mergeFileName;
+        String mergeIndexPath;
+        if (entry.getValue().isRelative()) {
+          mergeIndexPath =
+              fileStore.getTablePath() + entry.getKey() + CarbonCommonConstants.FILE_SEPARATOR
+                  + mergeFileName;
+        } else {
+          mergeIndexPath = entry.getKey() + CarbonCommonConstants.FILE_SEPARATOR + mergeFileName;
+        }
         carbonIndexSize += FileFactory.getCarbonFile(mergeIndexPath).getSize();
       }
       for (String indexFile : carbonindexFiles) {
-        String indexPath =
-            fileStore.getTablePath() + entry.getKey() + CarbonCommonConstants.FILE_SEPARATOR
-                + indexFile;
+        String indexPath;
+        if (entry.getValue().isRelative()) {
+          indexPath =
+              fileStore.getTablePath() + entry.getKey() + CarbonCommonConstants.FILE_SEPARATOR
+                  + indexFile;
+        } else {
+          indexPath = entry.getKey() + CarbonCommonConstants.FILE_SEPARATOR + indexFile;
+        }
         carbonIndexSize += FileFactory.getCarbonFile(indexPath).getSize();
       }
     }
@@ -2669,7 +2709,6 @@ public final class CarbonUtil {
     }
     return size;
   }
-
 
   /**
    * Utility function to check whether table has timseries datamap or not
@@ -2725,7 +2764,6 @@ public final class CarbonUtil {
     return Base64.decodeBase64(objectString.getBytes(CarbonCommonConstants.DEFAULT_CHARSET));
   }
 
-
   /**
    * This method will copy the given file to carbon store location
    *
@@ -2739,14 +2777,30 @@ public final class CarbonUtil {
     LOGGER.info(String.format("Copying %s to %s, operation id %d", localFilePath,
         carbonDataDirectoryPath, copyStartTime));
     try {
-      CarbonFile localCarbonFile =
-          FileFactory.getCarbonFile(localFilePath, FileFactory.getFileType(localFilePath));
+      CarbonFile localCarbonFile = FileFactory.getCarbonFile(localFilePath);
+      // the size of local carbon file must be greater than 0
+      if (localCarbonFile.getSize() == 0L) {
+        LOGGER.error("The size of local carbon file: " + localFilePath + " is 0.");
+        throw new CarbonDataWriterException("The size of local carbon file is 0.");
+      }
       String carbonFilePath = carbonDataDirectoryPath + localFilePath
           .substring(localFilePath.lastIndexOf(File.separator));
       copyLocalFileToCarbonStore(carbonFilePath, localFilePath,
           CarbonCommonConstants.BYTEBUFFER_SIZE,
           getMaxOfBlockAndFileSize(fileSizeInBytes, localCarbonFile.getSize()));
-    } catch (IOException e) {
+      CarbonFile targetCarbonFile = FileFactory.getCarbonFile(carbonFilePath);
+      // the size of carbon file must be greater than 0
+      // and the same as the size of local carbon file
+      if (targetCarbonFile.getSize() == 0L ||
+          (targetCarbonFile.getSize() != localCarbonFile.getSize())) {
+        LOGGER.error("The size of carbon file: " + carbonFilePath + " is 0 "
+            + "or is not the same as the size of local carbon file: ("
+            + "carbon file size=" + targetCarbonFile.getSize()
+            + ", local carbon file size=" + localCarbonFile.getSize() + ")");
+        throw new CarbonDataWriterException("The size of carbon file is 0 "
+            + "or is not the same as the size of local carbon file.");
+      }
+    } catch (Exception e) {
       throw new CarbonDataWriterException(
           "Problem while copying file from local store to carbon store", e);
     }
@@ -3064,8 +3118,7 @@ public final class CarbonUtil {
   public static Map<String, LocalDictionaryGenerator> getLocalDictionaryModel(
       CarbonTable carbonTable) {
     List<ColumnSchema> wrapperColumnSchema = CarbonUtil
-        .getColumnSchemaList(carbonTable.getDimensionByTableName(carbonTable.getTableName()),
-            carbonTable.getMeasureByTableName(carbonTable.getTableName()));
+        .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
     boolean islocalDictEnabled = carbonTable.isLocalDictionaryEnabled();
     // creates a map only if local dictionary is enabled, else map will be null
     Map<String, LocalDictionaryGenerator> columnLocalDictGenMap = new HashMap<>();
@@ -3219,7 +3272,6 @@ public final class CarbonUtil {
   public static boolean isStandardCarbonTable(CarbonTable table) {
     return !(table.isSupportFlatFolder() || table.isHivePartitionTable());
   }
-
 
   /**
    * This method will form the FallbackEncodedColumnPage from input column page

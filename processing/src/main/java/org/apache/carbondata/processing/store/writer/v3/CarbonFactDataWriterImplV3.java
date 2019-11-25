@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.store.writer.v3;
 
 import java.io.IOException;
@@ -101,7 +102,7 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
   protected void writeFooterToFile() throws CarbonDataWriterException {
     try {
       // get the current file position
-      long currentPosition = currentOffsetInFile;
+      long footerOffset = currentOffsetInFile;
       // get thrift file footer instance
       FileFooter3 convertFileMeta = CarbonMetadataUtil
           .convertFileFooterVersion3(blockletMetadata, blockletIndex, localCardinality,
@@ -116,16 +117,17 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
       convertFileMeta.putToExtra_info(CarbonCommonConstants.CARBON_WRITTEN_BY_FOOTER_INFO, appName);
       convertFileMeta.putToExtra_info(CarbonCommonConstants.CARBON_WRITTEN_VERSION,
           CarbonVersionConstants.CARBONDATA_VERSION);
-      // fill the carbon index details
-      fillBlockIndexInfoDetails(convertFileMeta.getNum_rows(), carbonDataFileName, currentPosition);
       // write the footer
       byte[] byteArray = CarbonUtil.getByteArray(convertFileMeta);
       ByteBuffer buffer =
           ByteBuffer.allocate(byteArray.length + CarbonCommonConstants.LONG_SIZE_IN_BYTE);
       buffer.put(byteArray);
-      buffer.putLong(currentPosition);
+      buffer.putLong(footerOffset);
       buffer.flip();
       currentOffsetInFile += fileChannel.write(buffer);
+      // fill the carbon index details
+      fillBlockIndexInfoDetails(
+          convertFileMeta.getNum_rows(), carbonDataFileName, footerOffset, currentOffsetInFile);
     } catch (IOException e) {
       LOGGER.error("Problem while writing the carbon file", e);
       throw new CarbonDataWriterException("Problem while writing the carbon file: ", e);
@@ -136,7 +138,8 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
    * Below method will be used to write one table page data, invoked by Consumer
    * @param tablePage
    */
-  @Override public void writeTablePage(TablePage tablePage)
+  @Override
+  public void writeTablePage(TablePage tablePage)
       throws CarbonDataWriterException,IOException {
 
     // condition for writting all the pages
@@ -190,8 +193,6 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
       listener.onPageAdded(blockletId, pageId++, tablePage);
     }
   }
-
-
 
   /**
    * Write the collect blocklet data (blockletDataHolder) to file
@@ -346,11 +347,12 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
    *
    * @param numberOfRows       number of rows in file
    * @param carbonDataFileName The name of carbonData file
-   * @param currentPosition    current offset
+   * @param footerOffset       footer offset
+   * @param fileSize           file size
    */
   @Override
   protected void fillBlockIndexInfoDetails(long numberOfRows, String carbonDataFileName,
-      long currentPosition) {
+      long footerOffset, long fileSize) {
     int i = 0;
     DataFileFooterConverterV3 converterV3 = new DataFileFooterConverterV3();
     for (org.apache.carbondata.format.BlockletIndex index : blockletIndex) {
@@ -367,8 +369,8 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
           new org.apache.carbondata.core.metadata.blocklet.index.BlockletIndex(bTreeIndex,
               minMaxIndex);
       BlockIndexInfo biInfo =
-          new BlockIndexInfo(numberOfRows, carbonDataFileName, currentPosition, bIndex,
-              blockletInfo);
+          new BlockIndexInfo(numberOfRows, carbonDataFileName, footerOffset, bIndex,
+              blockletInfo, fileSize);
       blockIndexInfoList.add(biInfo);
       i++;
     }

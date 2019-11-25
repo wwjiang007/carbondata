@@ -147,7 +147,6 @@ public final class CarbonDataMergerUtil {
 
   }
 
-
   /**
    * Update Both Segment Update Status and Table Status for the case of IUD Delete
    * delta compaction.
@@ -340,7 +339,6 @@ public final class CarbonDataMergerUtil {
 
         // create entry for merged one.
         LoadMetadataDetails loadMetadataDetails = new LoadMetadataDetails();
-        loadMetadataDetails.setPartitionCount(CarbonTablePath.DEPRECATED_PARTITION_ID);
         loadMetadataDetails.setSegmentStatus(SegmentStatus.SUCCESS);
         long loadEnddate = CarbonUpdateUtil.readCurrentTime();
         loadMetadataDetails.setLoadEndTime(loadEnddate);
@@ -350,7 +348,6 @@ public final class CarbonDataMergerUtil {
         CarbonLoaderUtil
             .addDataIndexSizeIntoMetaEntry(loadMetadataDetails, mergedLoadNumber, carbonTable);
         loadMetadataDetails.setLoadStartTime(carbonLoadModel.getFactTimeStamp());
-        loadMetadataDetails.setPartitionCount("0");
         // if this is a major compaction then set the segment as major compaction.
         if (CompactionType.MAJOR == compactionType) {
           loadMetadataDetails.setMajorCompacted("true");
@@ -967,7 +964,6 @@ public final class CarbonDataMergerUtil {
     }
     return validAndInvalidSegments.getValidSegments();
   }
-
 
   /**
    * Removing the already merged segments from list.

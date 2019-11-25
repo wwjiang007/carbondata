@@ -14,8 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.metadata;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -139,8 +141,7 @@ public final class CarbonMetadata {
    */
   public CarbonDimension getCarbonDimensionBasedOnColIdentifier(CarbonTable carbonTable,
       String columnIdentifier) {
-    List<CarbonDimension> listOfCarbonDims =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
+    List<CarbonDimension> listOfCarbonDims = carbonTable.getVisibleDimensions();
     for (CarbonDimension dimension : listOfCarbonDims) {
       if (dimension.getColumnId().equalsIgnoreCase(columnIdentifier)) {
         return dimension;
@@ -179,5 +180,13 @@ public final class CarbonMetadata {
       }
     }
     return null;
+  }
+
+  public List<CarbonTable> getAllTables() {
+    return new ArrayList<>(tableInfoMap.values());
+  }
+
+  public void clearAll() {
+    tableInfoMap.clear();
   }
 }

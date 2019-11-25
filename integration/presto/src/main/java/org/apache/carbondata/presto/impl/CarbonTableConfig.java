@@ -40,7 +40,6 @@ public class CarbonTableConfig {
   private String endPoint;
   private String pushRowFilter;
 
-
   public String getUnsafeMemoryInMb() {
     return unsafeMemoryInMb;
   }
@@ -61,7 +60,9 @@ public class CarbonTableConfig {
     return this;
   }
 
-  public String getEnableUnsafeColumnPage() { return enableUnsafeColumnPage; }
+  public String getEnableUnsafeColumnPage() {
+    return enableUnsafeColumnPage;
+  }
 
   @Config("enable.unsafe.columnpage")
   public CarbonTableConfig setEnableUnsafeColumnPage(String enableUnsafeColumnPage) {
@@ -69,7 +70,9 @@ public class CarbonTableConfig {
     return this;
   }
 
-  public String getEnableUnsafeSort() { return enableUnsafeSort; }
+  public String getEnableUnsafeSort() {
+    return enableUnsafeSort;
+  }
 
   @Config("enable.unsafe.sort")
   public CarbonTableConfig setEnableUnsafeSort(String enableUnsafeSort) {
@@ -77,7 +80,9 @@ public class CarbonTableConfig {
     return this;
   }
 
-  public String getEnableQueryStatistics() { return enableQueryStatistics; }
+  public String getEnableQueryStatistics() {
+    return enableQueryStatistics;
+  }
 
   @Config("enable.query.statistics")
   public CarbonTableConfig setEnableQueryStatistics(String enableQueryStatistics) {
@@ -85,7 +90,9 @@ public class CarbonTableConfig {
     return this;
   }
 
-  public String getBatchSize() { return batchSize; }
+  public String getBatchSize() {
+    return batchSize;
+  }
 
   @Config("query.vector.batchSize")
   public CarbonTableConfig setBatchSize(String batchSize) {
@@ -121,7 +128,6 @@ public class CarbonTableConfig {
     return endPoint;
   }
 
-
   @Config("fs.s3a.access.key")
   public CarbonTableConfig setS3A_AcesssKey(String s3A_acesssKey) {
     this.s3A_acesssKey = s3A_acesssKey;
@@ -145,6 +151,7 @@ public class CarbonTableConfig {
     this.s3_secretKey = s3_secretKey;
     return this;
   }
+
   @Config("fs.s3n.awsAccessKeyId")
   public CarbonTableConfig setS3N_AcesssKey(String s3N_acesssKey) {
     this.s3N_acesssKey = s3N_acesssKey;
@@ -156,6 +163,7 @@ public class CarbonTableConfig {
     this.s3N_secretKey = s3N_secretKey;
     return this;
   }
+
   @Config("fs.s3a.endpoint")
   public CarbonTableConfig setS3EndPoint(String endPoint) {
     this.endPoint = endPoint;

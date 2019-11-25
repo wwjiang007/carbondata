@@ -39,6 +39,7 @@ import org.apache.carbondata.core.datamap.DataMapJob;
 import org.apache.carbondata.core.datamap.DataMapLevel;
 import org.apache.carbondata.core.datamap.DataMapStoreManager;
 import org.apache.carbondata.core.datamap.DataMapUtil;
+import org.apache.carbondata.core.datamap.DistributableDataMapFormat;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datamap.TableDataMap;
 import org.apache.carbondata.core.datamap.dev.expr.DataMapExprWrapper;
@@ -136,7 +137,6 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
 
   private CarbonTable carbonTable;
 
-
   public int getNumSegments() {
     return numSegments;
   }
@@ -229,8 +229,9 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
    * @para    DataMapJob dataMapJob = getDataMapJob(job.getConfiguration());
 m filterExpression
    */
-  public static void setFilterPredicates(Configuration configuration, Expression filterExpression) {
-    if (filterExpression == null) {
+  public static void setFilterPredicates(Configuration configuration,
+      DataMapFilter filterExpression) {
+    if (filterExpression == null || filterExpression.getExpression() == null) {
       return;
     }
     try {
@@ -309,7 +310,7 @@ m filterExpression
   public static void setQuerySegment(Configuration conf, AbsoluteTableIdentifier identifier) {
     String dbName = identifier.getCarbonTableIdentifier().getDatabaseName().toLowerCase();
     String tbName = identifier.getCarbonTableIdentifier().getTableName().toLowerCase();
-    getQuerySegmentToAccess(conf, dbName, tbName);
+    setQuerySegmentToAccess(conf, dbName, tbName);
   }
 
   /**
@@ -410,12 +411,45 @@ m filterExpression
    * @return List<InputSplit> list of CarbonInputSplit
    * @throws IOException
    */
-  @Override public abstract List<InputSplit> getSplits(JobContext job) throws IOException;
+  @Override
+  public abstract List<InputSplit> getSplits(JobContext job) throws IOException;
 
-  List<ExtendedBlocklet> getDistributedSplit(CarbonTable table,
+  /**
+   * This method will execute a distributed job(DistributedDataMapJob) to get the count for the
+   * table. If the DistributedDataMapJob fails for some reason then an embedded job is fired to
+   * get the count.
+   */
+  Long getDistributedCount(CarbonTable table,
+      List<PartitionSpec> partitionNames, List<Segment> validSegments) throws IOException {
+    DistributableDataMapFormat dataMapFormat =
+        new DistributableDataMapFormat(table, null, validSegments, new ArrayList<String>(),
+            partitionNames, false, null, false, false);
+    dataMapFormat.setIsWriteToFile(false);
+    try {
+      DataMapJob dataMapJob =
+          (DataMapJob) DataMapUtil.createDataMapJob(DataMapUtil.DISTRIBUTED_JOB_NAME);
+      if (dataMapJob == null) {
+        throw new ExceptionInInitializerError("Unable to create DistributedDataMapJob");
+      }
+      return dataMapJob.executeCountJob(dataMapFormat);
+    } catch (Exception e) {
+      LOG.error("Failed to get count from index server. Initializing fallback", e);
+      DataMapJob dataMapJob = DataMapUtil.getEmbeddedJob();
+      return dataMapJob.executeCountJob(dataMapFormat);
+    }
+  }
+
+  List<ExtendedBlocklet> getDistributedBlockRowCount(CarbonTable table,
+      List<PartitionSpec> partitionNames, List<Segment> validSegments,
+      List<Segment> invalidSegments, List<String> segmentsToBeRefreshed) throws IOException {
+    return getDistributedSplit(table, null, partitionNames, validSegments, invalidSegments,
+        segmentsToBeRefreshed, true);
+  }
+
+  private List<ExtendedBlocklet> getDistributedSplit(CarbonTable table,
       FilterResolverIntf filterResolverIntf, List<PartitionSpec> partitionNames,
       List<Segment> validSegments, List<Segment> invalidSegments,
-      List<String> segmentsToBeRefreshed) throws IOException {
+      List<String> segmentsToBeRefreshed, boolean isCountJob) throws IOException {
     try {
       DataMapJob dataMapJob =
           (DataMapJob) DataMapUtil.createDataMapJob(DataMapUtil.DISTRIBUTED_JOB_NAME);
@@ -424,7 +458,7 @@ m filterExpression
       }
       return DataMapUtil
           .executeDataMapJob(table, filterResolverIntf, dataMapJob, partitionNames, validSegments,
-              invalidSegments, null, segmentsToBeRefreshed);
+              invalidSegments, null, false, segmentsToBeRefreshed, isCountJob);
     } catch (Exception e) {
       // Check if fallback is disabled for testing purposes then directly throw exception.
       if (CarbonProperties.getInstance().isFallBackDisabled()) {
@@ -432,21 +466,25 @@ m filterExpression
       }
       LOG.error("Exception occurred while getting splits using index server. Initiating Fall "
           + "back to embedded mode", e);
-      return DataMapUtil
-          .executeDataMapJob(table, filterResolverIntf,
-              DataMapUtil.getEmbeddedJob(), partitionNames, validSegments, invalidSegments, null,
-              true, segmentsToBeRefreshed);
+      return DataMapUtil.executeDataMapJob(table, filterResolverIntf,
+          DataMapUtil.getEmbeddedJob(), partitionNames, validSegments,
+          invalidSegments, null, true, segmentsToBeRefreshed, isCountJob);
     }
   }
 
-  protected Expression getFilterPredicates(Configuration configuration) {
+  protected DataMapFilter getFilterPredicates(Configuration configuration) {
     try {
       String filterExprString = configuration.get(FILTER_PREDICATE);
       if (filterExprString == null) {
         return null;
       }
-      Object filter = ObjectSerializationUtil.convertStringToObject(filterExprString);
-      return (Expression) filter;
+      DataMapFilter filter =
+          (DataMapFilter) ObjectSerializationUtil.convertStringToObject(filterExprString);
+      if (filter != null) {
+        CarbonTable carbonTable = getOrCreateCarbonTable(configuration);
+        filter.setTable(carbonTable);
+      }
+      return filter;
     } catch (IOException e) {
       throw new RuntimeException("Error while reading filter expression", e);
     }
@@ -456,7 +494,7 @@ m filterExpression
    * get data blocks of given segment
    */
   protected List<CarbonInputSplit> getDataBlocksOfSegment(JobContext job, CarbonTable carbonTable,
-      Expression expression, BitSet matchedPartitions, List<Segment> segmentIds,
+      DataMapFilter expression, BitSet matchedPartitions, List<Segment> segmentIds,
       PartitionInfo partitionInfo, List<Integer> oldPartitionIdList,
       List<Segment> invalidSegments, List<String> segmentsToBeRefreshed)
       throws IOException {
@@ -482,8 +520,8 @@ m filterExpression
       // partition info first and then read data.
       // For other normal query should use newest partitionIdList
       if (partitionInfo != null && partitionInfo.getPartitionType() != PartitionType.NATIVE_HIVE) {
-        long partitionId = CarbonTablePath.DataFileUtil
-            .getTaskIdFromTaskNo(CarbonTablePath.DataFileUtil.getTaskNo(blocklet.getPath()));
+        long partitionId = Long.parseLong(CarbonTablePath.DataFileUtil
+            .getTaskIdFromTaskNo(CarbonTablePath.DataFileUtil.getTaskNo(blocklet.getPath())));
         if (oldPartitionIdList != null) {
           partitionIndex = oldPartitionIdList.indexOf((int) partitionId);
         } else {
@@ -524,11 +562,12 @@ m filterExpression
    * First pruned with default blocklet datamap, then pruned with CG and FG datamaps
    */
   private List<ExtendedBlocklet> getPrunedBlocklets(JobContext job, CarbonTable carbonTable,
-      Expression expression, List<Segment> segmentIds, List<Segment> invalidSegments,
+      DataMapFilter filter, List<Segment> segmentIds, List<Segment> invalidSegments,
       List<String> segmentsToBeRefreshed) throws IOException {
     ExplainCollector.addPruningInfo(carbonTable.getTableName());
-    final DataMapFilter filter = new DataMapFilter(carbonTable, expression);
-    ExplainCollector.setFilterStatement(expression == null ? "none" : expression.getStatement());
+    filter = filter == null ? new DataMapFilter(carbonTable, null) : filter;
+    ExplainCollector.setFilterStatement(
+        filter.getExpression() == null ? "none" : filter.getExpression().getStatement());
     boolean distributedCG = Boolean.parseBoolean(CarbonProperties.getInstance()
         .getProperty(CarbonCommonConstants.USE_DISTRIBUTED_DATAMAP,
             CarbonCommonConstants.USE_DISTRIBUTED_DATAMAP_DEFAULT));
@@ -545,7 +584,7 @@ m filterExpression
       try {
         prunedBlocklets =
             getDistributedSplit(carbonTable, filter.getResolver(), partitionsToPrune, segmentIds,
-                invalidSegments, segmentsToBeRefreshed);
+                invalidSegments, segmentsToBeRefreshed, false);
       } catch (Exception e) {
         // Check if fallback is disabled then directly throw exception otherwise try driver
         // pruning.
@@ -573,19 +612,29 @@ m filterExpression
       if (cgDataMapExprWrapper != null) {
         // Prune segments from already pruned blocklets
         DataMapUtil.pruneSegments(segmentIds, prunedBlocklets);
-        List<ExtendedBlocklet> cgPrunedBlocklets;
+        List<ExtendedBlocklet> cgPrunedBlocklets = new ArrayList<>();
+        boolean isCGPruneFallback = false;
         // Again prune with CG datamap.
-        if (distributedCG && dataMapJob != null) {
-          cgPrunedBlocklets = DataMapUtil
-              .executeDataMapJob(carbonTable, filter.getResolver(), dataMapJob, partitionsToPrune,
-                  segmentIds, invalidSegments, DataMapLevel.CG, true, new ArrayList<String>());
-        } else {
-          cgPrunedBlocklets = cgDataMapExprWrapper.prune(segmentIds, partitionsToPrune);
+        try {
+          if (distributedCG && dataMapJob != null) {
+            cgPrunedBlocklets = DataMapUtil
+                .executeDataMapJob(carbonTable, filter.getResolver(), dataMapJob, partitionsToPrune,
+                    segmentIds, invalidSegments, DataMapLevel.CG, new ArrayList<String>());
+          } else {
+            cgPrunedBlocklets = cgDataMapExprWrapper.prune(segmentIds, partitionsToPrune);
+          }
+        } catch (Exception e) {
+          isCGPruneFallback = true;
+          LOG.error("CG datamap pruning failed.", e);
         }
-        // since index datamap prune in segment scope,
-        // the result need to intersect with previous pruned result
-        prunedBlocklets =
-            intersectFilteredBlocklets(carbonTable, prunedBlocklets, cgPrunedBlocklets);
+        // If isCGPruneFallback = true, it means that CG datamap pruning failed,
+        // hence no need to do intersect and simply pass the prunedBlocklets from default datamap
+        if (!isCGPruneFallback) {
+          // since index datamap prune in segment scope,
+          // the result need to intersect with previous pruned result
+          prunedBlocklets =
+              intersectFilteredBlocklets(carbonTable, prunedBlocklets, cgPrunedBlocklets);
+        }
         if (ExplainCollector.enabled()) {
           ExplainCollector.recordCGDataMapPruning(
               DataMapWrapperSimpleInfo.fromDataMapWrapper(cgDataMapExprWrapper),
@@ -606,7 +655,7 @@ m filterExpression
           // Prune segments from already pruned blocklets
           fgPrunedBlocklets = DataMapUtil
               .executeDataMapJob(carbonTable, filter.getResolver(), dataMapJob, partitionsToPrune,
-                  segmentIds, invalidSegments, fgDataMapExprWrapper.getDataMapLevel(), true,
+                  segmentIds, invalidSegments, fgDataMapExprWrapper.getDataMapLevel(),
                   new ArrayList<String>());
           // note that the 'fgPrunedBlocklets' has extra datamap related info compared with
           // 'prunedBlocklets', so the intersection should keep the elements in 'fgPrunedBlocklets'
@@ -640,7 +689,6 @@ m filterExpression
     return prunedBlocklets;
   }
 
-
   static List<InputSplit> convertToCarbonInputSplit(List<ExtendedBlocklet> extendedBlocklets) {
     List<InputSplit> resultFilteredBlocks = new ArrayList<>();
     for (ExtendedBlocklet blocklet : extendedBlocklets) {
@@ -651,7 +699,8 @@ m filterExpression
     return resultFilteredBlocks;
   }
 
-  @Override public RecordReader<Void, T> createRecordReader(InputSplit inputSplit,
+  @Override
+  public RecordReader<Void, T> createRecordReader(InputSplit inputSplit,
       TaskAttemptContext taskAttemptContext) throws IOException, InterruptedException {
     Configuration configuration = taskAttemptContext.getConfiguration();
     QueryModel queryModel = createQueryModel(inputSplit, taskAttemptContext,
@@ -668,7 +717,7 @@ m filterExpression
   }
 
   public QueryModel createQueryModel(InputSplit inputSplit, TaskAttemptContext taskAttemptContext,
-      Expression filterExpression) throws IOException {
+      DataMapFilter dataMapFilter) throws IOException {
     Configuration configuration = taskAttemptContext.getConfiguration();
     CarbonTable carbonTable = getOrCreateCarbonTable(configuration);
 
@@ -680,13 +729,14 @@ m filterExpression
     } else {
       projectColumns = new String[]{};
     }
-    checkAndAddImplicitExpression(filterExpression, inputSplit);
-    QueryModel queryModel = new QueryModelBuilder(carbonTable)
+    if (dataMapFilter != null) {
+      checkAndAddImplicitExpression(dataMapFilter.getExpression(), inputSplit);
+    }
+    return new QueryModelBuilder(carbonTable)
         .projectColumns(projectColumns)
-        .filterExpression(filterExpression)
+        .filterExpression(dataMapFilter)
         .dataConverter(getDataTypeConverter(configuration))
         .build();
-    return queryModel;
   }
 
   /**
@@ -742,7 +792,8 @@ m filterExpression
     return readSupport;
   }
 
-  @Override protected boolean isSplitable(JobContext context, Path filename) {
+  @Override
+  protected boolean isSplitable(JobContext context, Path filename) {
     try {
       // Don't split the file if it is local file system
       FileSystem fileSystem = filename.getFileSystem(context.getConfiguration());
@@ -856,7 +907,7 @@ m filterExpression
     return projectColumns.toArray(new String[projectColumns.size()]);
   }
 
-  private static void getQuerySegmentToAccess(Configuration conf, String dbName, String tableName) {
+  private static void setQuerySegmentToAccess(Configuration conf, String dbName, String tableName) {
     String segmentNumbersFromProperty = CarbonProperties.getInstance()
         .getProperty(CarbonCommonConstants.CARBON_INPUT_SEGMENTS + dbName + "." + tableName, "*");
     if (!segmentNumbersFromProperty.trim().equals("*")) {
@@ -870,7 +921,7 @@ m filterExpression
    */
   public static void setQuerySegment(Configuration conf, CarbonTable carbonTable) {
     String tableName = carbonTable.getTableName();
-    getQuerySegmentToAccess(conf, carbonTable.getDatabaseName(), tableName);
+    setQuerySegmentToAccess(conf, carbonTable.getDatabaseName(), tableName);
   }
 
 }

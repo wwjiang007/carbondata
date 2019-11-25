@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.chunk.impl;
 
 import java.io.IOException;
@@ -141,7 +142,8 @@ public class DimensionRawColumnChunk extends AbstractRawColumnChunk {
     }
   }
 
-  @Override public void freeMemory() {
+  @Override
+  public void freeMemory() {
     super.freeMemory();
     if (null != dataChunks) {
       for (int i = 0; i < dataChunks.length; i++) {

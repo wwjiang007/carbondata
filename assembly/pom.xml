@@ -22,7 +22,7 @@
   <parent>
     <groupId>org.apache.carbondata</groupId>
     <artifactId>carbondata-parent</artifactId>
-    <version>1.6.0-SNAPSHOT</version>
+    <version>2.0.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
@@ -61,6 +61,16 @@
       <artifactId>carbondata-spark2</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.carbondata</groupId>
+      <artifactId>carbondata-mv-plan</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.carbondata</groupId>
+      <artifactId>carbondata-mv-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -97,8 +107,12 @@
               <exclude>org.apache.spark:*</exclude>
               <exclude>org.apache.zookeeper:*</exclude>
               <exclude>org.apache.avro:*</exclude>
+              <exclude>org.apache.hive:*</exclude>
               <exclude>com.google.guava:guava</exclude>
               <exclude>org.xerial.snappy:snappy-java</exclude>
+              <exclude>*:servlet-api</exclude>
+              <exclude>*:javax.inject</exclude>
+              <exclude>javax.activation:activation</exclude>
               <!--add more items to be excluded from the assembly-->
             </excludes>
           </artifactSet>
@@ -176,21 +190,6 @@
           </plugin>
         </plugins>
       </build>
-    </profile>
-    <profile>
-      <id>mv</id>
-      <dependencies>
-        <dependency>
-          <groupId>org.apache.carbondata</groupId>
-          <artifactId>carbondata-mv-plan</artifactId>
-          <version>${project.version}</version>
-        </dependency>
-        <dependency>
-          <groupId>org.apache.carbondata</groupId>
-          <artifactId>carbondata-mv-core</artifactId>
-          <version>${project.version}</version>
-        </dependency>
-      </dependencies>
     </profile>
   </profiles>
 

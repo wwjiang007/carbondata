@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.chunk.reader.measure;
 
 import java.io.IOException;
@@ -55,7 +56,8 @@ public abstract class AbstractMeasureChunkReader implements MeasureColumnChunkRe
     this.numberOfRows = numberOfRows;
   }
 
-  @Override public void decodeColumnPageAndFillVector(MeasureRawColumnChunk measureRawColumnChunk,
+  @Override
+  public void decodeColumnPageAndFillVector(MeasureRawColumnChunk measureRawColumnChunk,
       int pageNumber, ColumnVectorInfo vectorInfo, ReusableDataBuffer reusableDataBuffer)
       throws IOException, MemoryException {
     throw new UnsupportedOperationException(

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.steps;
 
 import java.io.IOException;
@@ -62,7 +63,8 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
         CarbonUtil.getLocalDictionaryModel(configuration.getTableSpec().getCarbonTable());
   }
 
-  @Override public void initialize() throws IOException {
+  @Override
+  public void initialize() throws IOException {
     super.initialize();
     child.initialize();
   }
@@ -73,7 +75,8 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
             String.valueOf(configuration.getTaskNo()), configuration.getSegmentId(), false, false);
   }
 
-  @Override public Iterator<CarbonRowBatch>[] execute() throws CarbonDataLoadingException {
+  @Override
+  public Iterator<CarbonRowBatch>[] execute() throws CarbonDataLoadingException {
     Iterator<CarbonRowBatch>[] iterators = child.execute();
     CarbonTableIdentifier tableIdentifier =
         configuration.getTableIdentifier().getCarbonTableIdentifier();
@@ -121,7 +124,8 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
     return null;
   }
 
-  @Override protected String getStepName() {
+  @Override
+  protected String getStepName() {
     return "Data Batch Writer";
   }
 
@@ -178,7 +182,8 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
     rowCounter.getAndAdd(batchSize);
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     if (!closed) {
       super.close();
       if (null != this.carbonFactHandler) {

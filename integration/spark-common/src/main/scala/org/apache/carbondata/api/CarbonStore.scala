@@ -21,6 +21,7 @@ import java.lang.Long
 
 import scala.collection.JavaConverters._
 
+import org.apache.commons.lang3.StringUtils
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.util.CarbonException
@@ -84,6 +85,13 @@ object CarbonStore {
               "NA"
             }
 
+          val path =
+            if (StringUtils.isNotEmpty(load.getPath)) {
+              load.getPath
+            } else {
+              "NA"
+            }
+
           val startTime =
             if (load.getLoadStartTime == CarbonCommonConstants.SEGMENT_LOAD_TIME_DEFAULT) {
               "NA"
@@ -98,7 +106,7 @@ object CarbonStore {
               new java.sql.Timestamp(load.getLoadEndTime).toString
             }
 
-          val (dataSize, indexSize) = if (load.getFileFormat == FileFormat.ROW_V1) {
+          val (dataSize, indexSize) = if (load.getFileFormat.equals(FileFormat.ROW_V1)) {
             // for streaming segment, we should get the actual size from the index file
             // since it is continuously inserting data
             val segmentDir = CarbonTablePath.getSegmentPath(tablePath, load.getLoadName)
@@ -112,9 +120,14 @@ object CarbonStore {
               (-1L, -1L)
             }
           } else {
-            // for batch segment, we can get the data size from table status file directly
-            (if (load.getDataSize == null) -1L else load.getDataSize.toLong,
-              if (load.getIndexSize == null) -1L else load.getIndexSize.toLong)
+            // If the added segment is other than carbon segment then we can only display the data
+            // size and not index size, we can get the data size from table status file directly
+            if (!load.getFileFormat.isCarbonFormat) {
+              (if (load.getIndexSize == null) -1L else load.getIndexSize.toLong, -1L)
+            } else {
+              (if (load.getDataSize == null) -1L else load.getDataSize.toLong,
+                if (load.getIndexSize == null) -1L else load.getIndexSize.toLong)
+            }
           }
 
           if (showHistory) {
@@ -124,10 +137,11 @@ object CarbonStore {
               startTime,
               endTime,
               mergedTo,
-              load.getFileFormat.toString,
+              load.getFileFormat.toString.toUpperCase,
               load.getVisibility,
               Strings.formatSize(dataSize.toFloat),
-              Strings.formatSize(indexSize.toFloat))
+              Strings.formatSize(indexSize.toFloat),
+              path)
           } else {
             Row(
               load.getLoadName,
@@ -135,9 +149,10 @@ object CarbonStore {
               startTime,
               endTime,
               mergedTo,
-              load.getFileFormat.toString,
+              load.getFileFormat.toString.toUpperCase,
               Strings.formatSize(dataSize.toFloat),
-              Strings.formatSize(indexSize.toFloat))
+              Strings.formatSize(indexSize.toFloat),
+              path)
           }
         }.toSeq
     } else {

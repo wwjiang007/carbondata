@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap;
 
 import java.io.DataInput;
@@ -69,6 +70,21 @@ public class Segment implements Serializable, Writable {
 
   private long indexSize = 0;
 
+  /**
+   * Whether to cache the segment data maps in executors or not.
+   */
+  private boolean isCacheable = true;
+
+  /**
+   * Path of segment where it exists
+   */
+  private transient String segmentPath;
+
+  /**
+   * Properties of the segment.
+   */
+  private transient Map<String, String> options;
+
   public Segment() {
 
   }
@@ -99,6 +115,13 @@ public class Segment implements Serializable, Writable {
     } else {
       segmentString = segmentNo;
     }
+  }
+
+  public Segment(String segmentNo, String segmentFileName, String segmentPath,
+      Map<String, String> options) {
+    this(segmentNo, segmentFileName);
+    this.segmentPath = segmentPath;
+    this.options = options;
   }
 
   /**
@@ -255,18 +278,21 @@ public class Segment implements Serializable, Writable {
     this.filteredIndexShardNames.add(filteredIndexShardName);
   }
 
-  @Override public boolean equals(Object o) {
+  @Override
+  public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     Segment segment = (Segment) o;
     return Objects.equals(segmentNo, segment.segmentNo);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return Objects.hash(segmentNo);
   }
 
-  @Override public String toString() {
+  @Override
+  public String toString() {
     return segmentString;
   }
 
@@ -282,7 +308,40 @@ public class Segment implements Serializable, Writable {
     this.indexSize = indexSize;
   }
 
-  @Override public void write(DataOutput out) throws IOException {
+  public boolean isCacheable() {
+    return isCacheable;
+  }
+
+  public void setCacheable(boolean cacheable) {
+    isCacheable = cacheable;
+  }
+
+  public String getSegmentPath() {
+    if (segmentPath == null) {
+      if (loadMetadataDetails != null) {
+        segmentPath = loadMetadataDetails.getPath();
+      }
+    }
+    return segmentPath;
+  }
+
+  public Map<String, String> getOptions() {
+    return options;
+  }
+
+  public void setOptions(Map<String, String> options) {
+    this.options = options;
+  }
+
+  public boolean isCarbonSegment() {
+    if (loadMetadataDetails != null) {
+      return loadMetadataDetails.isCarbonFormat();
+    }
+    return true;
+  }
+
+  @Override
+  public void write(DataOutput out) throws IOException {
     out.writeUTF(segmentNo);
     boolean writeSegmentFileName = segmentFileName != null;
     out.writeBoolean(writeSegmentFileName);
@@ -302,7 +361,8 @@ public class Segment implements Serializable, Writable {
     out.writeLong(indexSize);
   }
 
-  @Override public void readFields(DataInput in) throws IOException {
+  @Override
+  public void readFields(DataInput in) throws IOException {
     this.segmentNo = in.readUTF();
     if (in.readBoolean()) {
       this.segmentFileName = in.readUTF();

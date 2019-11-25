@@ -1209,6 +1209,17 @@ public final class CarbonCommonConstants {
 
   public static final String CARBON_ENABLE_RANGE_COMPACTION_DEFAULT = "true";
 
+  @CarbonProperty
+  /**
+   * size based threshold for local dictionary in mb.
+   */
+  public static final String CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB =
+      "carbon.local.dictionary.size.threshold.inmb";
+
+  public static final int CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB_DEFAULT = 4;
+
+  public static final int CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB_MAX = 16;
+
   //////////////////////////////////////////////////////////////////////////////////////////
   // Query parameter start here
   //////////////////////////////////////////////////////////////////////////////////////////
@@ -1305,6 +1316,16 @@ public final class CarbonCommonConstants {
   public static final String IS_DRIVER_INSTANCE = "is.driver.instance";
 
   public static final String IS_DRIVER_INSTANCE_DEFAULT = "false";
+
+  /**
+   * property to set input metrics update interval (in records count), after every interval,
+   * input metrics will be updated to spark, else will be update in the end of query
+   */
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String INPUT_METRICS_UPDATE_INTERVAL = "carbon.input.metrics.update.interval";
+
+  public static final Long INPUT_METRICS_UPDATE_INTERVAL_DEFAULT = 500000L;
+
 
   /**
    * property for enabling unsafe based query processing
@@ -1472,6 +1493,15 @@ public final class CarbonCommonConstants {
       "carbon.max.executor.threads.for.block.pruning";
 
   public static final String CARBON_MAX_EXECUTOR_THREADS_FOR_BLOCK_PRUNING_DEFAULT = "4";
+
+  /*
+   * whether to enable prefetch for query
+   */
+  @CarbonProperty
+  public static final String CARBON_QUERY_PREFETCH_ENABLE =
+      "carbon.query.prefetch.enable";
+
+  public static final String CARBON_QUERY_PREFETCH_ENABLE_DEFAULT = "true";
 
   //////////////////////////////////////////////////////////////////////////////////////////
   // Datamap parameter start here
@@ -1669,6 +1699,11 @@ public final class CarbonCommonConstants {
    * FACT_FILE_EXT
    */
   public static final String FACT_FILE_EXT = ".carbondata";
+
+  /**
+   * PARQUET_FILE_EXT
+   */
+  public static final String PARQUET_FILE_EXT = ".parquet";
 
   /**
    * DELETE_DELTA_FILE_EXT
@@ -2177,6 +2212,12 @@ public final class CarbonCommonConstants {
   public static final String CARBON_ENABLE_INDEX_SERVER = "carbon.enable.index.server";
 
   /**
+   * Configured property to enable/disable prepriming in index server
+   */
+  public static final String CARBON_INDEXSEVER_ENABLE_PREPRIMING =
+          "carbon.indexserver.enable.prepriming";
+
+  /**
    * Property is used to enable/disable fallback for indexserver.
    * Used for testing purposes only.
    */
@@ -2223,7 +2264,7 @@ public final class CarbonCommonConstants {
   /**
    * min value for in memory serialization size
    */
-  public static final int CARBON_INDEX_SERVER_SERIALIZATION_THRESHOLD_MIN = 100;
+  public static final int CARBON_INDEX_SERVER_SERIALIZATION_THRESHOLD_MIN = 0;
 
   /**
    * max value for in memory serialization size
@@ -2244,4 +2285,15 @@ public final class CarbonCommonConstants {
    * hive column-name maximum length
    */
   public static final int MAXIMUM_CHAR_LENGTH = 128;
+
+  /**
+   * Carbon property for timeseries MV to define the first day of week
+   */
+  public static final String CARBON_TIMESERIES_FIRST_DAY_OF_WEEK =
+      "carbon.timeseries.first.day.of.week";
+
+  /**
+   * Default first day of week
+   */
+  public static final String CARBON_TIMESERIES_FIRST_DAY_OF_WEEK_DEFAULT = "SUNDAY";
 }

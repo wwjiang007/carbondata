@@ -14,13 +14,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.localdictionary.dictionaryholder;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.carbondata.core.cache.dictionary.DictionaryByteArrayWrapper;
+import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.localdictionary.exception.DictionaryThresholdReachedException;
+import org.apache.carbondata.core.util.CarbonProperties;
 
 /**
  * Map based dictionary holder class, it will use map to hold
@@ -51,6 +54,11 @@ public class MapBasedDictionaryStore implements DictionaryStore {
   private int dictionaryThreshold;
 
   /**
+   * dictionary threshold size in bytes
+   */
+  private long dictionarySizeThresholdInBytes;
+
+  /**
    * for checking threshold is reached or not
    */
   private boolean isThresholdReached;
@@ -62,6 +70,8 @@ public class MapBasedDictionaryStore implements DictionaryStore {
 
   public MapBasedDictionaryStore(int dictionaryThreshold) {
     this.dictionaryThreshold = dictionaryThreshold;
+    this.dictionarySizeThresholdInBytes = Integer.parseInt(CarbonProperties.getInstance()
+        .getProperty(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB)) << 20;
     this.dictionary = new ConcurrentHashMap<>();
     this.referenceDictionaryArray = new DictionaryByteArrayWrapper[dictionaryThreshold];
   }
@@ -73,7 +83,8 @@ public class MapBasedDictionaryStore implements DictionaryStore {
    * @param data dictionary key
    * @return dictionary value
    */
-  @Override public int putIfAbsent(byte[] data) throws DictionaryThresholdReachedException {
+  @Override
+  public int putIfAbsent(byte[] data) throws DictionaryThresholdReachedException {
     // check if threshold has already reached
     checkIfThresholdReached();
     DictionaryByteArrayWrapper key = new DictionaryByteArrayWrapper(data);
@@ -93,7 +104,7 @@ public class MapBasedDictionaryStore implements DictionaryStore {
           value = ++lastAssignValue;
           currentSize += data.length;
           // if new value is greater than threshold
-          if (value > dictionaryThreshold || currentSize >= Integer.MAX_VALUE) {
+          if (value > dictionaryThreshold || currentSize > dictionarySizeThresholdInBytes) {
             // set the threshold boolean to true
             isThresholdReached = true;
             // throw exception
@@ -111,9 +122,10 @@ public class MapBasedDictionaryStore implements DictionaryStore {
 
   private void checkIfThresholdReached() throws DictionaryThresholdReachedException {
     if (isThresholdReached) {
-      if (currentSize >= Integer.MAX_VALUE) {
+      if (currentSize > dictionarySizeThresholdInBytes) {
         throw new DictionaryThresholdReachedException(
-            "Unable to generate dictionary. Dictionary Size crossed 2GB limit");
+            "Unable to generate dictionary. Dictionary Size crossed bytes: "
+                + dictionarySizeThresholdInBytes);
       } else {
         throw new DictionaryThresholdReachedException(
             "Unable to generate dictionary value. Dictionary threshold reached");
@@ -126,7 +138,8 @@ public class MapBasedDictionaryStore implements DictionaryStore {
    *
    * @return
    */
-  @Override public boolean isThresholdReached() {
+  @Override
+  public boolean isThresholdReached() {
     return isThresholdReached;
   }
 
@@ -137,7 +150,8 @@ public class MapBasedDictionaryStore implements DictionaryStore {
    *              Caller will take of passing proper value
    * @return dictionary key based on value
    */
-  @Override public byte[] getDictionaryKeyBasedOnValue(int value) {
+  @Override
+  public byte[] getDictionaryKeyBasedOnValue(int value) {
     assert referenceDictionaryArray != null;
     // reference array index will be -1 of the value as dictionary value starts from 1
     return referenceDictionaryArray[value - 1].getData();

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.result.iterator;
 
 import java.util.List;
@@ -37,7 +38,8 @@ public class DetailQueryResultIterator extends AbstractDetailQueryResultIterator
     super(infos, queryModel, execService);
   }
 
-  @Override public RowBatch next() {
+  @Override
+  public RowBatch next() {
     return getBatchResult();
   }
 

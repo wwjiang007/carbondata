@@ -283,6 +283,7 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
       }
     }
   }
+
   @Override
   public void update(float value) {
     if (minFloat > value) {
@@ -401,7 +402,8 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
     return dataType;
   }
 
-  @Override public boolean writeMinMax() {
+  @Override
+  public boolean writeMinMax() {
     return true;
   }
 

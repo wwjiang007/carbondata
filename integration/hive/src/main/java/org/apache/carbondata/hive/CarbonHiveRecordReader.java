@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.hive;
 
 import java.io.IOException;
@@ -117,7 +118,8 @@ class CarbonHiveRecordReader extends CarbonRecordReader<ArrayWritable>
 
   }
 
-  @Override public boolean next(Void aVoid, ArrayWritable value) throws IOException {
+  @Override
+  public boolean next(Void aVoid, ArrayWritable value) throws IOException {
     if (carbonIterator.hasNext()) {
       Object obj = readSupport.readRow(carbonIterator.next());
       recordReaderCounter++;
@@ -137,19 +139,23 @@ class CarbonHiveRecordReader extends CarbonRecordReader<ArrayWritable>
     }
   }
 
-  @Override public Void createKey() {
+  @Override
+  public Void createKey() {
     return null;
   }
 
-  @Override public ArrayWritable createValue() {
+  @Override
+  public ArrayWritable createValue() {
     return valueObj;
   }
 
-  @Override public long getPos() throws IOException {
+  @Override
+  public long getPos() throws IOException {
     return recordReaderCounter;
   }
 
-  @Override public float getProgress() throws IOException {
+  @Override
+  public float getProgress() throws IOException {
     return 0;
   }
 

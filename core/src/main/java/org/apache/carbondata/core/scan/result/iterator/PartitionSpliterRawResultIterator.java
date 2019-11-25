@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.result.iterator;
 
 import org.apache.carbondata.common.CarbonIterator;
@@ -29,7 +30,8 @@ public class PartitionSpliterRawResultIterator extends CarbonIterator<Object[]> 
     this.iterator = iterator;
   }
 
-  @Override public boolean hasNext() {
+  @Override
+  public boolean hasNext() {
     if (null == batch || checkBatchEnd(batch)) {
       if (iterator.hasNext()) {
         batch = iterator.next();
@@ -42,7 +44,8 @@ public class PartitionSpliterRawResultIterator extends CarbonIterator<Object[]> 
     return !checkBatchEnd(batch);
   }
 
-  @Override public Object[] next() {
+  @Override
+  public Object[] next() {
     if (batch == null) {
       batch = iterator.next();
     }

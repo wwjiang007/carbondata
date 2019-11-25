@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.readcommitter;
 
 import java.io.IOException;
@@ -111,7 +112,8 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
     this.loadMetadataDetails = loadMetadataDetailsArray;
   }
 
-  @Override public LoadMetadataDetails[] getSegmentList() throws IOException {
+  @Override
+  public LoadMetadataDetails[] getSegmentList() throws IOException {
     try {
       if (loadMetadataDetails == null) {
         takeCarbonIndexFileSnapShot();
@@ -123,7 +125,8 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
     }
   }
 
-  @Override public Map<String, String> getCommittedIndexFile(Segment segment) throws IOException {
+  @Override
+  public Map<String, String> getCommittedIndexFile(Segment segment) throws IOException {
     Map<String, String> indexFileStore = new HashMap<>();
     Map<String, List<String>> snapShot = readCommittedIndexFileSnapShot.getSegmentIndexFileMap();
     String segName;
@@ -176,7 +179,8 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
     }
   }
 
-  @Override public void takeCarbonIndexFileSnapShot() throws IOException {
+  @Override
+  public void takeCarbonIndexFileSnapShot() throws IOException {
     // Read the current file Path get the list of indexes from the path.
     CarbonFile file = FileFactory.getCarbonFile(carbonFilePath, configuration);
 
@@ -244,11 +248,13 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
     return configuration;
   }
 
-  @Override public void setConfiguration(Configuration configuration) {
+  @Override
+  public void setConfiguration(Configuration configuration) {
     this.configuration = configuration;
   }
 
-  @Override public String getFilePath() {
+  @Override
+  public String getFilePath() {
     return carbonFilePath;
   }
 }

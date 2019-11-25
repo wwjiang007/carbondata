@@ -83,7 +83,6 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
     this.name = name;
   }
 
-
   /**
    * constructor
    * @param name
@@ -175,11 +174,13 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
 
   }
 
-  @Override public boolean getIsColumnDictionary() {
+  @Override
+  public boolean getIsColumnDictionary() {
     return isDictionaryColumn;
   }
 
-  @Override public void writeByteArray(ArrayObject input, DataOutputStream dataOutputStream,
+  @Override
+  public void writeByteArray(ArrayObject input, DataOutputStream dataOutputStream,
       BadRecordLogHolder logHolder) throws IOException, DictionaryGenerationException {
     if (input == null) {
       dataOutputStream.writeInt(1);

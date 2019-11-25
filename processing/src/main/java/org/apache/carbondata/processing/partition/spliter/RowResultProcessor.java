@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.partition.spliter;
 
 import java.util.List;
@@ -44,7 +45,6 @@ public class RowResultProcessor {
   private static final Logger LOGGER =
       LogServiceFactory.getLogService(RowResultProcessor.class.getName());
 
-
   public RowResultProcessor(CarbonTable carbonTable, CarbonLoadModel loadModel,
       SegmentProperties segProp, String[] tempStoreLocation, Integer bucketId) {
     CarbonDataProcessorUtil.createLocations(tempStoreLocation);
@@ -57,7 +57,7 @@ public class RowResultProcessor {
         CarbonFactDataHandlerModel.getCarbonFactDataHandlerModel(loadModel, carbonTable,
             segProp, tableName, tempStoreLocation, carbonStoreLocation);
     CarbonDataFileAttributes carbonDataFileAttributes =
-        new CarbonDataFileAttributes(Long.parseLong(loadModel.getTaskNo()),
+        new CarbonDataFileAttributes(loadModel.getTaskNo(),
             loadModel.getFactTimeStamp());
     carbonFactDataHandlerModel.setCarbonDataFileAttributes(carbonDataFileAttributes);
     carbonFactDataHandlerModel.setBucketId(bucketId);
@@ -80,8 +80,7 @@ public class RowResultProcessor {
       for (Object[] row: resultList) {
         addRow(row);
       }
-      if (isDataPresent)
-      {
+      if (isDataPresent) {
         this.dataHandler.finish();
       }
       processStatus = true;

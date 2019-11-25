@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.scanner.impl;
 
 import java.io.IOException;
@@ -165,7 +166,8 @@ public class BlockletFullScanner implements BlockletScanner {
     return emptyResult;
   }
 
-  @Override public boolean isScanRequired(DataRefNode dataBlock) {
+  @Override
+  public boolean isScanRequired(DataRefNode dataBlock) {
     // For non filter it is always true
     return true;
   }

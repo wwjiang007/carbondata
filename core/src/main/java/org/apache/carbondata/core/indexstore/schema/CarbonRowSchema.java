@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.schema;
 
 import java.io.Serializable;
@@ -63,6 +64,7 @@ public abstract class CarbonRowSchema implements Serializable {
   public int getBytePosition() {
     return this.bytePosition;
   }
+
   /**
    * schema type
    * @return
@@ -86,7 +88,8 @@ public abstract class CarbonRowSchema implements Serializable {
       this.length = length;
     }
 
-    @Override public int getLength() {
+    @Override
+    public int getLength() {
       if (length == 0) {
         return dataType.getSizeInBytes();
       } else {
@@ -94,7 +97,8 @@ public abstract class CarbonRowSchema implements Serializable {
       }
     }
 
-    @Override public DataMapSchemaType getSchemaType() {
+    @Override
+    public DataMapSchemaType getSchemaType() {
       return DataMapSchemaType.FIXED;
     }
   }
@@ -111,11 +115,13 @@ public abstract class CarbonRowSchema implements Serializable {
       this.isVarcharType = isVarcharType;
     }
 
-    @Override public int getLength() {
+    @Override
+    public int getLength() {
       return dataType.getSizeInBytes();
     }
 
-    @Override public DataMapSchemaType getSchemaType() {
+    @Override
+    public DataMapSchemaType getSchemaType() {
       return isVarcharType ? DataMapSchemaType.VARIABLE_INT : DataMapSchemaType.VARIABLE_SHORT;
     }
   }
@@ -129,7 +135,8 @@ public abstract class CarbonRowSchema implements Serializable {
       this.childSchemas = childSchemas;
     }
 
-    @Override public int getLength() {
+    @Override
+    public int getLength() {
       return dataType.getSizeInBytes();
     }
 
@@ -137,7 +144,8 @@ public abstract class CarbonRowSchema implements Serializable {
       return childSchemas;
     }
 
-    @Override public DataMapSchemaType getSchemaType() {
+    @Override
+    public DataMapSchemaType getSchemaType() {
       return DataMapSchemaType.STRUCT;
     }
   }

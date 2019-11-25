@@ -28,6 +28,7 @@ import scala.collection.mutable.ListBuffer
 import scala.util.Random
 import scala.util.control.Breaks._
 
+import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.NullWritable
@@ -56,17 +57,18 @@ import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.dictionary.server.DictionaryServer
 import org.apache.carbondata.core.exception.ConcurrentOperationException
 import org.apache.carbondata.core.locks.{CarbonLockFactory, ICarbonLock, LockUsage}
-import org.apache.carbondata.core.metadata.{CarbonTableIdentifier, ColumnarFormatVersion, SegmentFileStore}
+import org.apache.carbondata.core.metadata.{AbsoluteTableIdentifier, CarbonTableIdentifier, ColumnarFormatVersion, SegmentFileStore}
 import org.apache.carbondata.core.metadata.datatype.DataTypes
 import org.apache.carbondata.core.metadata.schema.partition.PartitionType
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.mutate.CarbonUpdateUtil
+import org.apache.carbondata.core.readcommitter.TableStatusReadCommittedScope
 import org.apache.carbondata.core.scan.partition.PartitionUtil
 import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatus, SegmentStatusManager}
 import org.apache.carbondata.core.util.{ByteUtil, CarbonProperties, CarbonUtil, ThreadLocalSessionInfo}
 import org.apache.carbondata.core.util.path.CarbonTablePath
-import org.apache.carbondata.events.{OperationContext, OperationListenerBus}
-import org.apache.carbondata.indexserver.IndexServer
+import org.apache.carbondata.events.{IndexServerLoadEvent, OperationContext, OperationListenerBus}
+import org.apache.carbondata.indexserver.{DistributedRDDUtils, IndexServer}
 import org.apache.carbondata.processing.exception.DataLoadingException
 import org.apache.carbondata.processing.loading.FailureCauses
 import org.apache.carbondata.processing.loading.csvinput.{BlockDetails, CSVInputFormat, StringArrayWritable}
@@ -276,7 +278,9 @@ object CarbonDataRDDFactory {
         } finally {
           executor.shutdownNow()
           compactor.deletePartialLoadsInCompaction()
-          compactionLock.unlock()
+          if (compactionModel.compactionType != CompactionType.IUD_UPDDEL_DELTA) {
+            compactionLock.unlock()
+          }
         }
       }
     }
@@ -365,7 +369,7 @@ object CarbonDataRDDFactory {
             }
           }
         } else {
-          status = if (carbonTable.getPartitionInfo(carbonTable.getTableName) != null) {
+          status = if (carbonTable.getPartitionInfo() != null) {
             loadDataForPartitionTable(sqlContext, dataFrame, carbonLoadModel, hadoopConf)
           } else if (dataFrame.isEmpty && isSortTable &&
                      carbonLoadModel.getRangePartitionColumn != null &&
@@ -532,7 +536,7 @@ object CarbonDataRDDFactory {
         SegmentFileStore.writeSegmentFile(carbonTable, carbonLoadModel.getSegmentId,
           String.valueOf(carbonLoadModel.getFactTimeStamp))
 
-      SegmentFileStore.updateSegmentFile(
+      SegmentFileStore.updateTableStatusFile(
         carbonTable,
         carbonLoadModel.getSegmentId,
         segmentFileName,
@@ -589,6 +593,12 @@ object CarbonDataRDDFactory {
                      s"${ carbonLoadModel.getDatabaseName }.${ carbonLoadModel.getTableName }")
       }
 
+      // code to handle Pre-Priming cache for loading
+
+      if (!StringUtils.isEmpty(carbonLoadModel.getSegmentId)) {
+        DistributedRDDUtils.triggerPrepriming(sqlContext.sparkSession, carbonTable, Seq(),
+          operationContext, hadoopConf, List(carbonLoadModel.getSegmentId))
+      }
       try {
         // compaction handling
         if (carbonTable.isHivePartitionTable) {
@@ -616,7 +626,7 @@ object CarbonDataRDDFactory {
   /**
    * clear datamap files for segment
    */
-  private def clearDataMapFiles(carbonTable: CarbonTable, segmentId: String): Unit = {
+  def clearDataMapFiles(carbonTable: CarbonTable, segmentId: String): Unit = {
     try {
       val segments = List(new Segment(segmentId)).asJava
       DataMapStoreManager.getInstance().getAllDataMap(carbonTable).asScala
@@ -644,14 +654,16 @@ object CarbonDataRDDFactory {
       SegmentStatusManager.readTableStatusFile(
         CarbonTablePath.getTableStatusFilePath(carbonTable.getTablePath))
     val segmentFiles = segmentDetails.asScala.map { seg =>
-      val segmentFile =
-        metadataDetails.find(_.getLoadName.equals(seg.getSegmentNo)).get.getSegmentFile
+      val load =
+        metadataDetails.find(_.getLoadName.equals(seg.getSegmentNo)).get
+      val segmentFile = load.getSegmentFile
       var segmentFiles: Seq[CarbonFile] = Seq.empty[CarbonFile]
 
       val file = SegmentFileStore.writeSegmentFile(
         carbonTable,
         seg.getSegmentNo,
-        String.valueOf(System.currentTimeMillis()))
+        String.valueOf(System.currentTimeMillis()),
+        load.getPath)
 
       if (segmentFile != null) {
         segmentFiles ++= FileFactory.getCarbonFile(
@@ -770,7 +782,6 @@ object CarbonDataRDDFactory {
                              CarbonCommonConstants.UNDERSCORE +
                              (index + "_0")
 
-        loadMetadataDetails.setPartitionCount(CarbonTablePath.DEPRECATED_PARTITION_ID)
         loadMetadataDetails.setLoadName(segId)
         loadMetadataDetails.setSegmentStatus(SegmentStatus.LOAD_FAILURE)
         carbonLoadModel.setSegmentId(segId)
@@ -984,7 +995,7 @@ object CarbonDataRDDFactory {
       carbonLoadModel: CarbonLoadModel,
       hadoopConf: Configuration): RDD[Row] = {
     val carbonTable = carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
-    val partitionInfo = carbonTable.getPartitionInfo(carbonTable.getTableName)
+    val partitionInfo = carbonTable.getPartitionInfo()
     val partitionColumn = partitionInfo.getColumnSchemaList.get(0).getColumnName
     val partitionColumnDataType = partitionInfo.getColumnSchemaList.get(0).getDataType
     val columns = carbonLoadModel.getCsvHeaderColumns

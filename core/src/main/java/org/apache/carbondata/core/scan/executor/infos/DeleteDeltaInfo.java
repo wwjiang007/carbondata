@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.executor.infos;
 
 import java.util.Arrays;
@@ -49,7 +50,8 @@ public class DeleteDeltaInfo {
     return latestDeleteDeltaFileTimestamp;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     final int prime = 31;
     int result = 1;
     result = prime * result + Arrays.hashCode(deleteDeltaFile);
@@ -59,7 +61,8 @@ public class DeleteDeltaInfo {
     return result;
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }

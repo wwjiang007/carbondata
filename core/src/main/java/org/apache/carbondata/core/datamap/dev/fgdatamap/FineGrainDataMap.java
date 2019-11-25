@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap.dev.fgdatamap;
 
 import java.io.IOException;
@@ -53,7 +54,8 @@ public abstract class FineGrainDataMap implements DataMap<FineGrainBlocklet> {
     throw new UnsupportedOperationException("Operation not supported");
   }
 
-  @Override public int getNumberOfEntries() {
+  @Override
+  public int getNumberOfEntries() {
     // keep default, one record in one datamap
     return 1;
   }

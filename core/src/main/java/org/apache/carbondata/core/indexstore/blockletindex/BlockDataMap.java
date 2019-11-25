@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.blockletindex;
 
 import java.io.IOException;
@@ -29,6 +30,7 @@ import java.util.Map;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datamap.dev.DataMapModel;
 import org.apache.carbondata.core.datamap.dev.cgdatamap.CoarseGrainDataMap;
@@ -53,7 +55,6 @@ import org.apache.carbondata.core.metadata.blocklet.index.BlockletIndex;
 import org.apache.carbondata.core.metadata.blocklet.index.BlockletMinMaxIndex;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
-import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.profiler.ExplainCollector;
 import org.apache.carbondata.core.scan.expression.Expression;
@@ -61,10 +62,7 @@ import org.apache.carbondata.core.scan.filter.FilterExpressionProcessor;
 import org.apache.carbondata.core.scan.filter.FilterUtil;
 import org.apache.carbondata.core.scan.filter.executer.FilterExecuter;
 import org.apache.carbondata.core.scan.filter.executer.ImplicitColumnFilterExecutor;
-import org.apache.carbondata.core.scan.filter.intf.FilterOptimizer;
-import org.apache.carbondata.core.scan.filter.optimizer.RangeFilterOptmizer;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
-import org.apache.carbondata.core.scan.model.QueryModel;
 import org.apache.carbondata.core.util.BlockletDataMapUtil;
 import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.DataFileFooterConverter;
@@ -99,7 +97,8 @@ public class BlockDataMap extends CoarseGrainDataMap
   /**
    * index of segmentProperties in the segmentProperties holder
    */
-  protected int segmentPropertiesIndex;
+  protected transient SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper
+      segmentPropertiesWrapper;
   /**
    * flag to check for store from 1.1 or any prior version
    */
@@ -110,7 +109,8 @@ public class BlockDataMap extends CoarseGrainDataMap
    */
   protected boolean isFilePathStored;
 
-  @Override public void init(DataMapModel dataMapModel)
+  @Override
+  public void init(DataMapModel dataMapModel)
       throws IOException, MemoryException {
     long startTime = System.currentTimeMillis();
     assert (dataMapModel instanceof BlockletDataMapModel);
@@ -132,8 +132,11 @@ public class BlockDataMap extends CoarseGrainDataMap
     // structure
     byte[] filePath = null;
     boolean isPartitionTable = blockletDataMapInfo.getCarbonTable().isHivePartitionTable();
-    if (isPartitionTable || !blockletDataMapInfo.getCarbonTable().isTransactionalTable()
-        || blockletDataMapInfo.getCarbonTable().isSupportFlatFolder()) {
+    if (isPartitionTable || !blockletDataMapInfo.getCarbonTable().isTransactionalTable() ||
+        blockletDataMapInfo.getCarbonTable().isSupportFlatFolder() ||
+        // if the segment data is written in tablepath then no need to store whole path of file.
+        !blockletDataMapInfo.getFilePath().startsWith(
+            blockletDataMapInfo.getCarbonTable().getTablePath())) {
       filePath = path.getParent().toString().getBytes(CarbonCommonConstants.DEFAULT_CHARSET);
       isFilePathStored = true;
     }
@@ -204,10 +207,10 @@ public class BlockDataMap extends CoarseGrainDataMap
       DataFileFooter fileFooter) throws IOException {
     List<ColumnSchema> columnInTable = fileFooter.getColumnInTable();
     int[] columnCardinality = fileFooter.getSegmentInfo().getColumnCardinality();
-    segmentPropertiesIndex = SegmentPropertiesAndSchemaHolder.getInstance()
+    segmentPropertiesWrapper = SegmentPropertiesAndSchemaHolder.getInstance()
         .addSegmentProperties(blockletDataMapInfo.getCarbonTable(),
             columnInTable, columnCardinality, blockletDataMapInfo.getSegmentId());
-    return getSegmentProperties();
+    return segmentPropertiesWrapper.getSegmentProperties();
   }
 
   /**
@@ -485,8 +488,7 @@ public class BlockDataMap extends CoarseGrainDataMap
       return getTableTaskInfo(SUMMARY_INDEX_PATH);
     }
     // create the segment directory path
-    String tablePath = SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentPropertiesWrapper(segmentPropertiesIndex).getTableIdentifier().getTablePath();
+    String tablePath = segmentPropertiesWrapper.getTableIdentifier().getTablePath();
     String segmentId = getTableTaskInfo(SUMMARY_SEGMENTID);
     return CarbonTablePath.getSegmentPath(tablePath, segmentId);
   }
@@ -604,7 +606,8 @@ public class BlockDataMap extends CoarseGrainDataMap
     taskSummaryDMStore = getMemoryDMStore(blockletDataMapModel.isAddToUnsafe());
   }
 
-  @Override public boolean isScanRequired(FilterResolverIntf filterExp) {
+  @Override
+  public boolean isScanRequired(FilterResolverIntf filterExp) {
     FilterExecuter filterExecuter = FilterUtil
         .getFilterExecuterTree(filterExp, getSegmentProperties(), null, getMinMaxCacheColumns());
     DataMapRow unsafeRow = taskSummaryDMStore
@@ -620,8 +623,7 @@ public class BlockDataMap extends CoarseGrainDataMap
   }
 
   protected List<CarbonColumn> getMinMaxCacheColumns() {
-    return SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentPropertiesWrapper(segmentPropertiesIndex).getMinMaxCacheColumns();
+    return segmentPropertiesWrapper.getMinMaxCacheColumns();
   }
 
   /**
@@ -773,19 +775,8 @@ public class BlockDataMap extends CoarseGrainDataMap
   @Override
   public List<Blocklet> prune(Expression expression, SegmentProperties properties,
       List<PartitionSpec> partitions, CarbonTable carbonTable) throws IOException {
-    FilterResolverIntf filterResolverIntf = null;
-    if (expression != null) {
-      QueryModel.FilterProcessVO processVO =
-          new QueryModel.FilterProcessVO(properties.getDimensions(), properties.getMeasures(),
-              new ArrayList<CarbonDimension>());
-      QueryModel.processFilterExpression(processVO, expression, null, null, carbonTable);
-      // Optimize Filter Expression and fit RANGE filters is conditions apply.
-      FilterOptimizer rangeFilterOptimizer = new RangeFilterOptmizer(expression);
-      rangeFilterOptimizer.optimizeFilter();
-      filterResolverIntf =
-          CarbonTable.resolveFilter(expression, carbonTable.getAbsoluteTableIdentifier());
-    }
-    return prune(filterResolverIntf, properties, partitions);
+    return prune(new DataMapFilter(properties, carbonTable, expression).getResolver(), properties,
+        partitions);
   }
 
   @Override
@@ -824,7 +815,8 @@ public class BlockDataMap extends CoarseGrainDataMap
     return found;
   }
 
-  @Override public void finish() {
+  @Override
+  public void finish() {
 
   }
 
@@ -997,7 +989,8 @@ public class BlockDataMap extends CoarseGrainDataMap
     }
   }
 
-  @Override public void clear() {
+  @Override
+  public void clear() {
     if (memoryDMStore != null) {
       memoryDMStore.freeMemory();
     }
@@ -1019,18 +1012,15 @@ public class BlockDataMap extends CoarseGrainDataMap
   }
 
   protected SegmentProperties getSegmentProperties() {
-    return SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentProperties(segmentPropertiesIndex);
+    return segmentPropertiesWrapper.getSegmentProperties();
   }
 
   public int[] getColumnCardinality() {
-    return SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentPropertiesWrapper(segmentPropertiesIndex).getColumnCardinality();
+    return segmentPropertiesWrapper.getColumnCardinality();
   }
 
   public List<ColumnSchema> getColumnSchema() {
-    return SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentPropertiesWrapper(segmentPropertiesIndex).getColumnsInTable();
+    return segmentPropertiesWrapper.getColumnsInTable();
   }
 
   protected AbstractMemoryDMStore getMemoryDMStore(boolean addToUnsafe)
@@ -1045,14 +1035,10 @@ public class BlockDataMap extends CoarseGrainDataMap
   }
 
   protected CarbonRowSchema[] getFileFooterEntrySchema() {
-    return SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentPropertiesWrapper(segmentPropertiesIndex).getBlockFileFooterEntrySchema();
+    return segmentPropertiesWrapper.getBlockFileFooterEntrySchema();
   }
 
   protected CarbonRowSchema[] getTaskSummarySchema() {
-    SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper segmentPropertiesWrapper =
-        SegmentPropertiesAndSchemaHolder.getInstance()
-            .getSegmentPropertiesWrapper(segmentPropertiesIndex);
     try {
       return segmentPropertiesWrapper.getTaskSummarySchemaForBlock(true, isFilePathStored);
     } catch (MemoryException e) {
@@ -1080,15 +1066,12 @@ public class BlockDataMap extends CoarseGrainDataMap
     }
   }
 
-  public void setSegmentPropertiesIndex(int segmentPropertiesIndex) {
-    this.segmentPropertiesIndex = segmentPropertiesIndex;
+  public SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper getSegmentPropertiesWrapper() {
+    return segmentPropertiesWrapper;
   }
 
-  public int getSegmentPropertiesIndex() {
-    return segmentPropertiesIndex;
-  }
-
-  @Override public int getNumberOfEntries() {
+  @Override
+  public int getNumberOfEntries() {
     if (memoryDMStore != null) {
       if (memoryDMStore.getRowCount() == 0) {
         // so that one datamap considered as one record

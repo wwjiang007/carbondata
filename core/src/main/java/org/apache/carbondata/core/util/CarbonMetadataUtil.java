@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.util;
 
 import java.io.IOException;
@@ -191,6 +192,7 @@ public class CarbonMetadataUtil {
     }
     return encodedPages;
   }
+
   public static BlockletIndex getBlockletIndex(EncodedBlocklet encodedBlocklet,
       List<CarbonMeasure> carbonMeasureList) {
     BlockletMinMaxIndex blockletMinMaxIndex = new BlockletMinMaxIndex();
@@ -340,6 +342,7 @@ public class CarbonMetadataUtil {
       return CompressorFactory.NativeSupportedCompressor.SNAPPY.getName();
     }
   }
+
   /**
    * Below method will be used to get the index header
    *
@@ -392,6 +395,7 @@ public class CarbonMetadataUtil {
       if (blockIndexInfo.getBlockletInfo() != null) {
         blockIndex.setBlocklet_info(getBlocletInfo3(blockIndexInfo.getBlockletInfo()));
       }
+      blockIndex.setFile_size(blockIndexInfo.getFileSize());
       thriftBlockIndexList.add(blockIndex);
     }
     return thriftBlockIndexList;
@@ -477,50 +481,40 @@ public class CarbonMetadataUtil {
     ByteBuffer firstBuffer = null;
     ByteBuffer secondBuffer = null;
     if (dataType == DataTypes.BOOLEAN || dataType == DataTypes.BYTE) {
-      return first[0] - second[0];
+      if (first[0] > second[0]) {
+        return 1;
+      } else if (first[0] < second[0]) {
+        return -1;
+      }
+      return 0;
     } else if (dataType == DataTypes.DOUBLE) {
-      firstBuffer = ByteBuffer.allocate(8);
-      firstBuffer.put(first);
-      secondBuffer = ByteBuffer.allocate(8);
-      secondBuffer.put(second);
-      firstBuffer.flip();
-      secondBuffer.flip();
-      double compare = firstBuffer.getDouble() - secondBuffer.getDouble();
-      if (compare > 0) {
-        compare = 1;
-      } else if (compare < 0) {
-        compare = -1;
+      double firstValue = ((ByteBuffer) (ByteBuffer.allocate(8).put(first).flip())).getDouble();
+      double secondValue = ((ByteBuffer) (ByteBuffer.allocate(8).put(second).flip())).getDouble();
+      if (firstValue > secondValue) {
+        return 1;
+      } else if (firstValue < secondValue) {
+        return -1;
       }
-      return (int) compare;
+      return 0;
     } else if (dataType == DataTypes.FLOAT) {
-      firstBuffer = ByteBuffer.allocate(8);
-      firstBuffer.put(first);
-      secondBuffer = ByteBuffer.allocate(8);
-      secondBuffer.put(second);
-      firstBuffer.flip();
-      secondBuffer.flip();
-      double compare = firstBuffer.getFloat() - secondBuffer.getFloat();
-      if (compare > 0) {
-        compare = 1;
-      } else if (compare < 0) {
-        compare = -1;
+      float firstValue = ((ByteBuffer) (ByteBuffer.allocate(8).put(first).flip())).getFloat();
+      float secondValue = ((ByteBuffer) (ByteBuffer.allocate(8).put(second).flip())).getFloat();
+      if (firstValue > secondValue) {
+        return 1;
+      } else if (firstValue < secondValue) {
+        return -1;
       }
-      return (int) compare;
+      return 0;
     } else if (dataType == DataTypes.LONG || dataType == DataTypes.INT
         || dataType == DataTypes.SHORT) {
-      firstBuffer = ByteBuffer.allocate(8);
-      firstBuffer.put(first);
-      secondBuffer = ByteBuffer.allocate(8);
-      secondBuffer.put(second);
-      firstBuffer.flip();
-      secondBuffer.flip();
-      long compare = firstBuffer.getLong() - secondBuffer.getLong();
-      if (compare > 0) {
-        compare = 1;
-      } else if (compare < 0) {
-        compare = -1;
+      long firstValue = ((ByteBuffer) (ByteBuffer.allocate(8).put(first).flip())).getLong();
+      long secondValue = ((ByteBuffer) (ByteBuffer.allocate(8).put(second).flip())).getLong();
+      if (firstValue > secondValue) {
+        return 1;
+      } else if (firstValue < secondValue) {
+        return -1;
       }
-      return (int) compare;
+      return 0;
     } else if (DataTypes.isDecimal(dataType)) {
       return DataTypeUtil.byteToBigDecimal(first).compareTo(DataTypeUtil.byteToBigDecimal(second));
     } else {

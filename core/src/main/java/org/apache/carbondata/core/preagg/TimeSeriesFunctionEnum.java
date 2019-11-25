@@ -23,10 +23,15 @@ package org.apache.carbondata.core.preagg;
 public enum TimeSeriesFunctionEnum {
   SECOND("second", 0),
   MINUTE("minute", 1),
-  HOUR("hour", 2),
-  DAY("day", 3),
-  MONTH("month", 4),
-  YEAR("year", 5);
+  FIVE_MINUTE("five_minute", 2),
+  TEN_MINUTE("ten_minute", 3),
+  FIFTEEN_MINUTE("fifteen_minute", 4),
+  THIRTY_MINUTE("thirty_minute", 5),
+  HOUR("hour", 6),
+  DAY("day", 7),
+  WEEK("week", 8),
+  MONTH("month", 9),
+  YEAR("year", 10);
 
   /**
    * name of the function

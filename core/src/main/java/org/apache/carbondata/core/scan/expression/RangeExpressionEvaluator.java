@@ -194,7 +194,6 @@ public class RangeExpressionEvaluator {
     }
   }
 
-
   private Map<String, List<FilterModificationNode>> convertFilterTreeToMap() {
     // Traverse the Filter Tree and add the nodes in filterExpressionMap.
     // Only those nodes will be added which has got LessThan, LessThanEqualTo
@@ -287,7 +286,7 @@ public class RangeExpressionEvaluator {
     for (Expression exp : expChild.getChildren()) {
       if (exp instanceof ColumnExpression) {
         return ((ColumnExpression) exp).isDimension() &&
-            ! (((ColumnExpression) exp).getDimension().getDataType().isComplexType());
+            !(((ColumnExpression) exp).getDimension().getDataType().isComplexType());
       }
     }
     return false;

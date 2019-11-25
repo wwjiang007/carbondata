@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.block;
 
 import java.util.List;
@@ -71,7 +72,8 @@ public abstract class AbstractIndex implements Cacheable {
     return dataRefNode;
   }
 
-  @Override public long getFileTimeStamp() {
+  @Override
+  public long getFileTimeStamp() {
     return 0;
   }
 
@@ -87,7 +89,8 @@ public abstract class AbstractIndex implements Cacheable {
    *
    * @return
    */
-  @Override public int getAccessCount() {
+  @Override
+  public int getAccessCount() {
     return accessCount.get();
   }
 
@@ -96,11 +99,13 @@ public abstract class AbstractIndex implements Cacheable {
    *
    * @return
    */
-  @Override public long getMemorySize() {
+  @Override
+  public long getMemorySize() {
     return this.memorySize;
   }
 
-  @Override public void invalidate() {
+  @Override
+  public void invalidate() {
 
   }
 

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.filter.executer;
 
 import java.util.BitSet;
@@ -45,7 +46,8 @@ public final class BitSetUpdaterFactory {
    * Below class will be used to updating the bitset in case of include filter
    */
   static class IncludeFilterBitSetUpdater implements FilterBitSetUpdater {
-    @Override public void updateBitset(BitSet bitSet, int bitIndex) {
+    @Override
+    public void updateBitset(BitSet bitSet, int bitIndex) {
       bitSet.set(bitIndex);
     }
   }
@@ -54,7 +56,8 @@ public final class BitSetUpdaterFactory {
    * Below class will be used to updating the bitset in case of exclude filter
    */
   static class ExcludeFilterBitSetUpdater implements FilterBitSetUpdater {
-    @Override public void updateBitset(BitSet bitSet, int bitIndex) {
+    @Override
+    public void updateBitset(BitSet bitSet, int bitIndex) {
       bitSet.flip(bitIndex);
     }
   }

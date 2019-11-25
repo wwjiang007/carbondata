@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.blockletindex;
 
 import java.io.ByteArrayOutputStream;
@@ -27,7 +28,6 @@ import java.util.List;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datamap.dev.DataMapModel;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
-import org.apache.carbondata.core.datastore.block.SegmentPropertiesAndSchemaHolder;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.indexstore.BlockMetaInfo;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
@@ -83,9 +83,6 @@ public class BlockletDataMap extends BlockDataMap implements Serializable {
     if (isLegacyStore) {
       return super.getTaskSummarySchema();
     }
-    SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper segmentPropertiesWrapper =
-        SegmentPropertiesAndSchemaHolder.getInstance()
-            .getSegmentPropertiesWrapper(segmentPropertiesIndex);
     try {
       return segmentPropertiesWrapper.getTaskSummarySchemaForBlocklet(false, isFilePathStored);
     } catch (MemoryException e) {
@@ -98,8 +95,7 @@ public class BlockletDataMap extends BlockDataMap implements Serializable {
     if (isLegacyStore) {
       return super.getFileFooterEntrySchema();
     }
-    return SegmentPropertiesAndSchemaHolder.getInstance()
-        .getSegmentPropertiesWrapper(segmentPropertiesIndex).getBlockletFileFooterEntrySchema();
+    return segmentPropertiesWrapper.getBlockletFileFooterEntrySchema();
   }
 
   /**
@@ -283,7 +279,8 @@ public class BlockletDataMap extends BlockDataMap implements Serializable {
     }
   }
 
-  @Override public int getTotalBlocks() {
+  @Override
+  public int getTotalBlocks() {
     if (isLegacyStore) {
       return super.getTotalBlocklets();
     } else {

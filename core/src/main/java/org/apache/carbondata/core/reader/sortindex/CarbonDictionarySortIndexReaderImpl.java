@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.reader.sortindex;
 
 import java.io.IOException;
@@ -78,7 +79,8 @@ public class CarbonDictionarySortIndexReaderImpl implements CarbonDictionarySort
    * In case of no member for column empty list will be return
    * @throws IOException In case any I/O error occurs
    */
-  @Override public List<Integer> readSortIndex() throws IOException {
+  @Override
+  public List<Integer> readSortIndex() throws IOException {
     if (null == columnSortInfo) {
       readColumnSortInfo();
     }
@@ -113,7 +115,8 @@ public class CarbonDictionarySortIndexReaderImpl implements CarbonDictionarySort
    * @return The method return's the list of dictionary inverted sort Index
    * @throws IOException In case any I/O error occurs
    */
-  @Override public List<Integer> readInvertedSortIndex() throws IOException {
+  @Override
+  public List<Integer> readInvertedSortIndex() throws IOException {
     if (null == columnSortInfo) {
       readColumnSortInfo();
     }
@@ -180,7 +183,8 @@ public class CarbonDictionarySortIndexReaderImpl implements CarbonDictionarySort
   private void openThriftReader() throws IOException {
     this.dictionarySortIndexThriftReader =
         new ThriftReader(this.sortIndexFilePath, new ThriftReader.TBaseCreator() {
-          @Override public TBase create() {
+          @Override
+          public TBase create() {
             return new ColumnSortInfo();
           }
         });
@@ -194,7 +198,8 @@ public class CarbonDictionarySortIndexReaderImpl implements CarbonDictionarySort
    *
    * @throws IOException if an I/O error occurs
    */
-  @Override public void close() throws IOException {
+  @Override
+  public void close() throws IOException {
     if (null != dictionarySortIndexThriftReader) {
       dictionarySortIndexThriftReader.close();
     }

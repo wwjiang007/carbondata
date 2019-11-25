@@ -21,6 +21,7 @@ import java.util
 
 import scala.collection.JavaConverters._
 
+import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.Job
@@ -40,12 +41,13 @@ import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.mutate.{CarbonUpdateUtil, DeleteDeltaBlockDetails, SegmentUpdateDetails, TupleIdEnum}
 import org.apache.carbondata.core.mutate.data.RowCountDetailsVO
-import org.apache.carbondata.core.statusmanager.{SegmentStatus, SegmentStatusManager, SegmentUpdateStatusManager}
+import org.apache.carbondata.core.readcommitter.TableStatusReadCommittedScope
+import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatus, SegmentStatusManager, SegmentUpdateStatusManager}
 import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil, ThreadLocalSessionInfo}
 import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.core.writer.CarbonDeleteDeltaWriterImpl
+import org.apache.carbondata.events.{IndexServerLoadEvent, OperationContext, OperationListenerBus}
 import org.apache.carbondata.hadoop.api.{CarbonInputFormat, CarbonTableInputFormat}
-import org.apache.carbondata.indexserver.IndexServer
 import org.apache.carbondata.processing.exception.MultipleMatchingException
 import org.apache.carbondata.processing.loading.FailureCauses
 import org.apache.carbondata.spark.DeleteDelataResultImpl
@@ -64,14 +66,15 @@ object DeleteExecution {
       dataRdd: RDD[Row],
       timestamp: String,
       isUpdateOperation: Boolean,
-      executorErrors: ExecutionErrors): Seq[Segment] = {
+      executorErrors: ExecutionErrors): (Seq[Segment], Long) = {
 
-    var res: Array[List[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors))]] = null
+    var res: Array[List[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors, Long))]] = null
     val database = CarbonEnv.getDatabaseName(databaseNameOp)(sparkSession)
     val carbonTable = CarbonEnv.getCarbonTable(databaseNameOp, tableName)(sparkSession)
     val absoluteTableIdentifier = carbonTable.getAbsoluteTableIdentifier
     val tablePath = absoluteTableIdentifier.getTablePath
     var segmentsTobeDeleted = Seq.empty[Segment]
+    var operatedRowCount = 0L
 
     val deleteRdd = if (isUpdateOperation) {
       val schema =
@@ -97,7 +100,7 @@ object DeleteExecution {
 
     // if no loads are present then no need to do anything.
     if (keyRdd.partitions.length == 0) {
-      return segmentsTobeDeleted
+      return (segmentsTobeDeleted, operatedRowCount)
     }
     val blockMappingVO =
       carbonInputFormat.getBlockRowCount(
@@ -124,26 +127,26 @@ object DeleteExecution {
     val rdd = rowContRdd.join(keyRdd)
     res = rdd.mapPartitionsWithIndex(
       (index: Int, records: Iterator[((String), (RowCountDetailsVO, Iterable[Row]))]) =>
-        Iterator[List[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors))]] {
+        Iterator[List[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors, Long))]] {
           ThreadLocalSessionInfo.setConfigurationToCurrentThread(conf.value.value)
-          var result = List[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors))]()
+          var result = List[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors, Long))]()
           while (records.hasNext) {
             val ((key), (rowCountDetailsVO, groupedRows)) = records.next
-            val segmentId = key.substring(0, key.indexOf(CarbonCommonConstants.FILE_SEPARATOR))
             result = result ++
                      deleteDeltaFunc(index,
                        key,
                        groupedRows.toIterator,
                        timestamp,
                        rowCountDetailsVO,
-                       isStandardTable)
+                       isStandardTable,
+                       metadataDetails)
           }
           result
         }).collect()
 
     // if no loads are present then no need to do anything.
     if (res.flatten.isEmpty) {
-      return segmentsTobeDeleted
+      return (segmentsTobeDeleted, operatedRowCount)
     }
 
     // update new status file
@@ -216,8 +219,9 @@ object DeleteExecution {
         iter: Iterator[Row],
         timestamp: String,
         rowCountDetailsVO: RowCountDetailsVO,
-        isStandardTable: Boolean
-    ): Iterator[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors))] = {
+        isStandardTable: Boolean,
+        loads: Array[LoadMetadataDetails]
+    ): Iterator[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors, Long))] = {
 
       val result = new DeleteDelataResultImpl()
       var deleteStatus = SegmentStatus.LOAD_FAILURE
@@ -227,8 +231,10 @@ object DeleteExecution {
         .getBlockName(
           CarbonTablePath.addDataPartPrefix(key.split(CarbonCommonConstants.FILE_SEPARATOR)(1)))
       val segmentId = key.split(CarbonCommonConstants.FILE_SEPARATOR)(0)
+      val load = loads.find(l => l.getLoadName.equalsIgnoreCase(segmentId)).get
       val deleteDeltaBlockDetails: DeleteDeltaBlockDetails = new DeleteDeltaBlockDetails(blockName)
-      val resultIter = new Iterator[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors))] {
+      val resultIter =
+        new Iterator[(SegmentStatus, (SegmentUpdateDetails, ExecutionErrors, Long))] {
         val segmentUpdateDetails = new SegmentUpdateDetails()
         var TID = ""
         var countOfRows = 0
@@ -253,7 +259,11 @@ object DeleteExecution {
           }
 
           val blockPath =
-            CarbonUpdateUtil.getTableBlockPath(TID, tablePath, isStandardTable)
+            if (StringUtils.isNotEmpty(load.getPath)) {
+              load.getPath
+            } else {
+              CarbonUpdateUtil.getTableBlockPath(TID, tablePath, isStandardTable)
+            }
           val completeBlockName = CarbonTablePath
             .addDataPartPrefix(CarbonUpdateUtil.getRequiredFieldFromTID(TID, TupleIdEnum.BLOCK_ID) +
                                CarbonCommonConstants.FACT_FILE_EXT)
@@ -305,29 +315,49 @@ object DeleteExecution {
           }
         }
 
-        override def next(): (SegmentStatus, (SegmentUpdateDetails, ExecutionErrors)) = {
+        override def next(): (SegmentStatus, (SegmentUpdateDetails, ExecutionErrors, Long)) = {
           finished = true
-          result.getKey(deleteStatus, (segmentUpdateDetails, executorErrors))
+          result.getKey(deleteStatus, (segmentUpdateDetails, executorErrors, countOfRows.toLong))
         }
       }
       resultIter
     }
 
-    segmentsTobeDeleted
+    if (executorErrors.failureCauses == FailureCauses.NONE) {
+       operatedRowCount = res.flatten.map(_._2._3).sum
+    }
+    (segmentsTobeDeleted, operatedRowCount)
   }
 
-  def clearDistributedSegmentCache(carbonTable: CarbonTable,
-      segmentsToBeCleared: Seq[Segment])(sparkSession: SparkSession): Unit = {
-    if (CarbonProperties.getInstance().isDistributedPruningEnabled(carbonTable
-      .getDatabaseName, carbonTable.getTableName)) {
-      try {
-        IndexServer.getClient
-          .invalidateSegmentCache(carbonTable, segmentsToBeCleared.map(_.getSegmentNo)
-          .toArray, SparkSQLUtil.getTaskGroupId(sparkSession))
-      } catch {
-        case _: Exception =>
-          LOGGER.warn(s"Clearing of invalid segments for ${
-            carbonTable.getTableUniqueName} has failed")
+  /**
+   * This function fires an event for pre-priming in the index server
+   */
+  def reloadDistributedSegmentCache(carbonTable: CarbonTable, deletedSegments: Seq[Segment],
+      operationContext: OperationContext)(sparkSession: SparkSession): Unit = {
+    if (carbonTable.isTransactionalTable) {
+      val readCommittedScope = new TableStatusReadCommittedScope(AbsoluteTableIdentifier.from(
+        carbonTable.getTablePath), FileFactory.getConfiguration)
+      deletedSegments.foreach(_.setReadCommittedScope(readCommittedScope))
+      val indexServerEnabled = CarbonProperties.getInstance().isDistributedPruningEnabled(
+        carbonTable.getDatabaseName, carbonTable.getTableName)
+      val prePrimingEnabled = CarbonProperties.getInstance().isIndexServerPrePrimingEnabled()
+      if (indexServerEnabled && prePrimingEnabled) {
+        LOGGER.info(s"Loading segments for table: ${ carbonTable.getTableName } in the cache")
+        val indexServerLoadEvent: IndexServerLoadEvent =
+          IndexServerLoadEvent(
+            sparkSession,
+            carbonTable,
+            deletedSegments.toList,
+            deletedSegments.map(_.getSegmentNo).toList
+          )
+        OperationListenerBus.getInstance().fireEvent(indexServerLoadEvent, operationContext)
+        LOGGER.info(s"Segments for table: ${
+          carbonTable
+            .getTableName
+        } has been loaded in the cache")
+      } else {
+        LOGGER.info(
+          s"Segments for table:" + s" ${ carbonTable.getTableName } not loaded in the cache")
       }
     }
   }

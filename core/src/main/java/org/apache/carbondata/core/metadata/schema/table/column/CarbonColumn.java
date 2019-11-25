@@ -161,6 +161,7 @@ public class CarbonColumn implements Serializable {
   public Boolean isUseInvertedIndex() {
     return columnSchema.isUseInvertedIndex();
   }
+
   public ColumnSchema getColumnSchema() {
     return this.columnSchema;
   }
@@ -206,4 +207,10 @@ public class CarbonColumn implements Serializable {
   public void setUseActualData(boolean useActualData) {
     this.useActualData = useActualData;
   }
+
+  public boolean isColmatchBasedOnId(CarbonColumn queryColumn) {
+    return this.getColName().equalsIgnoreCase(this.getColumnId()) && this.getColName()
+        .equalsIgnoreCase(queryColumn.getColName());
+  }
+
 }

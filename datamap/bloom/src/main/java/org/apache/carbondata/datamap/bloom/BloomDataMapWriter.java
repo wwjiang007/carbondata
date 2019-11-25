@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.datamap.bloom;
 
 import java.io.IOException;
@@ -63,7 +64,8 @@ public class BloomDataMapWriter extends AbstractBloomDataMapWriter {
         continue;
       }
       boolean isExistInIndex = CollectionUtils.exists(indexColumns, new Predicate() {
-        @Override public boolean evaluate(Object object) {
+        @Override
+        public boolean evaluate(Object object) {
           return ((CarbonColumn) object).getColName().equalsIgnoreCase(dimension.getColName());
         }
       });

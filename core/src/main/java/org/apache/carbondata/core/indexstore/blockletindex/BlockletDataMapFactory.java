@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.blockletindex;
 
 import java.io.IOException;
@@ -148,7 +149,8 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     return dataMaps;
   }
 
-  @Override public List<CoarseGrainDataMap> getDataMaps(Segment segment) throws IOException {
+  @Override
+  public List<CoarseGrainDataMap> getDataMaps(Segment segment) throws IOException {
     List<CoarseGrainDataMap> dataMaps = new ArrayList<>();
     Set<TableBlockIndexUniqueIdentifier> identifiers =
         getTableBlockIndexUniqueIdentifiers(segment);
@@ -249,7 +251,6 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     throw new IOException("Blocklet not found: " + blocklet.toString());
   }
 
-
   @Override
   public List<DataMapDistributable> toDistributable(Segment segment) {
     List<DataMapDistributable> distributables = new ArrayList<>();
@@ -320,7 +321,8 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     return numOfIndexFiles + ":" + sum;
   }
 
-  @Override public List<CoarseGrainDataMap> getDataMaps(DataMapDistributable distributable)
+  @Override
+  public List<CoarseGrainDataMap> getDataMaps(DataMapDistributable distributable)
       throws IOException {
     BlockletDataMapDistributable mapDistributable = (BlockletDataMapDistributable) distributable;
     List<TableBlockIndexUniqueIdentifierWrapper> identifiersWrapper;
@@ -417,11 +419,13 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
 
   }
 
-  @Override public void deleteDatamapData() {
+  @Override
+  public void deleteDatamapData() {
 
   }
 
-  @Override public SegmentProperties getSegmentProperties(Segment segment) throws IOException {
+  @Override
+  public SegmentProperties getSegmentProperties(Segment segment) throws IOException {
     List<CoarseGrainDataMap> dataMaps = getDataMaps(segment);
     assert (dataMaps.size() > 0);
     CoarseGrainDataMap coarseGrainDataMap = dataMaps.get(0);
@@ -430,14 +434,16 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     return dataMap.getSegmentProperties();
   }
 
-  @Override public SegmentProperties getSegmentPropertiesFromDataMap(DataMap coarseGrainDataMap)
+  @Override
+  public SegmentProperties getSegmentPropertiesFromDataMap(DataMap coarseGrainDataMap)
       throws IOException {
     assert (coarseGrainDataMap instanceof BlockDataMap);
     BlockDataMap dataMap = (BlockDataMap) coarseGrainDataMap;
     return dataMap.getSegmentProperties();
   }
 
-  @Override public List<Blocklet> getAllBlocklets(Segment segment, List<PartitionSpec> partitions)
+  @Override
+  public List<Blocklet> getAllBlocklets(Segment segment, List<PartitionSpec> partitions)
       throws IOException {
     List<Blocklet> blocklets = new ArrayList<>();
     List<CoarseGrainDataMap> dataMaps = getDataMaps(segment);
@@ -448,7 +454,8 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     return blocklets;
   }
 
-  @Override public boolean willBecomeStale(TableOperation operation) {
+  @Override
+  public boolean willBecomeStale(TableOperation operation) {
     return false;
   }
 

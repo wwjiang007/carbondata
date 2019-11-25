@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.carbondata.core.cache.dictionary.Dictionary;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
@@ -32,8 +33,8 @@ import org.apache.carbondata.core.scan.expression.ColumnExpression;
 import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.UnknownExpression;
 import org.apache.carbondata.core.scan.expression.conditional.ConditionalExpression;
-import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.carbondata.core.stats.QueryStatisticsRecorder;
+import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeConverter;
 
@@ -57,15 +58,11 @@ public class QueryModel {
    * query id
    */
   private String queryId;
-  /**
-   * filter tree
-   */
-  private FilterResolverIntf filterExpressionResolverTree;
 
   /**
    * filter expression tree
    */
-  private Expression filterExpression;
+  private DataMapFilter dataMapFilter;
 
   /**
    * table block information in which query will be executed
@@ -110,7 +107,7 @@ public class QueryModel {
   // whether to clear/free unsafe memory or not
   private boolean freeUnsafeMemory = true;
 
-  private boolean preFetchData = true;
+  private boolean preFetchData;
 
   /**
    * It fills the vector directly from decoded column page with out any staging and conversions.
@@ -125,6 +122,7 @@ public class QueryModel {
     tableBlockInfos = new ArrayList<TableBlockInfo>();
     this.table = carbonTable;
     this.queryId = String.valueOf(System.nanoTime());
+    this.preFetchData = CarbonProperties.getQueryPrefetchEnable();
   }
 
   public static QueryModel newInstance(CarbonTable carbonTable) {
@@ -212,8 +210,8 @@ public class QueryModel {
       // corresponding segment. So the filter column may not be present in it. so generate the
       // dimension and measure from the carbontable
       CarbonDimension dimension =
-          table.getDimensionByName(table.getTableName(), col.getColumnName());
-      CarbonMeasure measure = table.getMeasureByName(table.getTableName(), col.getColumnName());
+          table.getDimensionByName(col.getColumnName());
+      CarbonMeasure measure = table.getMeasureByName(col.getColumnName());
       col.setDimension(dimension);
       col.setMeasure(measure);
       col.setCarbonColumn(dimension == null ? measure : dimension);
@@ -274,23 +272,12 @@ public class QueryModel {
     this.tableBlockInfos = tableBlockInfos;
   }
 
-  /**
-   * @return the filterEvaluatorTree
-   */
-  public FilterResolverIntf getFilterExpressionResolverTree() {
-    return filterExpressionResolverTree;
+  public DataMapFilter getDataMapFilter() {
+    return dataMapFilter;
   }
 
-  public void setFilterExpressionResolverTree(FilterResolverIntf filterExpressionResolverTree) {
-    this.filterExpressionResolverTree = filterExpressionResolverTree;
-  }
-
-  public Expression getFilterExpression() {
-    return filterExpression;
-  }
-
-  public void setFilterExpression(Expression filterExpression) {
-    this.filterExpression = filterExpression;
+  public void setDataMapFilter(DataMapFilter dataMapFilter) {
+    this.dataMapFilter = dataMapFilter;
   }
 
   /**
@@ -414,7 +401,7 @@ public class QueryModel {
     return String.format("scan on table %s.%s, %d projection columns with filter (%s)",
         table.getDatabaseName(), table.getTableName(),
         projection.getDimensions().size() + projection.getMeasures().size(),
-        filterExpressionResolverTree.getFilterExpression().toString());
+        dataMapFilter.getExpression().toString());
   }
 
   public boolean isFreeUnsafeMemory() {

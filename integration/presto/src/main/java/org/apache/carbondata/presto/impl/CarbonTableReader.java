@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datamap.DataMapStoreManager;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
@@ -90,7 +91,8 @@ public class CarbonTableReader {
 
   // default PathFilter, accepts files in carbondata format (with .carbondata extension).
   private static final PathFilter DefaultFilter = new PathFilter() {
-    @Override public boolean accept(Path path) {
+    @Override
+    public boolean accept(Path path) {
       return CarbonTablePath.isCarbonDataFile(path.getName());
     }
   };
@@ -257,7 +259,7 @@ public class CarbonTableReader {
     JobConf jobConf = new JobConf(config);
     List<PartitionSpec> filteredPartitions = new ArrayList<>();
 
-    PartitionInfo partitionInfo = carbonTable.getPartitionInfo(carbonTable.getTableName());
+    PartitionInfo partitionInfo = carbonTable.getPartitionInfo();
     LoadMetadataDetails[] loadMetadataDetails = null;
     if (partitionInfo != null && partitionInfo.getPartitionType() == PartitionType.NATIVE_HIVE) {
       try {
@@ -272,8 +274,8 @@ public class CarbonTableReader {
     try {
       CarbonTableInputFormat.setTableInfo(config, tableInfo);
       CarbonTableInputFormat carbonTableInputFormat =
-          createInputFormat(jobConf, carbonTable.getAbsoluteTableIdentifier(), filters,
-              filteredPartitions);
+          createInputFormat(jobConf, carbonTable.getAbsoluteTableIdentifier(),
+              new DataMapFilter(carbonTable, filters, true), filteredPartitions);
       Job job = Job.getInstance(jobConf);
       List<InputSplit> splits = carbonTableInputFormat.getSplits(job);
       Gson gson = new Gson();
@@ -355,12 +357,12 @@ public class CarbonTableReader {
   }
 
   private CarbonTableInputFormat<Object> createInputFormat(Configuration conf,
-      AbsoluteTableIdentifier identifier, Expression filterExpression,
+      AbsoluteTableIdentifier identifier, DataMapFilter dataMapFilter,
       List<PartitionSpec> filteredPartitions) throws IOException {
     CarbonTableInputFormat format = new CarbonTableInputFormat<Object>();
     CarbonTableInputFormat
         .setTablePath(conf, identifier.appendWithLocalPrefix(identifier.getTablePath()));
-    CarbonTableInputFormat.setFilterPredicates(conf, filterExpression);
+    CarbonTableInputFormat.setFilterPredicates(conf, dataMapFilter);
     if (filteredPartitions.size() != 0) {
       CarbonTableInputFormat.setPartitionsToPrune(conf, filteredPartitions);
     }

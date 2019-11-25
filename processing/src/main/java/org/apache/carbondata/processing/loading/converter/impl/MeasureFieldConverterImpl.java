@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.converter.impl;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
@@ -142,6 +143,7 @@ public class MeasureFieldConverterImpl implements FieldConverter {
    * Method to clean the dictionary cache. As in this MeasureFieldConverterImpl convert no
    * dictionary caches are acquired so nothing to clear. s
    */
-  @Override public void clear() {
+  @Override
+  public void clear() {
   }
 }

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.util.path;
 
 import java.io.File;
@@ -199,7 +200,8 @@ public class CarbonTablePath {
       carbonFile = FileFactory.getCarbonFile(metaPath);
     }
     CarbonFile[] schemaFile = carbonFile.listFiles(new CarbonFileFilter() {
-      @Override public boolean accept(CarbonFile file) {
+      @Override
+      public boolean accept(CarbonFile file) {
         return file.getName().startsWith(SCHEMA_FILE);
       }
     });
@@ -240,7 +242,8 @@ public class CarbonTablePath {
         FileFactory.getCarbonFile(segmentDir, FileFactory.getFileType(segmentDir));
 
     CarbonFile[] files = carbonFile.listFiles(new CarbonFileFilter() {
-      @Override public boolean accept(CarbonFile file) {
+      @Override
+      public boolean accept(CarbonFile file) {
         if (bucketNumber.equals("-1")) {
           return file.getName().startsWith(taskId) && file.getName().endsWith(INDEX_FILE_EXT);
         }
@@ -305,13 +308,13 @@ public class CarbonTablePath {
    * @param factUpdateTimeStamp unique identifier to identify an update
    * @return gets data file name only with out path
    */
-  public static String getCarbonDataFileName(Integer filePartNo, Long taskNo, int bucketNumber,
+  public static String getCarbonDataFileName(Integer filePartNo, String taskNo, int bucketNumber,
       int batchNo, String factUpdateTimeStamp, String segmentNo) {
     return DATA_PART_PREFIX + filePartNo + "-" + taskNo + BATCH_PREFIX + batchNo + "-"
         + bucketNumber + "-" + segmentNo + "-" + factUpdateTimeStamp + CARBON_DATA_EXT;
   }
 
-  public static String getShardName(Long taskNo, int bucketNumber, int batchNo,
+  public static String getShardName(String taskNo, int bucketNumber, int batchNo,
       String factUpdateTimeStamp, String segmentNo) {
     return taskNo + BATCH_PREFIX + batchNo + "-" + bucketNumber + "-" + segmentNo + "-"
         + factUpdateTimeStamp;
@@ -324,14 +327,14 @@ public class CarbonTablePath {
    * @param factUpdatedTimeStamp time stamp
    * @return filename
    */
-  public static String getCarbonIndexFileName(long taskNo, int bucketNumber, int batchNo,
+  public static String getCarbonIndexFileName(String taskNo, int bucketNumber, int batchNo,
       String factUpdatedTimeStamp, String segmentNo) {
     return getShardName(taskNo, bucketNumber, batchNo, factUpdatedTimeStamp, segmentNo)
         + INDEX_FILE_EXT;
   }
 
   public static String getCarbonStreamIndexFileName() {
-    return getCarbonIndexFileName(0, 0, 0, "0", "0");
+    return getCarbonIndexFileName("0", 0, 0, "0", "0");
   }
 
   public static String getCarbonStreamIndexFilePath(String segmentDir) {
@@ -516,8 +519,8 @@ public class CarbonTablePath {
     /**
      * Return the taskId part from taskNo(include taskId + batchNo)
      */
-    public static long getTaskIdFromTaskNo(String taskNo) {
-      return Long.parseLong(taskNo.split(BATCH_PREFIX)[0]);
+    public static String getTaskIdFromTaskNo(String taskNo) {
+      return taskNo.split(BATCH_PREFIX)[0];
     }
 
     /**
@@ -575,7 +578,8 @@ public class CarbonTablePath {
       final String columnUniqueId) {
     if (null != sortIndexDir) {
       return sortIndexDir.listFiles(new CarbonFileFilter() {
-        @Override public boolean accept(CarbonFile file) {
+        @Override
+        public boolean accept(CarbonFile file) {
           return file.getName().startsWith(columnUniqueId) && file.getName()
               .endsWith(SORT_INDEX_EXT);
         }

@@ -28,6 +28,7 @@ import java.util.List;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.annotations.InterfaceStability;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
@@ -41,7 +42,6 @@ import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.TableInfo;
 import org.apache.carbondata.core.readcommitter.LatestFilesReadCommittedScope;
 import org.apache.carbondata.core.readcommitter.ReadCommittedScope;
-import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.statusmanager.FileFormat;
 import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
@@ -65,7 +65,6 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
 
   // a cache for carbon table, it will be used in task side
   private CarbonTable carbonTable;
-
 
   public CarbonTable getOrCreateCarbonTable(Configuration configuration) throws IOException {
     CarbonTable carbonTableTemp;
@@ -132,9 +131,8 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
         }
       }
       // this will be null in case of corrupt schema file.
-      PartitionInfo partitionInfo = carbonTable.getPartitionInfo(carbonTable.getTableName());
-      Expression filter = getFilterPredicates(job.getConfiguration());
-
+      PartitionInfo partitionInfo = carbonTable.getPartitionInfo();
+      DataMapFilter filter = getFilterPredicates(job.getConfiguration());
 
       // if external table Segments are found, add it to the List
       List<Segment> externalTableSegments = new ArrayList<Segment>();
@@ -168,6 +166,9 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
       // useBlockDataMap would be false in case of SDK when user has not provided any filter, In
       // this case we don't want to load block/blocklet datamap. It would be true in all other
       // scenarios
+      if (filter != null) {
+        filter.resolve(false);
+      }
       if (useBlockDataMap) {
         // do block filtering and get split
         splits = getSplits(job, filter, externalTableSegments, null, partitionInfo, null);
@@ -194,7 +195,8 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
           splits.add(split);
         }
         Collections.sort(splits, new Comparator<InputSplit>() {
-          @Override public int compare(InputSplit o1, InputSplit o2) {
+          @Override
+          public int compare(InputSplit o1, InputSplit o2) {
             return ((CarbonInputSplit) o1).getFilePath()
                 .compareTo(((CarbonInputSplit) o2).getFilePath());
           }
@@ -219,7 +221,8 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
     List<CarbonFile> carbonFiles;
     try {
       carbonFiles = FileFactory.getCarbonFile(tablePath).listFiles(true, new CarbonFileFilter() {
-        @Override public boolean accept(CarbonFile file) {
+        @Override
+        public boolean accept(CarbonFile file) {
           return file.getName().endsWith(CarbonTablePath.CARBON_DATA_EXT);
         }
       });
@@ -249,7 +252,7 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
    * @return
    * @throws IOException
    */
-  private List<InputSplit> getSplits(JobContext job, Expression expression,
+  private List<InputSplit> getSplits(JobContext job, DataMapFilter dataMapFilter,
       List<Segment> validSegments, BitSet matchedPartitions, PartitionInfo partitionInfo,
       List<Integer> oldPartitionIdList) throws IOException {
 
@@ -258,7 +261,7 @@ public class CarbonFileInputFormat<T> extends CarbonInputFormat<T> implements Se
 
     // for each segment fetch blocks matching filter in Driver BTree
     List<CarbonInputSplit> dataBlocksOfSegment =
-        getDataBlocksOfSegment(job, carbonTable, expression, matchedPartitions, validSegments,
+        getDataBlocksOfSegment(job, carbonTable, dataMapFilter, matchedPartitions, validSegments,
             partitionInfo, oldPartitionIdList, new ArrayList<Segment>(), new ArrayList<String>());
     numBlocks = dataBlocksOfSegment.size();
     result.addAll(dataBlocksOfSegment);

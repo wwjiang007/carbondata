@@ -36,6 +36,7 @@ import org.apache.carbondata.processing.loading.row.IntermediateSortTempRow;
 import org.apache.carbondata.processing.loading.sort.SortStepRowHandler;
 import org.apache.carbondata.processing.sort.SortTempRowUpdater;
 import org.apache.carbondata.processing.sort.exception.CarbonSortKeyAndGroupByException;
+import org.apache.carbondata.processing.sort.sortdata.FileMergeSortComparator;
 import org.apache.carbondata.processing.sort.sortdata.IntermediateSortTempRowComparator;
 import org.apache.carbondata.processing.sort.sortdata.SortParameters;
 import org.apache.carbondata.processing.sort.sortdata.TableFieldStat;
@@ -105,18 +106,24 @@ public class UnsafeSortTempFileChunkHolder implements SortTempChunkHolder {
    * Constructor to initialize
    */
   public UnsafeSortTempFileChunkHolder(File tempFile, SortParameters parameters,
-      boolean convertNoSortFields) {
+      boolean convertNoSortFields, TableFieldStat tableFieldStat) {
     // set temp file
     this.tempFile = tempFile;
     this.readBufferSize = parameters.getBufferSize();
     this.compressorName = parameters.getSortTempCompressorName();
-    this.tableFieldStat = new TableFieldStat(parameters);
+    this.tableFieldStat = tableFieldStat;
     this.sortStepRowHandler = new SortStepRowHandler(tableFieldStat);
     this.executorService = Executors.newFixedThreadPool(1);
-    comparator = new IntermediateSortTempRowComparator(parameters.getNoDictionarySortColumn(),
-        parameters.getNoDictDataType());
     this.convertNoSortFields = convertNoSortFields;
     this.sortTempRowUpdater = tableFieldStat.getSortTempRowUpdater();
+    if (!this.convertNoSortFields) {
+      comparator = new IntermediateSortTempRowComparator(parameters.getNoDictionarySortColumn(),
+          parameters.getNoDictDataType());
+    } else {
+      this.comparator = new FileMergeSortComparator(tableFieldStat.getIsSortColNoDictFlags(),
+          tableFieldStat.getNoDictDataType(),
+          tableFieldStat.getNoDictSortColumnSchemaOrderMapping());
+    }
     initialize();
   }
 
@@ -282,11 +289,13 @@ public class UnsafeSortTempFileChunkHolder implements SortTempChunkHolder {
     return entryCount;
   }
 
-  @Override public int compareTo(SortTempChunkHolder other) {
+  @Override
+  public int compareTo(SortTempChunkHolder other) {
     return comparator.compare(returnRow, other.getRow());
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -299,7 +308,8 @@ public class UnsafeSortTempFileChunkHolder implements SortTempChunkHolder {
     return this == o;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     int hash = 0;
     hash += tableFieldStat.hashCode();
     hash += tempFile.hashCode();
@@ -322,7 +332,8 @@ public class UnsafeSortTempFileChunkHolder implements SortTempChunkHolder {
           bufferSize < numberOfRecordsLeftToBeRead ? bufferSize : numberOfRecordsLeftToBeRead;
     }
 
-    @Override public Void call() throws Exception {
+    @Override
+    public Void call() throws Exception {
       try {
         if (isBackUpFilling) {
           backupBuffer = prefetchRecordsFromFile(numberOfRecords);

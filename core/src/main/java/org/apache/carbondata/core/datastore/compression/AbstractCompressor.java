@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.compression;
 
 import java.io.IOException;
@@ -119,9 +120,13 @@ public abstract class AbstractCompressor implements Compressor {
     throw new RuntimeException("Not implemented rawCompress for " + this.getName());
   }
 
-  @Override public boolean supportReusableBuffer() {
+  @Override
+  public boolean supportReusableBuffer() {
     return false;
   }
 
-  @Override public boolean supportUnsafe() { return false; }
+  @Override
+  public boolean supportUnsafe() {
+    return false;
+  }
 }

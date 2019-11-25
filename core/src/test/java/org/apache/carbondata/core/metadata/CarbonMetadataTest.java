@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.metadata;
 
 import java.util.ArrayList;
@@ -47,6 +48,7 @@ public class CarbonMetadataTest {
 
   @BeforeClass public static void setUp() {
     carbonMetadata = CarbonMetadata.getInstance();
+    carbonMetadata.clearAll();
     carbonMetadata.loadTableMetadata(getTableInfo(10000));
     tableUniqueName = CarbonTable.buildUniqueName("carbonTestDatabase", "carbonTestTable");
   }
@@ -77,13 +79,13 @@ public class CarbonMetadataTest {
   @Test public void testGetCarbonTableReturingProperTableWithProperDimensionCount() {
     int expectedResult = 1;
     assertEquals(expectedResult,
-        carbonMetadata.getCarbonTable(tableUniqueName).getNumberOfDimensions("carbonTestTable"));
+        carbonMetadata.getCarbonTable(tableUniqueName).getVisibleDimensions().size());
   }
 
   @Test public void testGetCarbonTableReturingProperTableWithProperMeasureCount() {
     int expectedResult = 1;
     assertEquals(expectedResult,
-        carbonMetadata.getCarbonTable(tableUniqueName).getNumberOfMeasures("carbonTestTable"));
+        carbonMetadata.getCarbonTable(tableUniqueName).getVisibleMeasures().size());
   }
 
   @Test public void testGetCarbonTableReturingProperTableWithProperDatabaseName() {
@@ -92,7 +94,7 @@ public class CarbonMetadataTest {
   }
 
   @Test public void testGetCarbonTableReturingProperTableWithProperFactTableName() {
-    String expectedResult = "carbonTestTable";
+    String expectedResult = "carbontesttable";
     assertEquals(expectedResult, carbonMetadata.getCarbonTable(tableUniqueName).getTableName());
   }
 
@@ -173,7 +175,7 @@ public class CarbonMetadataTest {
         return "carbonTestTable";
       }
 
-      @Mock public List<CarbonDimension> getDimensionByTableName(String tableName) {
+      @Mock public List<CarbonDimension> getVisibleDimensions() {
         return carbonDimensions;
       }
     };
@@ -202,7 +204,7 @@ public class CarbonMetadataTest {
         return "carbonTestTable";
       }
 
-      @Mock public List<CarbonDimension> getDimensionByTableName(String tableName) {
+      @Mock public List<CarbonDimension> getVisibleDimensions() {
         return carbonDimensions;
       }
     };
@@ -244,7 +246,7 @@ public class CarbonMetadataTest {
         return "carbonTestTable";
       }
 
-      @Mock public List<CarbonDimension> getDimensionByTableName(String tableName) {
+      @Mock public List<CarbonDimension> getVisibleDimensions() {
         return carbonDimensions;
       }
     };

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap.dev.fgdatamap;
 
 import java.io.DataInput;
@@ -71,7 +72,8 @@ public class FineGrainBlocklet extends Blocklet implements Serializable {
       return bitSet;
     }
 
-    @Override public void write(DataOutput out) throws IOException {
+    @Override
+    public void write(DataOutput out) throws IOException {
       out.writeInt(pageId);
       out.writeInt(rowId.length);
       for (int i = 0; i < rowId.length; i++) {
@@ -79,7 +81,8 @@ public class FineGrainBlocklet extends Blocklet implements Serializable {
       }
     }
 
-    @Override public void readFields(DataInput in) throws IOException {
+    @Override
+    public void readFields(DataInput in) throws IOException {
       pageId = in.readInt();
       int length = in.readInt();
       rowId = new int[length];
@@ -105,7 +108,8 @@ public class FineGrainBlocklet extends Blocklet implements Serializable {
     return bitSetGroup;
   }
 
-  @Override public void write(DataOutput out) throws IOException {
+  @Override
+  public void write(DataOutput out) throws IOException {
     super.write(out);
     int size = pages.size();
     out.writeInt(size);
@@ -114,7 +118,8 @@ public class FineGrainBlocklet extends Blocklet implements Serializable {
     }
   }
 
-  @Override public void readFields(DataInput in) throws IOException {
+  @Override
+  public void readFields(DataInput in) throws IOException {
     super.readFields(in);
     int size = in.readInt();
     pages = new ArrayList<>(size);
@@ -125,11 +130,13 @@ public class FineGrainBlocklet extends Blocklet implements Serializable {
     }
   }
 
-  @Override public boolean equals(Object o) {
+  @Override
+  public boolean equals(Object o) {
     return super.equals(o);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return super.hashCode();
   }
 }

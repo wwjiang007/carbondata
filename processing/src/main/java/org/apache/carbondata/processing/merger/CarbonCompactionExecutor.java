@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.merger;
 
 import java.io.IOException;
@@ -28,6 +29,7 @@ import org.apache.carbondata.common.CarbonIterator;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.cache.dictionary.Dictionary;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.datastore.block.TaskBlockInfo;
@@ -129,7 +131,8 @@ public class CarbonCompactionExecutor {
           new QueryModelBuilder(carbonTable).projectAllColumns().dataConverter(dataTypeConverter)
               .enableForcedDetailRawQuery();
     } else {
-      builder = new QueryModelBuilder(carbonTable).projectAllColumns().filterExpression(filterExpr)
+      builder = new QueryModelBuilder(carbonTable).projectAllColumns()
+          .filterExpression(new DataMapFilter(carbonTable, filterExpr))
           .dataConverter(dataTypeConverter).enableForcedDetailRawQuery()
           .convertToRangeFilter(false);
     }
@@ -177,8 +180,9 @@ public class CarbonCompactionExecutor {
   private RawResultIterator getRawResultIterator(Configuration configuration, String segmentId,
       String task, List<TableBlockInfo> tableBlockInfoList)
       throws QueryExecutionException, IOException {
-    SegmentProperties sourceSegmentProperties = getSourceSegmentProperties(
-        Collections.singletonList(tableBlockInfoList.get(0).getDataFileFooter()));
+    SegmentProperties sourceSegmentProperties =
+        new SegmentProperties(tableBlockInfoList.get(0).getDataFileFooter().getColumnInTable(),
+            tableBlockInfoList.get(0).getDataFileFooter().getSegmentInfo().getColumnCardinality());
     boolean hasColumnDrift = carbonTable.hasColumnDrift() &&
         RestructureUtil.hasColumnDriftOnSegment(carbonTable, sourceSegmentProperties);
     if (hasColumnDrift) {
@@ -186,6 +190,10 @@ public class CarbonCompactionExecutor {
           executeBlockList(tableBlockInfoList, segmentId, task, configuration),
           sourceSegmentProperties, destinationSegProperties);
     } else {
+      if (restructuredBlockExists) {
+        sourceSegmentProperties = getSourceSegmentProperties(
+            Collections.singletonList(tableBlockInfoList.get(0).getDataFileFooter()));
+      }
       return new RawResultIterator(
           executeBlockList(tableBlockInfoList, segmentId, task, configuration),
           sourceSegmentProperties, destinationSegProperties, true);

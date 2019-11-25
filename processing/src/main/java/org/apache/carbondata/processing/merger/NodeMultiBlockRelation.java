@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.merger;
 
 import java.util.Comparator;
@@ -79,11 +80,13 @@ public class NodeMultiBlockRelation implements Comparable<NodeMultiBlockRelation
     return totalSize;
   }
 
-  @Override public int compareTo(NodeMultiBlockRelation obj) {
+  @Override
+  public int compareTo(NodeMultiBlockRelation obj) {
     return this.blocks.size() - obj.getBlocks().size();
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (!(obj instanceof NodeMultiBlockRelation)) {
       return false;
     }
@@ -91,7 +94,8 @@ public class NodeMultiBlockRelation implements Comparable<NodeMultiBlockRelation
     return blocks.equals(o.blocks) && node.equals(o.node);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return blocks.hashCode() + node.hashCode();
   }
 }

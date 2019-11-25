@@ -184,7 +184,7 @@ class RawBytesReadSupport(segmentProperties: SegmentProperties, indexColumns: Ar
     val columnPartitioner = new util.ArrayList[Integer](dictIndexColumns.length)
 
     dictIndexColumns.foreach { col =>
-      val dim = carbonTable.getDimensionByName(carbonTable.getTableName, col.getColName)
+      val dim = carbonTable.getDimensionByName(col.getColName)
       val currentBlockDimension = segmentProperties.getDimensionFromCurrentBlock(dim)
       if (null != currentBlockDimension) {
         columnCardinality.add(segmentProperties.getDimColumnsCardinality.apply(
@@ -226,7 +226,7 @@ class RawBytesReadSupport(segmentProperties: SegmentProperties, indexColumns: Ar
     // prepare index info to extract data from query result
     indexColumns.foreach { col =>
       if (col.isDimension) {
-        val dim = carbonTable.getDimensionByName(carbonTable.getTableName, col.getColName)
+        val dim = carbonTable.getDimensionByName(col.getColName)
         if (!dim.isGlobalDictionaryEncoding && !dim.isDirectDictionaryEncoding) {
           indexCol2IdxInNoDictArray =
             indexCol2IdxInNoDictArray + (col.getColName -> indexCol2IdxInNoDictArray.size)
@@ -338,7 +338,7 @@ class IndexDataMapRebuildRDD[K, V](
     val segmentId = inputSplit.getAllSplits.get(0).getSegment.getSegmentNo
     val segment = segments.find(p => p.getSegmentNo.equals(segmentId))
     if (segment.isDefined) {
-      inputMetrics.initBytesReadCallback(context, inputSplit)
+      inputMetrics.initBytesReadCallback(context, inputSplit, inputMetricsInterval)
 
       val attemptId = new TaskAttemptID(jobTrackerId, id, TaskType.MAP, split.index, 0)
       val attemptContext = new TaskAttemptContextImpl(FileFactory.getConfiguration, attemptId)

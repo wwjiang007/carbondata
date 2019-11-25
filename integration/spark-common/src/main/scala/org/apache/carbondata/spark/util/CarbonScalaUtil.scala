@@ -66,9 +66,11 @@ object CarbonScalaUtil {
       timeStampFormat: SimpleDateFormat,
       dateFormat: SimpleDateFormat,
       isVarcharType: Boolean = false,
+      isComplexType: Boolean = false,
       level: Int = 0): String = {
     FieldConverter.objectToString(value, serializationNullFormat, complexDelimiters,
-      timeStampFormat, dateFormat, isVarcharType = isVarcharType, level)
+      timeStampFormat, dateFormat, isVarcharType = isVarcharType, isComplexType = isComplexType,
+      level)
   }
 
   /**
@@ -257,7 +259,7 @@ object CarbonScalaUtil {
       } else {
         pValue
       }
-      val carbonColumn = table.getColumnByName(table.getTableName, col.toLowerCase)
+      val carbonColumn = table.getColumnByName(col.toLowerCase)
       val dataType =
         CarbonSparkDataSourceUtil.convertCarbonToSparkDataType(carbonColumn.getDataType)
       try {

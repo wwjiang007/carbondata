@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.steps;
 
 import java.io.IOException;
@@ -51,18 +52,21 @@ public class JsonInputProcessorStepImpl extends AbstractDataLoadProcessorStep {
     sdkWriterCores = configuration.getWritingCoresCount();
   }
 
-  @Override public DataField[] getOutput() {
+  @Override
+  public DataField[] getOutput() {
     return configuration.getDataFields();
   }
 
-  @Override public void initialize() throws IOException {
+  @Override
+  public void initialize() throws IOException {
     super.initialize();
     rowParser = new JsonRowParser(getOutput());
     // if logger is enabled then raw data will be required.
     this.isRawDataRequired = CarbonDataProcessorUtil.isRawDataRequired(configuration);
   }
 
-  @Override public Iterator<CarbonRowBatch>[] execute() {
+  @Override
+  public Iterator<CarbonRowBatch>[] execute() {
     int batchSize = CarbonProperties.getInstance().getBatchSize();
     List<CarbonIterator<Object[]>>[] readerIterators =
         CarbonDataProcessorUtil.partitionInputReaderIterators(inputIterators, sdkWriterCores);
@@ -75,7 +79,8 @@ public class JsonInputProcessorStepImpl extends AbstractDataLoadProcessorStep {
     return outIterators;
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     if (!closed) {
       super.close();
       for (CarbonIterator inputIterator : inputIterators) {
@@ -84,7 +89,8 @@ public class JsonInputProcessorStepImpl extends AbstractDataLoadProcessorStep {
     }
   }
 
-  @Override protected String getStepName() {
+  @Override
+  protected String getStepName() {
     return "Json Input Processor";
   }
 }

@@ -145,6 +145,15 @@ public class CarbonUpdateUtil {
             blockDetail.setDeleteDeltaEndTimestamp(newBlockEntry.getDeleteDeltaEndTimestamp());
             blockDetail.setSegmentStatus(newBlockEntry.getSegmentStatus());
             blockDetail.setDeletedRowsInBlock(newBlockEntry.getDeletedRowsInBlock());
+            // If the start and end time is different then the delta is there in multiple files so
+            // add them to the list to get the delta files easily with out listing.
+            if (!blockDetail.getDeleteDeltaStartTimestamp()
+                .equals(blockDetail.getDeleteDeltaEndTimestamp())) {
+              blockDetail.addDeltaFileStamp(blockDetail.getDeleteDeltaStartTimestamp());
+              blockDetail.addDeltaFileStamp(blockDetail.getDeleteDeltaEndTimestamp());
+            } else {
+              blockDetail.setDeltaFileStamps(null);
+            }
           } else {
             // add the new details to the list.
             oldList.add(newBlockEntry);
@@ -239,7 +248,6 @@ public class CarbonUpdateUtil {
               // if this call is coming from the delete delta flow then the time stamp
               // String will come empty then no need to write into table status file.
               if (isTimestampUpdationRequired) {
-                loadMetadata.setIsDeleted(CarbonCommonConstants.KEYWORD_TRUE);
                 // if in case of update flow.
                 if (loadMetadata.getUpdateDeltaStartTimestamp().isEmpty()) {
                   // this means for first time it is getting updated .
@@ -315,7 +323,8 @@ public class CarbonUpdateUtil {
     for (CarbonFile eachDir : file.listFiles()) {
       // for each dir check if the file with the delta timestamp is present or not.
       CarbonFile[] toBeDeleted = eachDir.listFiles(new CarbonFileFilter() {
-        @Override public boolean accept(CarbonFile file) {
+        @Override
+        public boolean accept(CarbonFile file) {
           String fileName = file.getName();
           return (fileName.endsWith(timeStamp + CarbonCommonConstants.UPDATE_DELTA_FILE_EXT)
                   || fileName.endsWith(timeStamp + CarbonCommonConstants.UPDATE_INDEX_FILE_EXT)
@@ -408,7 +417,8 @@ public class CarbonUpdateUtil {
       CarbonFile segmentDir =
           FileFactory.getCarbonFile(segmentDirPath, FileFactory.getFileType(segmentDirPath));
       CarbonFile[] carbonDataFiles = segmentDir.listFiles(new CarbonFileFilter() {
-        @Override public boolean accept(CarbonFile file) {
+        @Override
+        public boolean accept(CarbonFile file) {
 
           if (file.getName().endsWith(CarbonCommonConstants.FACT_FILE_EXT)) {
             return true;
@@ -588,7 +598,8 @@ public class CarbonUpdateUtil {
           FileFactory.getFileType(CarbonTablePath.getMetadataPath(tablePath)));
 
       CarbonFile[] invalidUpdateStatusFiles = metaFolder.listFiles(new CarbonFileFilter() {
-        @Override public boolean accept(CarbonFile file) {
+        @Override
+        public boolean accept(CarbonFile file) {
           if (file.getName().startsWith(CarbonCommonConstants.TABLEUPDATESTATUS_FILENAME)) {
 
             // CHECK if this is valid or not.

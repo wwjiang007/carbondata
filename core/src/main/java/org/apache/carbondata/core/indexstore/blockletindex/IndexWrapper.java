@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.blockletindex;
 
 import java.util.List;
@@ -40,10 +41,12 @@ public class IndexWrapper extends AbstractIndex {
         this.segmentProperties.getDimensionColumnsValueSize());
   }
 
-  @Override public void buildIndex(List<DataFileFooter> footerList) {
+  @Override
+  public void buildIndex(List<DataFileFooter> footerList) {
   }
 
-  @Override public void clear() {
+  @Override
+  public void clear() {
     super.clear();
     if (blockInfos != null) {
       for (TableBlockInfo blockInfo : blockInfos) {

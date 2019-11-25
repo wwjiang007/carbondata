@@ -73,12 +73,14 @@ public class CarbonLoadModelBuilder {
     Map<String, String> optionsFinal = LoadOption.fillOptionWithDefaultValue(options);
 
     if (!options.containsKey("fileheader")) {
-      List<CarbonColumn> csvHeader = table.getCreateOrderColumn(table.getTableName());
+      List<CarbonColumn> csvHeader = table.getCreateOrderColumn();
       String[] columns = new String[csvHeader.size()];
       for (int i = 0; i < columns.length; i++) {
         columns[i] = csvHeader.get(i).getColName();
       }
       optionsFinal.put("fileheader", Strings.mkString(columns, ","));
+    } else {
+      optionsFinal.put("fileheader", options.get("fileheader"));
     }
     optionsFinal.put("bad_record_path", CarbonBadRecordUtil.getBadRecordsPath(options, table));
     optionsFinal.put("sort_scope",
@@ -211,7 +213,7 @@ public class CarbonLoadModelBuilder {
         }
       } else {
         if (StringUtils.isEmpty(fileHeader)) {
-          List<CarbonColumn> columns = table.getCreateOrderColumn(table.getTableName());
+          List<CarbonColumn> columns = table.getCreateOrderColumn();
           List<String> columnNames = new ArrayList<>();
           List<String> partitionColumns = new ArrayList<>();
           for (int i = 0; i < columns.size(); i++) {
@@ -393,7 +395,7 @@ public class CarbonLoadModelBuilder {
     if (sortScope != null) {
       // We support global sort for Hive standard partition, but don't support
       // global sort for other partition type.
-      if (table.getPartitionInfo(table.getTableName()) != null &&
+      if (table.getPartitionInfo() != null &&
           !table.isHivePartitionTable() &&
           sortScope.equalsIgnoreCase(SortScopeOptions.SortScope.GLOBAL_SORT.toString())) {
         throw new InvalidLoadOptionException("Don't support use global sort on "
@@ -432,7 +434,6 @@ public class CarbonLoadModelBuilder {
       throw new InvalidLoadOptionException("Failed to load the compressor");
     }
   }
-
 
   private void validateAndSetBinaryDecoder(CarbonLoadModel carbonLoadModel) {
     String binaryDecoder = carbonLoadModel.getBinaryDecoder();

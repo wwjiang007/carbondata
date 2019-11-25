@@ -17,12 +17,15 @@
 
 package org.apache.carbondata.processing.loading.sort.unsafe.holder;
 
+import java.util.Comparator;
+
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.processing.loading.row.IntermediateSortTempRow;
 import org.apache.carbondata.processing.loading.sort.unsafe.UnsafeCarbonRowPage;
 import org.apache.carbondata.processing.loading.sort.unsafe.merger.UnsafeInMemoryIntermediateDataMerger;
-import org.apache.carbondata.processing.sort.sortdata.IntermediateSortTempRowComparator;
+import org.apache.carbondata.processing.sort.sortdata.FileMergeSortComparator;
+import org.apache.carbondata.processing.sort.sortdata.TableFieldStat;
 
 import org.apache.log4j.Logger;
 
@@ -41,14 +44,14 @@ public class UnsafeFinalMergePageHolder implements SortTempChunkHolder {
 
   private UnsafeCarbonRowPage[] rowPages;
 
-  private IntermediateSortTempRowComparator comparator;
+  private Comparator<IntermediateSortTempRow> comparator;
 
   private IntermediateSortTempRow currentRow;
 
   private DataType[] noDictDataType;
 
   public UnsafeFinalMergePageHolder(UnsafeInMemoryIntermediateDataMerger merger,
-      boolean[] noDictSortColumnMapping) {
+      TableFieldStat tableFieldStat) {
     this.actualSize = merger.getEntryCount();
     this.mergedAddresses = merger.getMergedAddresses();
     this.rowPageIndexes = merger.getRowPageIndexes();
@@ -58,8 +61,8 @@ public class UnsafeFinalMergePageHolder implements SortTempChunkHolder {
     }
     this.noDictDataType = rowPages[0].getTableFieldStat().getNoDictDataType();
     LOGGER.info("Processing unsafe inmemory rows page with size : " + actualSize);
-    this.comparator =
-        new IntermediateSortTempRowComparator(noDictSortColumnMapping, noDictDataType);
+    this.comparator = new FileMergeSortComparator(tableFieldStat.getIsSortColNoDictFlags(),
+        tableFieldStat.getNoDictDataType(), tableFieldStat.getNoDictSortColumnSchemaOrderMapping());
   }
 
   public boolean hasNext() {
@@ -78,11 +81,13 @@ public class UnsafeFinalMergePageHolder implements SortTempChunkHolder {
     return currentRow;
   }
 
-  @Override public int compareTo(SortTempChunkHolder o) {
+  @Override
+  public int compareTo(SortTempChunkHolder o) {
     return comparator.compare(currentRow, o.getRow());
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -95,7 +100,8 @@ public class UnsafeFinalMergePageHolder implements SortTempChunkHolder {
     return this == o;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return super.hashCode();
   }
 

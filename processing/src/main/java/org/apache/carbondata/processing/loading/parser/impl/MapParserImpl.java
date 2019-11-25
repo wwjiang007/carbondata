@@ -14,8 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.carbondata.processing.loading.parser.impl;
 
+package org.apache.carbondata.processing.loading.parser.impl;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,7 +24,6 @@ import java.util.Map;
 import org.apache.carbondata.processing.loading.complexobjects.ArrayObject;
 
 import org.apache.commons.lang.ArrayUtils;
-
 
 public class MapParserImpl extends ArrayParserImpl {
 
@@ -37,7 +36,8 @@ public class MapParserImpl extends ArrayParserImpl {
 
   //The Key for Map will always be a PRIMITIVE type so Set<Object> here will work fine
   //The last occurance of the key, value pair will be added and all others will be overwritten
-  @Override public ArrayObject parse(Object data) {
+  @Override
+  public ArrayObject parse(Object data) {
     if (data != null) {
       String value = data.toString();
       if (!value.isEmpty() && !value.equals(nullFormat)) {

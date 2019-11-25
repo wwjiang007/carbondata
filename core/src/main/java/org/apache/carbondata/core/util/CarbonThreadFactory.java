@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.util;
 
 import java.util.concurrent.Executors;
@@ -46,7 +47,8 @@ public class CarbonThreadFactory implements ThreadFactory {
     this.withTime = withTime;
   }
 
-  @Override public Thread newThread(Runnable r) {
+  @Override
+  public Thread newThread(Runnable r) {
     final Thread thread = defaultFactory.newThread(r);
     if (withTime) {
       thread.setName(name + "_" + System.currentTimeMillis());

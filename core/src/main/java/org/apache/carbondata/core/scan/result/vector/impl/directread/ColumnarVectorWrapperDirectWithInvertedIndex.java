@@ -85,7 +85,6 @@ public class ColumnarVectorWrapperDirectWithInvertedIndex extends AbstractCarbon
     columnVector.putByteArray(invertedIndex[rowId], offset, length, value);
   }
 
-
   @Override
   public void putByte(int rowId, byte value) {
     columnVector.putByte(invertedIndex[rowId], value);
@@ -98,6 +97,11 @@ public class ColumnarVectorWrapperDirectWithInvertedIndex extends AbstractCarbon
     } else {
       columnVector.putNull(invertedIndex[rowId]);
     }
+  }
+
+  @Override
+  public void putNotNull(int rowId) {
+    // nothing to do
   }
 
   @Override
@@ -147,7 +151,8 @@ public class ColumnarVectorWrapperDirectWithInvertedIndex extends AbstractCarbon
     return columnVector.getBlockDataType();
   }
 
-  @Override public void putArray(int rowId, int offset, int length) {
+  @Override
+  public void putArray(int rowId, int offset, int length) {
     columnVector.putArray(invertedIndex[rowId], offset, length);
   }
 }

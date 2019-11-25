@@ -191,6 +191,7 @@ abstract class CarbonDDLSqlParser extends AbstractCarbonSparkSQLParser {
   protected val STREAMS = carbonKeyWord("STREAMS")
   protected val STMPROPERTIES = carbonKeyWord("STMPROPERTIES")
   protected val CARBONCLI = carbonKeyWord("CARBONCLI")
+  protected val PATH = carbonKeyWord("PATH")
 
   protected val doubleQuotedString = "\"([^\"]+)\"".r
   protected val singleQuotedString = "'([^']+)'".r
@@ -1510,6 +1511,8 @@ abstract class CarbonDDLSqlParser extends AbstractCarbonSparkSQLParser {
   private def appendParentForEachChild(field: Field, parentName: String): Field = {
     field.dataType.getOrElse("NIL") match {
       case "String" => Field(parentName + "." + field.column, Some("String"),
+        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
+      case "binary" => Field(parentName + "." + field.column, Some("Binary"),
         Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
       case "SmallInt" => Field(parentName + "." + field.column, Some("SmallInt"),
         Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)

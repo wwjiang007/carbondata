@@ -113,18 +113,10 @@ public class DataMapUtil {
     for (Segment segment : validAndInvalidSegmentsInfo.getInvalidSegments()) {
       invalidSegment.add(segment.getSegmentNo());
     }
-    DistributableDataMapFormat dataMapFormat = new DistributableDataMapFormat(carbonTable,
-        validAndInvalidSegmentsInfo.getValidSegments(), invalidSegment, true,
-        dataMapToClear);
-    try {
-      dataMapJob.execute(dataMapFormat);
-    } catch (Exception e) {
-      if (dataMapJob.getClass().getName().equalsIgnoreCase(DISTRIBUTED_JOB_NAME)) {
-        LOGGER.warn("Failed to clear distributed cache.", e);
-      } else {
-        throw e;
-      }
-    }
+    DistributableDataMapFormat dataMapFormat =
+        new DistributableDataMapFormat(carbonTable, validAndInvalidSegmentsInfo.getValidSegments(),
+            invalidSegment, true, dataMapToClear);
+    dataMapJob.execute(dataMapFormat);
   }
 
   public static void executeClearDataMapJob(CarbonTable carbonTable, String jobClassName)
@@ -230,7 +222,7 @@ public class DataMapUtil {
       List<Segment> validSegments, List<Segment> invalidSegments, DataMapLevel level,
       List<String> segmentsToBeRefreshed) throws IOException {
     return executeDataMapJob(carbonTable, resolver, dataMapJob, partitionsToPrune, validSegments,
-        invalidSegments, level, false, segmentsToBeRefreshed);
+        invalidSegments, level, false, segmentsToBeRefreshed, false);
   }
 
   /**
@@ -241,7 +233,8 @@ public class DataMapUtil {
   public static List<ExtendedBlocklet> executeDataMapJob(CarbonTable carbonTable,
       FilterResolverIntf resolver, DataMapJob dataMapJob, List<PartitionSpec> partitionsToPrune,
       List<Segment> validSegments, List<Segment> invalidSegments, DataMapLevel level,
-      Boolean isFallbackJob, List<String> segmentsToBeRefreshed) throws IOException {
+      Boolean isFallbackJob, List<String> segmentsToBeRefreshed, boolean isCountJob)
+      throws IOException {
     List<String> invalidSegmentNo = new ArrayList<>();
     for (Segment segment : invalidSegments) {
       invalidSegmentNo.add(segment.getSegmentNo());
@@ -249,10 +242,12 @@ public class DataMapUtil {
     invalidSegmentNo.addAll(segmentsToBeRefreshed);
     DistributableDataMapFormat dataMapFormat =
         new DistributableDataMapFormat(carbonTable, resolver, validSegments, invalidSegmentNo,
-            partitionsToPrune, false, level, isFallbackJob);
-    List<ExtendedBlocklet> prunedBlocklets = dataMapJob.execute(dataMapFormat);
-    // Apply expression on the blocklets.
-    return prunedBlocklets;
+            partitionsToPrune, false, level, isFallbackJob, false);
+    if (isCountJob) {
+      dataMapFormat.setCountStarJob();
+      dataMapFormat.setIsWriteToFile(false);
+    }
+    return dataMapJob.execute(dataMapFormat);
   }
 
   public static SegmentStatusManager.ValidAndInvalidSegmentsInfo getValidAndInvalidSegments(

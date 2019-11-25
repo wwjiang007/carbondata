@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.filter.resolver.resolverinfo;
 
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
@@ -31,7 +32,8 @@ public class FalseConditionalResolverImpl extends ConditionalFilterResolverImpl 
     super(exp, isExpressionResolve, isIncludeFilter, false);
   }
 
-  @Override public void resolve(AbsoluteTableIdentifier absoluteTableIdentifier) {
+  @Override
+  public void resolve(AbsoluteTableIdentifier absoluteTableIdentifier) {
   }
 
   /**
@@ -39,7 +41,8 @@ public class FalseConditionalResolverImpl extends ConditionalFilterResolverImpl 
    * the executer type for the filter resolution, False Expresssion willl not execute anything.
    * it will return empty bitset
    */
-  @Override public FilterExecuterType getFilterExecuterType() {
+  @Override
+  public FilterExecuterType getFilterExecuterType() {
     return FilterExecuterType.FALSE;
   }
 

@@ -69,13 +69,12 @@ case class CarbonAlterTableSplitPartitionCommand(
     if (relation == null) {
       throwMetadataException(dbName, tableName, "table not found")
     }
-    carbonMetaStore.checkSchemasModifiedTimeAndReloadTable(TableIdentifier(tableName, Some(dbName)))
     if (null == (CarbonEnv.getCarbonTable(Some(dbName), tableName)(sparkSession))) {
       LOGGER.error(s"Alter table failed. table not found: $dbName.$tableName")
       throwMetadataException(dbName, tableName, "table not found")
     }
     val carbonTable = relation.carbonTable
-    val partitionInfo = carbonTable.getPartitionInfo(tableName)
+    val partitionInfo = carbonTable.getPartitionInfo
     val partitionIds = partitionInfo.getPartitionIds.asScala.map(_.asInstanceOf[Int]).toList
     // keep a copy of partitionIdList before update partitionInfo.
     // will be used in partition data scan
@@ -107,8 +106,6 @@ case class CarbonAlterTableSplitPartitionCommand(
       thriftTable,
       null,
       carbonTable.getAbsoluteTableIdentifier.getTablePath)(sparkSession)
-    // update the schema modified time
-    carbonMetaStore.updateAndTouchSchemasUpdatedTime()
     Seq.empty
   }
 

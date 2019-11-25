@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.dictionary;
 
 import org.apache.carbondata.core.devapi.BiDictionary;
@@ -55,7 +56,8 @@ public class DirectDictionary implements BiDictionary<Integer, Object> {
     return dictionaryGenerator.getValueFromSurrogate(key);
   }
 
-  @Override public int size() {
+  @Override
+  public int size() {
     return Integer.MAX_VALUE;
   }
 }

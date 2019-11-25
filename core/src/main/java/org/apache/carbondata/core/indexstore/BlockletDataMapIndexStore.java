@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore;
 
 import java.io.IOException;
@@ -80,7 +81,7 @@ public class BlockletDataMapIndexStore
     return get(identifierWrapper, null);
   }
 
-  private BlockletDataMapIndexWrapper get(TableBlockIndexUniqueIdentifierWrapper identifierWrapper,
+  public BlockletDataMapIndexWrapper get(TableBlockIndexUniqueIdentifierWrapper identifierWrapper,
       Map<String, Map<String, BlockMetaInfo>> segInfoCache) throws IOException {
     TableBlockIndexUniqueIdentifier identifier =
         identifierWrapper.getTableBlockIndexUniqueIdentifier();
@@ -158,11 +159,12 @@ public class BlockletDataMapIndexStore
     return blockletDataMapIndexWrapper;
   }
 
-  @Override public List<BlockletDataMapIndexWrapper> getAll(
+  @Override
+  public List<BlockletDataMapIndexWrapper> getAll(
       List<TableBlockIndexUniqueIdentifierWrapper> tableSegmentUniqueIdentifiers)
       throws IOException {
-    Map<String, Map<String, BlockMetaInfo>> segInfoCache
-        = new HashMap<String, Map<String, BlockMetaInfo>>();
+    Map<String, Map<String, BlockMetaInfo>> segInfoCache =
+        new HashMap<String, Map<String, BlockMetaInfo>>();
 
     List<BlockletDataMapIndexWrapper> blockletDataMapIndexWrappers =
         new ArrayList<>(tableSegmentUniqueIdentifiers.size());
@@ -205,7 +207,8 @@ public class BlockletDataMapIndexStore
    * @param tableSegmentUniqueIdentifierWrapper
    * @return
    */
-  @Override public BlockletDataMapIndexWrapper getIfPresent(
+  @Override
+  public BlockletDataMapIndexWrapper getIfPresent(
       TableBlockIndexUniqueIdentifierWrapper tableSegmentUniqueIdentifierWrapper) {
     return (BlockletDataMapIndexWrapper) lruCache.get(
         tableSegmentUniqueIdentifierWrapper.getTableBlockIndexUniqueIdentifier()
@@ -217,7 +220,8 @@ public class BlockletDataMapIndexStore
    *
    * @param tableSegmentUniqueIdentifierWrapper
    */
-  @Override public void invalidate(
+  @Override
+  public void invalidate(
       TableBlockIndexUniqueIdentifierWrapper tableSegmentUniqueIdentifierWrapper) {
     BlockletDataMapIndexWrapper blockletDataMapIndexWrapper =
         getIfPresent(tableSegmentUniqueIdentifierWrapper);
@@ -230,7 +234,7 @@ public class BlockletDataMapIndexStore
         // as segmentId will be same for all the dataMaps and segmentProperties cache is
         // maintained at segment level so it need to be called only once for clearing
         SegmentPropertiesAndSchemaHolder.getInstance()
-            .invalidate(segmentId, dataMaps.get(0).getSegmentPropertiesIndex(),
+            .invalidate(segmentId, dataMaps.get(0).getSegmentPropertiesWrapper(),
                 tableSegmentUniqueIdentifierWrapper.isAddTableBlockToUnsafeAndLRUCache());
       }
     }
@@ -264,7 +268,6 @@ public class BlockletDataMapIndexStore
       }
     }
   }
-
 
   /**
    * Below method will be used to load the segment of segments
@@ -321,7 +324,8 @@ public class BlockletDataMapIndexStore
    *
    * @param tableSegmentUniqueIdentifiersWrapper
    */
-  @Override public void clearAccessCount(
+  @Override
+  public void clearAccessCount(
       List<TableBlockIndexUniqueIdentifierWrapper> tableSegmentUniqueIdentifiersWrapper) {
     for (TableBlockIndexUniqueIdentifierWrapper
              identifierWrapper : tableSegmentUniqueIdentifiersWrapper) {

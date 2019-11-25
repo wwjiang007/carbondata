@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.metadata.converter;
 
 import java.util.ArrayList;
@@ -1704,7 +1705,7 @@ public class ThriftWrapperSchemaConverterImplTest {
 
   @Test public void testFromExternalToWrapperTableSchema() {
     String tableId = "1";
-    String tableName = "tableName";
+    String tableName = "tablename";
     TableSchema actualResult =
         thriftWrapperSchemaConverter.fromExternalToWrapperTableSchema(tabSchema, "tableName");
     assertEquals(tableId, actualResult.getTableId());
@@ -1729,7 +1730,7 @@ public class ThriftWrapperSchemaConverterImplTest {
     TableInfo actualResult = thriftWrapperSchemaConverter
         .fromExternalToWrapperTableInfo(externalTableInfo, "dbName", "tableName", "/path");
     assertEquals(time, actualResult.getLastUpdatedTime());
-    assertEquals("dbName_tableName", actualResult.getTableUniqueName());
+    assertEquals("dbname_tablename", actualResult.getTableUniqueName());
   }
 
 }

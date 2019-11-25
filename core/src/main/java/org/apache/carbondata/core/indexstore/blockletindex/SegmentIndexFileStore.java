@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.blockletindex;
 
 import java.io.DataInputStream;
@@ -315,7 +316,8 @@ public class SegmentIndexFileStore {
   private MergedBlockIndexHeader readMergeBlockIndexHeader(ThriftReader thriftReader)
       throws IOException {
     return (MergedBlockIndexHeader) thriftReader.read(new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new MergedBlockIndexHeader();
       }
     });
@@ -323,7 +325,8 @@ public class SegmentIndexFileStore {
 
   private MergedBlockIndex readMergeBlockIndex(ThriftReader thriftReader) throws IOException {
     return (MergedBlockIndex) thriftReader.read(new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new MergedBlockIndex();
       }
     });
@@ -347,7 +350,8 @@ public class SegmentIndexFileStore {
    */
   public static CarbonFile[] getCarbonIndexFiles(CarbonFile carbonFile) {
     return carbonFile.listFiles(new CarbonFileFilter() {
-      @Override public boolean accept(CarbonFile file) {
+      @Override
+      public boolean accept(CarbonFile file) {
         return ((file.getName().endsWith(CarbonTablePath.INDEX_FILE_EXT) || file.getName()
             .endsWith(CarbonTablePath.MERGE_INDEX_FILE_EXT)) && file.getSize() > 0);
       }
@@ -381,7 +385,8 @@ public class SegmentIndexFileStore {
   public static CarbonFile[] getCarbonIndexFiles(String segmentPath, Configuration configuration) {
     CarbonFile carbonFile = FileFactory.getCarbonFile(segmentPath, configuration);
     return carbonFile.listFiles(new CarbonFileFilter() {
-      @Override public boolean accept(CarbonFile file) {
+      @Override
+      public boolean accept(CarbonFile file) {
         return ((file.getName().endsWith(CarbonTablePath.INDEX_FILE_EXT) || file.getName()
             .endsWith(CarbonTablePath.MERGE_INDEX_FILE_EXT)) && file.getSize() > 0);
       }

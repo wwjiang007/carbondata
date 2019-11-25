@@ -103,6 +103,7 @@ public class ColumnExpression extends LeafExpression {
     measure = null;
     isDimension = false;
     isMeasure = false;
+    carbonColumn = null;
   }
 
   @Override
@@ -138,6 +139,5 @@ public class ColumnExpression extends LeafExpression {
   @Override
   public void findAndSetChild(Expression oldExpr, Expression newExpr) {
   }
-
 
 }

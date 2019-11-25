@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.page;
 
 import java.nio.ByteBuffer;
@@ -53,7 +54,8 @@ public class DecoderBasedFallbackEncoder implements Callable<FallbackEncodedColu
     this.localDictionaryGenerator = localDictionaryGenerator;
   }
 
-  @Override public FallbackEncodedColumnPage call() throws Exception {
+  @Override
+  public FallbackEncodedColumnPage call() throws Exception {
     int pageSize =
         encodedColumnPage.getActualPage().getPageSize();
     int offset = 0;

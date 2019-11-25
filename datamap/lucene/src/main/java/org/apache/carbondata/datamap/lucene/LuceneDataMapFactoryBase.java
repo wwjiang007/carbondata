@@ -126,7 +126,7 @@ abstract class LuceneDataMapFactoryBase<T extends DataMap> extends DataMapFactor
     this.dataMapName = dataMapSchema.getDataMapName();
 
     // validate DataMapSchema and get index columns
-    indexedCarbonColumns =  carbonTable.getIndexedColumns(dataMapSchema);;
+    indexedCarbonColumns =  carbonTable.getIndexedColumns(dataMapSchema);
     flushCacheSize = validateAndGetWriteCacheSize(dataMapSchema);
     storeBlockletWise = validateAndGetStoreBlockletWise(dataMapSchema);
 
@@ -172,6 +172,7 @@ abstract class LuceneDataMapFactoryBase<T extends DataMap> extends DataMapFactor
     }
     return splitBlockletWise;
   }
+
   /**
    * this method will delete the datamap folders during drop datamap
    * @throws MalformedDataMapCommandException
@@ -262,7 +263,8 @@ abstract class LuceneDataMapFactoryBase<T extends DataMap> extends DataMapFactor
     deleteSegmentDatamapData(segment.getSegmentNo());
   }
 
-  @Override public void deleteSegmentDatamapData(String segmentId) throws IOException {
+  @Override
+  public void deleteSegmentDatamapData(String segmentId) throws IOException {
     try {
       String datamapPath = CarbonTablePath
           .getDataMapStorePath(tableIdentifier.getTablePath(), segmentId, dataMapName);

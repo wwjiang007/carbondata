@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.executor.infos;
 
 import java.util.Map;
@@ -313,9 +314,8 @@ public class BlockExecutionInfo {
   /**
    * @param allSelectedDimensionColumnIndexRange the allSelectedDimensionColumnIndexRange to set
    */
-  public void setAllSelectedDimensionColumnIndexRange(int[][] allSelectedDimensionColumnIndexRange)
-  {
-    this.allSelectedDimensionColumnIndexRange = allSelectedDimensionColumnIndexRange;
+  public void setAllSelectedDimensionColumnIndexRange(int[][] selectedDimensionColumnIndexRange) {
+    this.allSelectedDimensionColumnIndexRange = selectedDimensionColumnIndexRange;
   }
 
   /**

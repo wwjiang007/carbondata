@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap.dev.expr;
 
 import java.io.IOException;
@@ -61,7 +62,8 @@ public class DataMapExprWrapperImpl implements DataMapExprWrapper {
     return dataMap.prune(dataMaps, distributable, expression, partitionsToPrune);
   }
 
-  @Override public List<ExtendedBlocklet> pruneBlocklets(List<ExtendedBlocklet> blocklets)
+  @Override
+  public List<ExtendedBlocklet> pruneBlocklets(List<ExtendedBlocklet> blocklets)
       throws IOException {
     List<ExtendedBlocklet> blockletList = new ArrayList<>();
     for (ExtendedBlocklet blocklet: blocklets) {
@@ -72,11 +74,13 @@ public class DataMapExprWrapperImpl implements DataMapExprWrapper {
     return blockletList;
   }
 
-  @Override public FilterResolverIntf getFilterResolverIntf() {
+  @Override
+  public FilterResolverIntf getFilterResolverIntf() {
     return expression;
   }
 
-  @Override public FilterResolverIntf getFilterResolverIntf(String uniqueId) {
+  @Override
+  public FilterResolverIntf getFilterResolverIntf(String uniqueId) {
     if (this.uniqueId.equals(uniqueId)) {
       return expression;
     }
@@ -94,7 +98,8 @@ public class DataMapExprWrapperImpl implements DataMapExprWrapper {
     return wrappers;
   }
 
-  @Override public DataMapLevel getDataMapLevel() {
+  @Override
+  public DataMapLevel getDataMapLevel() {
     return dataMap.getDataMapFactory().getDataMapLevel();
   }
 

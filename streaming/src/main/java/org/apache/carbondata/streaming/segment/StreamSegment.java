@@ -86,7 +86,7 @@ public class StreamSegment {
                 CarbonTablePath.getMetadataPath(table.getTablePath()));
         LoadMetadataDetails streamSegment = null;
         for (LoadMetadataDetails detail : details) {
-          if (FileFormat.ROW_V1 == detail.getFileFormat()) {
+          if (FileFormat.ROW_V1.equals(detail.getFileFormat())) {
             if (SegmentStatus.STREAMING == detail.getSegmentStatus()) {
               streamSegment = detail;
               break;
@@ -96,7 +96,6 @@ public class StreamSegment {
         if (null == streamSegment) {
           int segmentId = SegmentStatusManager.createNewSegmentId(details);
           LoadMetadataDetails newDetail = new LoadMetadataDetails();
-          newDetail.setPartitionCount("0");
           newDetail.setLoadName("" + segmentId);
           newDetail.setFileFormat(FileFormat.ROW_V1);
           newDetail.setLoadStartTime(System.currentTimeMillis());
@@ -159,8 +158,7 @@ public class StreamSegment {
 
         int newSegmentId = SegmentStatusManager.createNewSegmentId(details);
         LoadMetadataDetails newDetail = new LoadMetadataDetails();
-        newDetail.setPartitionCount("0");
-        newDetail.setLoadName("" + newSegmentId);
+        newDetail.setLoadName(String.valueOf(newSegmentId));
         newDetail.setFileFormat(FileFormat.ROW_V1);
         newDetail.setLoadStartTime(System.currentTimeMillis());
         newDetail.setSegmentStatus(SegmentStatus.STREAMING);
@@ -398,7 +396,6 @@ public class StreamSegment {
     }
   }
 
-
   /**
    * list all carbondata files of a segment
    */
@@ -406,7 +403,8 @@ public class StreamSegment {
     CarbonFile carbonDir = FileFactory.getCarbonFile(segmentDir, fileType);
     if (carbonDir.exists()) {
       return carbonDir.listFiles(new CarbonFileFilter() {
-        @Override public boolean accept(CarbonFile file) {
+        @Override
+        public boolean accept(CarbonFile file) {
           return CarbonTablePath.isCarbonDataFile(file.getName());
         }
       });

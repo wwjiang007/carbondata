@@ -81,7 +81,7 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
     cacheManagement | alterDataMap
 
   protected lazy val loadManagement: Parser[LogicalPlan] =
-    deleteLoadsByID | deleteLoadsByLoadDate | cleanFiles | loadDataNew
+    deleteLoadsByID | deleteLoadsByLoadDate | cleanFiles | loadDataNew | addLoad
 
   protected lazy val restructure: Parser[LogicalPlan] =
     alterTableColumnRenameAndModifyDataType | alterTableDropColumn | alterTableAddColumns
@@ -284,8 +284,9 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
     ("=" ~> restInput) <~ opt(";") ^^ {
       case tab ~ columns ~ rest =>
         val (sel, where) = splitQuery(rest)
+        val selectPattern = """^\s*select\s+""".r
         val (selectStmt, relation) =
-          if (!sel.toLowerCase.startsWith("select ")) {
+          if (!selectPattern.findFirstIn(sel.toLowerCase).isDefined) {
             if (sel.trim.isEmpty) {
               sys.error("At least one source column has to be specified ")
             }
@@ -481,6 +482,20 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
         }
     }
 
+  /**
+   * ALTER TABLE [dbName.]tableName ADD SEGMENT
+   * OPTIONS('path'='path','format'='format', ['partition'='schema list'])
+   *
+   * schema list format: column_name:data_type
+   * for example: 'partition'='a:int,b:string'
+   */
+  protected lazy val addLoad: Parser[LogicalPlan] =
+    ALTER ~ TABLE ~> (ident <~ ".").? ~ ident ~ (ADD ~> SEGMENT) ~
+    (OPTIONS ~> "(" ~> repsep(loadOptions, ",") <~ ")") <~ opt(";") ^^ {
+      case dbName ~ tableName ~ segment ~ optionsList =>
+        CarbonAddLoadCommand(dbName, tableName, optionsList.toMap)
+    }
+
   protected lazy val cleanFiles: Parser[LogicalPlan] =
     CLEAN ~> FILES ~> FOR ~> TABLE ~> (ident <~ ".").? ~ ident <~ opt(";") ^^ {
       case databaseName ~ tableName =>
@@ -522,14 +537,9 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
     }
 
   protected lazy val cli: Parser[LogicalPlan] =
-    (CARBONCLI ~> FOR ~> TABLE) ~> (ident <~ ".").? ~ ident ~
-    (OPTIONS ~> "(" ~> commandOptions <~ ")").? <~
-    opt(";") ^^ {
-      case databaseName ~ tableName ~ commandList =>
-        var commandOptions: String = null
-        if (commandList.isDefined) {
-          commandOptions = commandList.get
-        }
+    CARBONCLI ~> FOR ~> TABLE ~> (ident <~ ".").? ~ ident ~
+    (OPTIONS ~> "(" ~> commandOptions <~ ")") <~ opt(";") ^^ {
+      case databaseName ~ tableName ~ commandOptions =>
         CarbonCliCommand(
           convertDbNameToLowerCase(databaseName),
           tableName.toLowerCase(),

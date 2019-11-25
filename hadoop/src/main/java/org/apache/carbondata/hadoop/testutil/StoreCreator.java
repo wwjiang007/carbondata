@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.hadoop.testutil;
 
 import java.io.BufferedReader;
@@ -181,9 +182,10 @@ public class StoreCreator {
   /**
    * Create store without any restructure
    */
-  public void createCarbonStore() throws Exception {
+  public CarbonLoadModel createCarbonStore() throws Exception {
     CarbonLoadModel loadModel = createTableAndLoadModel();
     loadData(loadModel, storePath);
+    return loadModel;
   }
 
   /**
@@ -381,7 +383,7 @@ public class StoreCreator {
   private void writeDictionary(String factFilePath, CarbonTable table) throws Exception {
     BufferedReader reader = new BufferedReader(new InputStreamReader(
         new FileInputStream(factFilePath), "UTF-8"));
-    List<CarbonDimension> dims = table.getDimensionByTableName(table.getTableName());
+    List<CarbonDimension> dims = table.getVisibleDimensions();
     Set<String>[] set = new HashSet[dims.size()];
     for (int i = 0; i < set.length; i++) {
       set[i] = new HashSet<String>();

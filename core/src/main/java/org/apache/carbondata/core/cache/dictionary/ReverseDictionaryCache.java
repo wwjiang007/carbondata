@@ -63,7 +63,6 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
 
   private static final long byteArraySize = ObjectSizeCalculator.estimate(new byte[0], 16);
 
-
   /**
    * @param carbonLRUCache
    */
@@ -80,7 +79,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
    * @return dictionary
    * @throws IOException in case memory is not sufficient to load dictionary into memory
    */
-  @Override public Dictionary get(DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier)
+  @Override
+  public Dictionary get(DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier)
       throws IOException {
     return getDictionary(dictionaryColumnUniqueIdentifier);
   }
@@ -94,7 +94,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
    * @return list of dictionary
    * @throws IOException in case memory is not sufficient to load dictionary into memory
    */
-  @Override public List<Dictionary> getAll(
+  @Override
+  public List<Dictionary> getAll(
       List<DictionaryColumnUniqueIdentifier> dictionaryColumnUniqueIdentifiers)
       throws IOException {
     boolean exceptionOccurredInDictionaryLoading = false;
@@ -106,7 +107,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
     ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
     for (final DictionaryColumnUniqueIdentifier uniqueIdent : dictionaryColumnUniqueIdentifiers) {
       taskSubmitList.add(executorService.submit(new Callable<Dictionary>() {
-        @Override public Dictionary call() throws IOException {
+        @Override
+        public Dictionary call() throws IOException {
           return getDictionary(uniqueIdent);
         }
       }));
@@ -142,7 +144,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
    *                                         tableName and columnIdentifier
    * @return
    */
-  @Override public Dictionary getIfPresent(
+  @Override
+  public Dictionary getIfPresent(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     Dictionary reverseDictionary = null;
     ColumnReverseDictionaryInfo columnReverseDictionaryInfo =
@@ -162,7 +165,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
    * @param dictionaryColumnUniqueIdentifier unique identifier which contains dbName,
    *                                         tableName and columnIdentifier
    */
-  @Override public void invalidate(
+  @Override
+  public void invalidate(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     carbonLRUCache.remove(
         getLruCacheKey(dictionaryColumnUniqueIdentifier.getColumnIdentifier().getColumnId(),
@@ -219,7 +223,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
     return columnReverseDictionaryInfo;
   }
 
-  @Override public void clearAccessCount(List<DictionaryColumnUniqueIdentifier> keys) {
+  @Override
+  public void clearAccessCount(List<DictionaryColumnUniqueIdentifier> keys) {
     for (DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier : keys) {
       Dictionary cacheable = (Dictionary) carbonLRUCache.get(
           getLruCacheKey(dictionaryColumnUniqueIdentifier.getColumnIdentifier().getColumnId(),
@@ -228,7 +233,8 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
     }
   }
 
-  @Override protected long getEstimatedDictionarySize(DictionaryInfo dictionaryInfo,
+  @Override
+  protected long getEstimatedDictionarySize(DictionaryInfo dictionaryInfo,
       CarbonDictionaryColumnMetaChunk carbonDictionaryColumnMetaChunk,
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier, boolean
       readSortIndexSize) throws IOException {

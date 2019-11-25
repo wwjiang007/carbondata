@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.block;
 
 import java.io.Serializable;
@@ -80,7 +81,8 @@ public class BlockInfo implements Serializable {
   /**
    * method to get the hash code
    */
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     int result = info.getFilePath().hashCode();
     result = 31 * result + (int) (info.getBlockOffset() ^ (info.getBlockOffset() >>> 32));
     result = 31 * result + (int) (info.getBlockLength() ^ (info.getBlockLength() >>> 32));
@@ -93,7 +95,8 @@ public class BlockInfo implements Serializable {
    *
    * @param obj
    */
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }

@@ -202,6 +202,9 @@ public final class CarbonProperties {
       case CarbonCommonConstants.CARBON_INDEX_SERVER_SERIALIZATION_THRESHOLD:
         validateIndexServerSerializationThreshold();
         break;
+      case CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB:
+        validateAndGetLocalDictionarySizeThresholdInMB();
+        break;
       // TODO : Validation for carbon.lock.type should be handled for addProperty flow
       default:
         // none
@@ -268,6 +271,7 @@ public final class CarbonProperties {
     validateStringCharacterLimit();
     validateDetailQueryBatchSize();
     validateIndexServerSerializationThreshold();
+    validateAndGetLocalDictionarySizeThresholdInMB();
   }
 
   /**
@@ -753,38 +757,30 @@ public final class CarbonProperties {
    * memory
    */
   private void loadProperties() {
-    String property = System.getProperty(CarbonCommonConstants.CARBON_PROPERTIES_FILE_PATH);
-    if (null == property) {
-      property = CarbonCommonConstants.CARBON_PROPERTIES_FILE_PATH_DEFAULT;
-    }
-    File file = new File(property);
-    LOGGER.info("Property file path: " + file.getAbsolutePath());
+    String propertyPath = System.getProperty(CarbonCommonConstants.CARBON_PROPERTIES_FILE_PATH,
+            CarbonCommonConstants.CARBON_PROPERTIES_FILE_PATH_DEFAULT);
+
+    File propertyFile = new File(propertyPath);
+    LOGGER.info("Property file path: " + propertyFile.getAbsolutePath());
 
     FileInputStream fis = null;
     try {
-      if (file.exists()) {
-        fis = new FileInputStream(file);
+      if (propertyFile.exists()) {
+        fis = new FileInputStream(propertyFile);
 
         carbonProperties.load(fis);
       }
     } catch (FileNotFoundException e) {
-      LOGGER.error(
-          "The file: " + FileFactory.getCarbonFile(CarbonCommonConstants
-              .CARBON_PROPERTIES_FILE_PATH_DEFAULT).getAbsolutePath()
-              + " does not exist");
+      LOGGER.error("The file: " + propertyFile.getAbsolutePath() + " does not exist");
     } catch (IOException e) {
-      LOGGER.error(
-          "Error while reading the file: "
-              + FileFactory.getCarbonFile(CarbonCommonConstants
-              .CARBON_PROPERTIES_FILE_PATH_DEFAULT).getAbsolutePath());
+      LOGGER.error("Error while reading the file: " + propertyFile.getAbsolutePath());
     } finally {
       if (null != fis) {
         try {
           fis.close();
         } catch (IOException e) {
           LOGGER.error("Error while closing the file stream for file: "
-              + FileFactory.getCarbonFile(CarbonCommonConstants
-              .CARBON_PROPERTIES_FILE_PATH_DEFAULT).getAbsolutePath());
+              + propertyFile.getAbsolutePath());
         }
       }
     }
@@ -1501,6 +1497,7 @@ public final class CarbonProperties {
     }
     return preserveCnt;
   }
+
   /**
    * Get the configured system folder location.
    * @return
@@ -1680,6 +1677,15 @@ public final class CarbonProperties {
     return isServerEnabledByUser;
   }
 
+  /**
+   * Check if user has enabled/disabled the use of pre-priming for index server
+   */
+  public boolean isIndexServerPrePrimingEnabled() {
+    String configuredValue = carbonProperties.getProperty(
+            CarbonCommonConstants.CARBON_INDEXSEVER_ENABLE_PREPRIMING);
+    return Boolean.parseBoolean(configuredValue);
+  }
+
   public String getIndexServerIP() {
     return carbonProperties.getProperty(CarbonCommonConstants.CARBON_INDEX_SERVER_IP, "");
   }
@@ -1749,4 +1755,83 @@ public final class CarbonProperties {
     }
     return numOfThreadsForPruning;
   }
+
+  /**
+   * Validate and get the input metrics interval
+   *
+   * @return input metrics interval
+   */
+  public static Long getInputMetricsInterval() {
+    String metrics = CarbonProperties.getInstance()
+        .getProperty(CarbonCommonConstants.INPUT_METRICS_UPDATE_INTERVAL);
+    if (metrics == null) {
+      return CarbonCommonConstants.INPUT_METRICS_UPDATE_INTERVAL_DEFAULT;
+    } else {
+      try {
+        long configuredValue = Long.parseLong(metrics);
+        if (configuredValue < 0) {
+          return CarbonCommonConstants.INPUT_METRICS_UPDATE_INTERVAL_DEFAULT;
+        } else {
+          return configuredValue;
+        }
+      } catch (Exception ex) {
+        return CarbonCommonConstants.INPUT_METRICS_UPDATE_INTERVAL_DEFAULT;
+      }
+    }
+  }
+
+  /**
+   * Validate and get query prefetch enable
+   *
+   * @return boolean prefetch value
+   */
+  public static Boolean getQueryPrefetchEnable() {
+    String prefetchEnable = CarbonProperties.getInstance()
+        .getProperty(CarbonCommonConstants.CARBON_QUERY_PREFETCH_ENABLE);
+    if (prefetchEnable == null) {
+      return Boolean.parseBoolean(CarbonCommonConstants.CARBON_QUERY_PREFETCH_ENABLE_DEFAULT);
+    } else {
+      // return false only if false is set. any other case return true
+      return !prefetchEnable.equalsIgnoreCase("false");
+    }
+  }
+
+  /**
+   * get local dictionary size threshold in mb.
+   */
+  private void validateAndGetLocalDictionarySizeThresholdInMB() {
+    String sizeStr = carbonProperties
+        .getProperty(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB);
+    String defaultValue = Integer
+        .toString(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB_DEFAULT);
+    if (sizeStr == null) {
+      carbonProperties
+          .setProperty(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB,
+              defaultValue);
+    } else {
+      try {
+        int size = Integer.parseInt(sizeStr);
+        if (size < 0 || size == 0
+            || size > CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB_MAX) {
+          LOGGER.info("using default value of carbon.local.dictionary.size.threshold.inmb = "
+              + defaultValue);
+          carbonProperties
+              .setProperty(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB,
+                  defaultValue);
+        } else {
+          LOGGER.info("using carbon.local.dictionary.size.threshold.inmb = " + size);
+          carbonProperties
+              .setProperty(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB,
+                  Integer.toString(size));
+        }
+      } catch (Exception ex) {
+        LOGGER.info(
+            "using default value of carbon.local.dictionary.size.threshold.inmb = " + defaultValue);
+        carbonProperties
+            .setProperty(CarbonCommonConstants.CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB,
+                defaultValue);
+      }
+    }
+  }
+
 }

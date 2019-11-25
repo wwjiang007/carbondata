@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.chunk.reader.dimension.v3;
 
 import java.io.IOException;
@@ -208,7 +209,8 @@ public class CompressedDimensionChunkFileBasedReaderV3 extends AbstractChunkRead
    * @param pageNumber              number
    * @return DimensionColumnPage
    */
-  @Override public DimensionColumnPage decodeColumnPage(DimensionRawColumnChunk rawColumnPage,
+  @Override
+  public DimensionColumnPage decodeColumnPage(DimensionRawColumnChunk rawColumnPage,
       int pageNumber, ReusableDataBuffer reusableDataBuffer) throws IOException, MemoryException {
     return decodeColumnPage(rawColumnPage, pageNumber, null, reusableDataBuffer);
   }

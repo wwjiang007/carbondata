@@ -27,13 +27,11 @@ import org.scalatest.BeforeAndAfterAll
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.datamap.dev.DataMap
-import org.apache.carbondata.core.datamap.{DataMapChooser, DataMapStoreManager, Segment, TableDataMap}
-import org.apache.carbondata.core.datastore.block.SegmentPropertiesAndSchemaHolder
+import org.apache.carbondata.core.datamap.{DataMapChooser, DataMapFilter, DataMapStoreManager, Segment, TableDataMap}
 import org.apache.carbondata.core.indexstore.Blocklet
 import org.apache.carbondata.core.indexstore.blockletindex.{BlockDataMap, BlockletDataMap, BlockletDataMapRowIndexes}
 import org.apache.carbondata.core.indexstore.schema.CarbonRowSchema
 import org.apache.carbondata.core.metadata.datatype.DataTypes
-import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension
 import org.apache.carbondata.core.readcommitter.TableStatusReadCommittedScope
 import org.apache.carbondata.core.scan.expression.conditional.NotEqualsExpression
@@ -88,9 +86,8 @@ class TestQueryWithColumnMetCacheAndCacheLevelProperty extends QueryTest with Be
 
   private def validateMinMaxColumnsCacheLength(dataMaps: List[DataMap[_ <: Blocklet]],
       expectedLength: Int, storeBlockletCount: Boolean = false): Boolean = {
-    val index = dataMaps(0).asInstanceOf[BlockDataMap].getSegmentPropertiesIndex
-    val summarySchema = SegmentPropertiesAndSchemaHolder.getInstance()
-      .getSegmentPropertiesWrapper(index).getTaskSummarySchemaForBlock(storeBlockletCount, false)
+    val segmentPropertiesWrapper = dataMaps(0).asInstanceOf[BlockDataMap].getSegmentPropertiesWrapper
+    val summarySchema = segmentPropertiesWrapper.getTaskSummarySchemaForBlock(storeBlockletCount, false)
     val minSchemas = summarySchema(BlockletDataMapRowIndexes.TASK_MIN_VALUES_INDEX)
       .asInstanceOf[CarbonRowSchema.StructCarbonRowSchema]
       .getChildSchemas
@@ -107,15 +104,10 @@ class TestQueryWithColumnMetCacheAndCacheLevelProperty extends QueryTest with Be
     assert(dataMaps.nonEmpty)
     assert(dataMaps(0).isInstanceOf[BlockDataMap])
     assert(validateMinMaxColumnsCacheLength(dataMaps, 3, true))
-    var segmentPropertyIndex = dataMaps(0).asInstanceOf[BlockDataMap].getSegmentPropertiesIndex
-
     // alter table to add column_meta_cache and cache_level
     sql(
       "alter table metaCache set tblproperties('column_meta_cache'='c2,c1', 'CACHE_LEVEL'='BLOCKLET')")
-    var wrapper = SegmentPropertiesAndSchemaHolder.getInstance()
-      .getSegmentPropertiesWrapper(segmentPropertyIndex)
     // after alter operation cache should be cleaned and cache should be evicted
-    assert(null == wrapper)
     checkAnswer(sql("select * from metaCache"), Row("a", "aa", "aaa"))
     // validate dataMap is non empty, its an instance of BlockletDataMap and minMaxSchema length
     // is 1
@@ -125,23 +117,11 @@ class TestQueryWithColumnMetCacheAndCacheLevelProperty extends QueryTest with Be
     assert(validateMinMaxColumnsCacheLength(dataMaps, 2))
 
     // alter table to add same value as previous with order change for column_meta_cache and cache_level
-    segmentPropertyIndex = dataMaps(0).asInstanceOf[BlockDataMap].getSegmentPropertiesIndex
     sql(
       "alter table metaCache set tblproperties('column_meta_cache'='c1,c2', 'CACHE_LEVEL'='BLOCKLET')")
-    wrapper = SegmentPropertiesAndSchemaHolder.getInstance()
-      .getSegmentPropertiesWrapper(segmentPropertyIndex)
-    // after alter operation cache should not be cleaned as value are unchanged
-    assert(null != wrapper)
-
-    // alter table to cache no column in column_meta_cache
-    segmentPropertyIndex = dataMaps(0).asInstanceOf[BlockDataMap].getSegmentPropertiesIndex
     sql(
       "alter table metaCache set tblproperties('column_meta_cache'='')")
-    wrapper = SegmentPropertiesAndSchemaHolder.getInstance()
-      .getSegmentPropertiesWrapper(segmentPropertyIndex)
-
     // after alter operation cache should be cleaned and cache should be evicted
-    assert(null == wrapper)
     checkAnswer(sql("select * from metaCache"), Row("a", "aa", "aaa"))
     // validate dataMap is non empty, its an instance of BlockletDataMap and minMaxSchema length
     // is 0
@@ -151,13 +131,8 @@ class TestQueryWithColumnMetCacheAndCacheLevelProperty extends QueryTest with Be
     assert(validateMinMaxColumnsCacheLength(dataMaps, 0))
 
     // alter table to cache no column in column_meta_cache
-    segmentPropertyIndex = dataMaps(0).asInstanceOf[BlockDataMap].getSegmentPropertiesIndex
     sql(
       "alter table metaCache unset tblproperties('column_meta_cache', 'cache_level')")
-    wrapper = SegmentPropertiesAndSchemaHolder.getInstance()
-      .getSegmentPropertiesWrapper(segmentPropertyIndex)
-    // after alter operation cache should be cleaned and cache should be evicted
-    assert(null == wrapper)
     checkAnswer(sql("select * from metaCache"), Row("a", "aa", "aaa"))
     // validate dataMap is non empty, its an instance of BlockletDataMap and minMaxSchema length
     // is 3
@@ -297,7 +272,7 @@ class TestQueryWithColumnMetCacheAndCacheLevelProperty extends QueryTest with Be
     // form a filter expression and generate filter resolver tree
     val columnExpression = new ColumnExpression("name", DataTypes.STRING)
     columnExpression.setDimension(true)
-    val dimension: CarbonDimension = carbonTable.getDimensionByName(carbonTable.getTableName, "name")
+    val dimension: CarbonDimension = carbonTable.getDimensionByName("name")
     columnExpression.setDimension(dimension)
     columnExpression.setCarbonColumn(dimension)
     val literalValueExpression = new LiteralExpression("a", DataTypes.STRING)
@@ -305,8 +280,7 @@ class TestQueryWithColumnMetCacheAndCacheLevelProperty extends QueryTest with Be
     val notEqualsExpression = new NotEqualsExpression(columnExpression, literalNullExpression)
     val equalsExpression = new NotEqualsExpression(columnExpression, literalValueExpression)
     val andExpression = new AndExpression(notEqualsExpression, equalsExpression)
-    val resolveFilter: FilterResolverIntf =
-      CarbonTable.resolveFilter(andExpression, carbonTable.getAbsoluteTableIdentifier)
+    val resolveFilter: FilterResolverIntf = new DataMapFilter(carbonTable, andExpression).getResolver()
     val exprWrapper = DataMapChooser.getDefaultDataMap(carbonTable, resolveFilter)
     val segment = new Segment("0", new TableStatusReadCommittedScope(carbonTable
       .getAbsoluteTableIdentifier, new Configuration(false)))

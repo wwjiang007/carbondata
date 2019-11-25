@@ -110,7 +110,6 @@ public class DataConverterProcessorStepImpl extends AbstractDataLoadProcessorSte
         new HashPartitionerImpl(indexes, columnSchemas, bucketingInfo.getNumOfRanges());
   }
 
-
   /**
    * initialize partitioner for sort column ranges
    */
@@ -155,7 +154,8 @@ public class DataConverterProcessorStepImpl extends AbstractDataLoadProcessorSte
     }
   }
 
-  @Override public Iterator<CarbonRowBatch>[] execute() throws CarbonDataLoadingException {
+  @Override
+  public Iterator<CarbonRowBatch>[] execute() throws CarbonDataLoadingException {
     Iterator<CarbonRowBatch>[] childIters = child.execute();
     Iterator<CarbonRowBatch>[] iterators = new Iterator[childIters.length];
     for (int i = 0; i < childIters.length; i++) {
@@ -174,7 +174,9 @@ public class DataConverterProcessorStepImpl extends AbstractDataLoadProcessorSte
     return new CarbonIterator<CarbonRowBatch>() {
       private boolean first = true;
       private RowConverter localConverter;
-      @Override public boolean hasNext() {
+
+      @Override
+      public boolean hasNext() {
         if (first) {
           first = false;
           localConverter = converters.get(0).createCopyForNewThread();
@@ -184,7 +186,9 @@ public class DataConverterProcessorStepImpl extends AbstractDataLoadProcessorSte
         }
         return childIter.hasNext();
       }
-      @Override public CarbonRowBatch next() {
+
+      @Override
+      public CarbonRowBatch next() {
         return processRowBatch(childIter.next(), localConverter);
       }
     };
@@ -233,7 +237,8 @@ public class DataConverterProcessorStepImpl extends AbstractDataLoadProcessorSte
     }
   }
 
-  @Override protected String getStepName() {
+  @Override
+  protected String getStepName() {
     if (isBucketColumnEnabled) {
       return "Data Converter with Bucketing";
     } else if (isSortColumnRangeEnabled) {

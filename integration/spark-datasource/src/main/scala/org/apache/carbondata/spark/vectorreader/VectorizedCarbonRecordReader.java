@@ -110,10 +110,9 @@ public class VectorizedCarbonRecordReader extends AbstractRecordReader<Object> {
     }
   }
 
-
-  /*
- * Can be called before any rows are returned to enable returning columnar batches directly.
- */
+  /**
+   * Can be called before any rows are returned to enable returning columnar batches directly.
+   */
   public void enableReturningBatches() {
     returnColumnarBatch = true;
   }
@@ -328,9 +327,9 @@ public class VectorizedCarbonRecordReader extends AbstractRecordReader<Object> {
    */
   private boolean isUseLazyLoad() {
     boolean useLazyLoad = false;
-    if (queryModel.getFilterExpressionResolverTree() != null) {
+    if (queryModel.getDataMapFilter() != null) {
       Expression expression =
-          queryModel.getFilterExpressionResolverTree().getFilterExpression();
+          queryModel.getDataMapFilter().getExpression();
       useLazyLoad = true;
       // In case of join queries only not null filter would e pushed down so check and disable the
       // lazy load in that case.
@@ -354,8 +353,6 @@ public class VectorizedCarbonRecordReader extends AbstractRecordReader<Object> {
   private void resultBatch() {
     if (vectorProxy == null) initBatch();
   }
-
-
 
   /**
    * Advances to the next batch of rows. Returns false if there are no more.

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.dictionary.generator;
 
 import java.io.IOException;
@@ -29,7 +30,7 @@ import org.apache.carbondata.core.devapi.DictionaryGenerationException;
 import org.apache.carbondata.core.devapi.DictionaryGenerator;
 import org.apache.carbondata.core.dictionary.generator.key.DictionaryMessage;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
-import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.util.CarbonProperties;
 
 import org.apache.log4j.Logger;
@@ -56,7 +57,7 @@ public class TableDictionaryGenerator
   @Override
   public Integer generateKey(DictionaryMessage value)
       throws DictionaryGenerationException {
-    CarbonDimension dimension = carbonTable.getPrimitiveDimensionByName(value.getColumnName());
+    CarbonColumn dimension = carbonTable.getPrimitiveDimensionByName(value.getColumnName());
 
     if (null == dimension) {
       throw new DictionaryGenerationException("Dictionary Generation Failed");
@@ -67,7 +68,7 @@ public class TableDictionaryGenerator
   }
 
   public Integer size(DictionaryMessage key) {
-    CarbonDimension dimension = carbonTable.getPrimitiveDimensionByName(key.getColumnName());
+    CarbonColumn dimension = carbonTable.getPrimitiveDimensionByName(key.getColumnName());
 
     if (null == dimension) {
       return 0;
@@ -77,7 +78,8 @@ public class TableDictionaryGenerator
     return ((BiDictionary) generator).size();
   }
 
-  @Override public void writeDictionaryData() {
+  @Override
+  public void writeDictionaryData() {
     int numOfCores = CarbonProperties.getInstance().getNumberOfLoadingCores();
     long start = System.currentTimeMillis();
     ExecutorService executorService = Executors.newFixedThreadPool(numOfCores);
@@ -96,7 +98,7 @@ public class TableDictionaryGenerator
   }
 
   public void updateGenerator(DictionaryMessage key) {
-    CarbonDimension dimension = carbonTable
+    CarbonColumn dimension = carbonTable
         .getPrimitiveDimensionByName(key.getColumnName());
     if (null != dimension && null == columnMap.get(dimension.getColumnId())) {
       synchronized (columnMap) {
@@ -115,7 +117,8 @@ public class TableDictionaryGenerator
       this.generator = generator;
     }
 
-    @Override public void run() {
+    @Override
+    public void run() {
       try {
         ((DictionaryWriter)generator).writeDictionaryData();
       } catch (IOException e) {

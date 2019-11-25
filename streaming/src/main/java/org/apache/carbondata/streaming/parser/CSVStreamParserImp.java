@@ -21,6 +21,7 @@ import org.apache.carbondata.processing.loading.csvinput.CSVInputFormat;
 
 import com.univocity.parsers.csv.CsvParser;
 import com.univocity.parsers.csv.CsvParserSettings;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.types.StructType;
@@ -32,15 +33,20 @@ public class CSVStreamParserImp implements CarbonStreamParser {
 
   private CsvParser csvParser;
 
-  @Override public void initialize(Configuration configuration, StructType structType) {
+  @Override
+  public void initialize(
+      Configuration configuration,
+      StructType structType, boolean[] isVarcharTypeMapping) {
     CsvParserSettings settings = CSVInputFormat.extractCsvParserSettings(configuration);
     csvParser = new CsvParser(settings);
   }
 
-  @Override public Object[] parserRow(InternalRow row) {
+  @Override
+  public Object[] parserRow(InternalRow row) {
     return csvParser.parseLine(row.getString(0));
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
   }
 }

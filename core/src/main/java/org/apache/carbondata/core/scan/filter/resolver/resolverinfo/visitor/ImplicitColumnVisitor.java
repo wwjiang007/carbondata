@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.filter.resolver.resolverinfo.visitor;
 
 import java.util.Map;
@@ -42,7 +43,8 @@ public class ImplicitColumnVisitor implements ResolvedFilterInfoVisitorIntf {
    *                                       filter models.
    */
 
-  @Override public void populateFilterResolvedInfo(ColumnResolvedFilterInfo visitableObj,
+  @Override
+  public void populateFilterResolvedInfo(ColumnResolvedFilterInfo visitableObj,
       FilterResolverMetadata metadata) throws FilterUnsupportedException {
     if (visitableObj instanceof DimColumnResolvedFilterInfo) {
       ColumnFilterInfo resolvedFilterObject = null;

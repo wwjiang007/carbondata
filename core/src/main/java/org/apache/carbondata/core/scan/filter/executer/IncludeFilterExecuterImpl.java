@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.filter.executer;
 
 import java.io.IOException;
@@ -245,7 +246,8 @@ public class IncludeFilterExecuterImpl implements FilterExecuter {
     return null;
   }
 
-  @Override public boolean applyFilter(RowIntf value, int dimOrdinalMax) {
+  @Override
+  public boolean applyFilter(RowIntf value, int dimOrdinalMax) {
     if (isDimensionPresentInCurrentBlock) {
       byte[][] filterValues = dimColumnExecuterInfo.getFilterKeys();
       byte[] col = (byte[])value.getVal(dimColumnEvaluatorInfo.getDimension().getOrdinal());
@@ -418,6 +420,7 @@ public class IncludeFilterExecuterImpl implements FilterExecuter {
     }
     return bitSet;
   }
+
   private BitSet setFilterdIndexToBitSetWithColumnIndex(
       DimensionColumnPage dimensionColumnPage, int numerOfRows) {
     BitSet bitSet = new BitSet(numerOfRows);

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.converter.impl;
 
 import java.io.IOException;
@@ -131,7 +132,8 @@ public class RowConverterImpl implements RowConverter {
 
       Future<DictionaryClient> result =
           executorService.submit(new Callable<DictionaryClient>() {
-            @Override public DictionaryClient call() throws Exception {
+            @Override
+            public DictionaryClient call() throws Exception {
               Thread.currentThread().setName("Dictionary client");
               DictionaryClient client =
                   DictionaryOnePassService.getDictionaryProvider().getDictionaryClient();
@@ -190,7 +192,7 @@ public class RowConverterImpl implements RowConverter {
   @Override
   public void finish() {
     // Clear up dictionary cache access count.
-    for (int i = 0; i < fieldConverters.length; i ++) {
+    for (int i = 0; i < fieldConverters.length; i++) {
       fieldConverters[i].clear();
     }
     // close dictionary client when finish write
@@ -244,7 +246,8 @@ public class RowConverterImpl implements RowConverter {
     return converter;
   }
 
-  @Override public int[] getCardinality() {
+  @Override
+  public int[] getCardinality() {
     List<Integer> dimCardinality = new ArrayList<>();
     if (fieldConverters != null) {
       for (int i = 0; i < fieldConverters.length; i++) {

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.steps;
 
 import java.io.ByteArrayOutputStream;
@@ -47,7 +48,6 @@ import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingExcep
 import org.apache.carbondata.processing.loading.row.CarbonRowBatch;
 import org.apache.carbondata.processing.util.CarbonDataProcessorUtil;
 
-
 /**
  * It reads data from record reader and sends data to next step.
  */
@@ -73,11 +73,13 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
     sdkWriterCores = configuration.getWritingCoresCount();
   }
 
-  @Override public DataField[] getOutput() {
+  @Override
+  public DataField[] getOutput() {
     return configuration.getDataFields();
   }
 
-  @Override public void initialize() throws IOException {
+  @Override
+  public void initialize() throws IOException {
     super.initialize();
     // if logger is enabled then raw data will be required.
     RowConverterImpl rowConverter =
@@ -134,7 +136,8 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
     return data;
   }
 
-  @Override public Iterator<CarbonRowBatch>[] execute() {
+  @Override
+  public Iterator<CarbonRowBatch>[] execute() {
     int batchSize = CarbonProperties.getInstance().getBatchSize();
     List<CarbonIterator<Object[]>>[] readerIterators =
         CarbonDataProcessorUtil.partitionInputReaderIterators(this.inputIterators, sdkWriterCores);
@@ -148,7 +151,8 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
     return outIterators;
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     if (!closed) {
       super.close();
       for (CarbonIterator inputIterator : inputIterators) {
@@ -157,7 +161,8 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
     }
   }
 
-  @Override protected String getStepName() {
+  @Override
+  protected String getStepName() {
     return "Input Processor";
   }
 
@@ -216,7 +221,8 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
       this.dataFieldsWithComplexDataType = dataFieldsWithComplexDataType;
     }
 
-    @Override public boolean hasNext() {
+    @Override
+    public boolean hasNext() {
       return nextBatch || internalHasNext();
     }
 
@@ -241,7 +247,8 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
       return hasNext;
     }
 
-    @Override public CarbonRowBatch next() {
+    @Override
+    public CarbonRowBatch next() {
       return getBatch();
     }
 

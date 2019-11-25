@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap;
 
 import java.io.IOException;
@@ -106,13 +107,14 @@ public final class TableDataMap extends OperationEventListener {
   /**
    * Pass the valid segments and prune the datamap using filter expression
    *
-   * @param segments
+   * @param allsegments
    * @param filter
    * @return
    */
-  public List<ExtendedBlocklet> prune(List<Segment> segments, final DataMapFilter filter,
+  public List<ExtendedBlocklet> prune(List<Segment> allsegments, final DataMapFilter filter,
       final List<PartitionSpec> partitions) throws IOException {
     final List<ExtendedBlocklet> blocklets = new ArrayList<>();
+    List<Segment> segments = getCarbonSegments(allsegments);
     final Map<Segment, List<DataMap>> dataMaps = dataMapFactory.getDataMaps(segments);
     // for non-filter queries
     // for filter queries
@@ -131,7 +133,7 @@ public final class TableDataMap extends OperationEventListener {
       // As 0.1 million files block pruning can take only 1 second.
       // Doing multi-thread for smaller values is not recommended as
       // driver should have minimum threads opened to support multiple concurrent queries.
-      if (filter.isEmpty()) {
+      if (filter == null || filter.isEmpty()) {
         // if filter is not passed, then return all the blocklets.
         return pruneWithoutFilter(segments, partitions, blocklets);
       }
@@ -141,6 +143,16 @@ public final class TableDataMap extends OperationEventListener {
     List<ExtendedBlocklet> extendedBlocklets = pruneMultiThread(
         segments, filter, partitions, blocklets, dataMaps, totalFiles);
     return extendedBlocklets;
+  }
+
+  private List<Segment> getCarbonSegments(List<Segment> allsegments) {
+    List<Segment> segments = new ArrayList<>();
+    for (Segment segment : allsegments) {
+      if (segment.isCarbonSegment()) {
+        segments.add(segment);
+      }
+    }
+    return segments;
   }
 
   private List<ExtendedBlocklet> pruneWithoutFilter(List<Segment> segments,
@@ -207,9 +219,6 @@ public final class TableDataMap extends OperationEventListener {
      */
 
     int numOfThreadsForPruning = CarbonProperties.getNumOfThreadsForPruning();
-    LOG.info(
-        "Number of threads selected for multi-thread block pruning is " + numOfThreadsForPruning
-            + ". total files: " + totalFiles + ". total segments: " + segments.size());
     int filesPerEachThread = totalFiles / numOfThreadsForPruning;
     int prev;
     int filesCount = 0;
@@ -254,6 +263,15 @@ public final class TableDataMap extends OperationEventListener {
       // this should not happen
       throw new RuntimeException(" not all the files processed ");
     }
+    if (datamapListForEachThread.size() < numOfThreadsForPruning) {
+      // If the total datamaps fitted in lesser number of threads than numOfThreadsForPruning.
+      // Launch only that many threads where datamaps are fitted while grouping.
+      LOG.info("Datamaps is distributed in " + datamapListForEachThread.size() + " threads");
+      numOfThreadsForPruning = datamapListForEachThread.size();
+    }
+    LOG.info(
+        "Number of threads selected for multi-thread block pruning is " + numOfThreadsForPruning
+            + ". total files: " + totalFiles + ". total segments: " + segments.size());
     List<Future<Void>> results = new ArrayList<>(numOfThreadsForPruning);
     final Map<Segment, List<ExtendedBlocklet>> prunedBlockletMap =
         new ConcurrentHashMap<>(segments.size());
@@ -262,7 +280,8 @@ public final class TableDataMap extends OperationEventListener {
     for (int i = 0; i < numOfThreadsForPruning; i++) {
       final List<SegmentDataMapGroup> segmentDataMapGroups = datamapListForEachThread.get(i);
       results.add(executorService.submit(new Callable<Void>() {
-        @Override public Void call() throws IOException {
+        @Override
+        public Void call() throws IOException {
           Thread.currentThread().setName(threadName);
           for (SegmentDataMapGroup segmentDataMapGroup : segmentDataMapGroups) {
             List<ExtendedBlocklet> pruneBlocklets = new ArrayList<>();
@@ -283,7 +302,7 @@ public final class TableDataMap extends OperationEventListener {
               for (int i = segmentDataMapGroup.getFromIndex();
                    i <= segmentDataMapGroup.getToIndex(); i++) {
                 List<Blocklet> dmPruneBlocklets = dataMapList.get(i).prune(
-                    filter.getExpression(), segmentProperties, partitions, table);
+                    filter.getNewCopyOfExpression(), segmentProperties, partitions, table);
                 pruneBlocklets.addAll(addSegmentId(
                     blockletDetailsFetcher.getExtendedBlocklets(dmPruneBlocklets, segment),
                     segment));
@@ -330,6 +349,7 @@ public final class TableDataMap extends OperationEventListener {
     }
     return pruneBlocklets;
   }
+
   /**
    * This is used for making the datamap distributable.
    * It takes the valid segments and returns all the datamaps as distributable objects so that
@@ -337,8 +357,9 @@ public final class TableDataMap extends OperationEventListener {
    *
    * @return
    */
-  public List<DataMapDistributable> toDistributable(List<Segment> segments) throws IOException {
+  public List<DataMapDistributable> toDistributable(List<Segment> allsegments) throws IOException {
     List<DataMapDistributable> distributables = new ArrayList<>();
+    List<Segment> segments = getCarbonSegments(allsegments);
     for (Segment segment : segments) {
       distributables.addAll(dataMapFactory.toDistributable(segment));
     }
@@ -417,11 +438,13 @@ public final class TableDataMap extends OperationEventListener {
   /**
    * delete only the datamaps of the segments
    */
-  public void deleteDatamapData(List<Segment> segments) throws IOException {
+  public void deleteDatamapData(List<Segment> allsegments) throws IOException {
+    List<Segment> segments = getCarbonSegments(allsegments);
     for (Segment segment: segments) {
       dataMapFactory.deleteDatamapData(segment);
     }
   }
+
   /**
    * delete datamap data if any
    */
@@ -444,21 +467,23 @@ public final class TableDataMap extends OperationEventListener {
     return dataMapFactory;
   }
 
-  @Override public void onEvent(Event event, OperationContext opContext) throws Exception {
+  @Override
+  public void onEvent(Event event, OperationContext opContext) throws Exception {
     dataMapFactory.fireEvent(event);
   }
 
   /**
    * Prune the datamap of the given segments and return the Map of blocklet path and row count
    *
-   * @param segments
+   * @param allsegments
    * @param partitions
    * @return
    * @throws IOException
    */
-  public Map<String, Long> getBlockRowCount(List<Segment> segments,
+  public Map<String, Long> getBlockRowCount(List<Segment> allsegments,
       final List<PartitionSpec> partitions, TableDataMap defaultDataMap)
       throws IOException {
+    List<Segment> segments = getCarbonSegments(allsegments);
     Map<String, Long> blockletToRowCountMap = new HashMap<>();
     for (Segment segment : segments) {
       List<CoarseGrainDataMap> dataMaps = defaultDataMap.getDataMapFactory().getDataMaps(segment);
@@ -472,13 +497,14 @@ public final class TableDataMap extends OperationEventListener {
   /**
    * Prune the datamap of the given segments and return the Map of blocklet path and row count
    *
-   * @param segments
+   * @param allsegments
    * @param partitions
    * @return
    * @throws IOException
    */
-  public long getRowCount(List<Segment> segments, final List<PartitionSpec> partitions,
+  public long getRowCount(List<Segment> allsegments, final List<PartitionSpec> partitions,
       TableDataMap defaultDataMap) throws IOException {
+    List<Segment> segments = getCarbonSegments(allsegments);
     long totalRowCount = 0L;
     for (Segment segment : segments) {
       List<CoarseGrainDataMap> dataMaps = defaultDataMap.getDataMapFactory().getDataMaps(segment);

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.sort.impl;
 
 import java.util.Iterator;
@@ -66,7 +67,8 @@ public class UnsafeParallelReadMergeSorterImpl extends AbstractMergeSorter {
     this.rowCounter = rowCounter;
   }
 
-  @Override public void initialize(SortParameters sortParameters) {
+  @Override
+  public void initialize(SortParameters sortParameters) {
     this.sortParameters = sortParameters;
     unsafeIntermediateFileMerger = new UnsafeIntermediateMerger(sortParameters);
 
@@ -74,7 +76,8 @@ public class UnsafeParallelReadMergeSorterImpl extends AbstractMergeSorter {
         sortParameters.getTempFileLocation());
   }
 
-  @Override public Iterator<CarbonRowBatch>[] sort(Iterator<CarbonRowBatch>[] iterators)
+  @Override
+  public Iterator<CarbonRowBatch>[] sort(Iterator<CarbonRowBatch>[] iterators)
       throws CarbonDataLoadingException {
     int inMemoryChunkSizeInMB = CarbonProperties.getInstance().getSortMemoryChunkSizeInMB();
     UnsafeSortDataRows sortDataRow =
@@ -120,11 +123,13 @@ public class UnsafeParallelReadMergeSorterImpl extends AbstractMergeSorter {
     // Creates the iterator to read from merge sorter.
     Iterator<CarbonRowBatch> batchIterator = new CarbonIterator<CarbonRowBatch>() {
 
-      @Override public boolean hasNext() {
+      @Override
+      public boolean hasNext() {
         return finalMerger.hasNext();
       }
 
-      @Override public CarbonRowBatch next() {
+      @Override
+      public CarbonRowBatch next() {
         int counter = 0;
         CarbonRowBatch rowBatch = new CarbonRowBatch(batchSize);
         while (finalMerger.hasNext() && counter < batchSize) {
@@ -137,7 +142,8 @@ public class UnsafeParallelReadMergeSorterImpl extends AbstractMergeSorter {
     return new Iterator[] { batchIterator };
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     if (null != executorService && !executorService.isShutdown()) {
       executorService.shutdownNow();
     }

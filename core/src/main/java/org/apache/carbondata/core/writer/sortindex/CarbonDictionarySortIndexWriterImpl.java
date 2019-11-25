@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.writer.sortindex;
 
 import java.io.IOException;
@@ -80,7 +81,8 @@ public class CarbonDictionarySortIndexWriterImpl implements CarbonDictionarySort
    * @param sortIndexList list of sortIndex
    * @throws IOException In Case of any I/O errors occurs.
    */
-  @Override public void writeSortIndex(List<Integer> sortIndexList) {
+  @Override
+  public void writeSortIndex(List<Integer> sortIndexList) {
     columnSortInfo.setSort_index(sortIndexList);
   }
 
@@ -91,7 +93,8 @@ public class CarbonDictionarySortIndexWriterImpl implements CarbonDictionarySort
    * @param invertedSortIndexList list of  sortIndexInverted
    * @throws IOException In Case of any I/O errors occurs.
    */
-  @Override public void writeInvertedSortIndex(List<Integer> invertedSortIndexList) {
+  @Override
+  public void writeInvertedSortIndex(List<Integer> invertedSortIndexList) {
     columnSortInfo.setSort_index_inverted(invertedSortIndexList);
   }
 
@@ -157,7 +160,8 @@ public class CarbonDictionarySortIndexWriterImpl implements CarbonDictionarySort
     }
     if (null != files) {
       Arrays.sort(files, new Comparator<CarbonFile>() {
-        @Override public int compare(CarbonFile o1, CarbonFile o2) {
+        @Override
+        public int compare(CarbonFile o1, CarbonFile o2) {
           return o1.getName().compareTo(o2.getName());
         }
       });
@@ -182,7 +186,8 @@ public class CarbonDictionarySortIndexWriterImpl implements CarbonDictionarySort
    *
    * @throws IOException if an I/O error occurs
    */
-  @Override public void close() throws IOException {
+  @Override
+  public void close() throws IOException {
     writeColumnSortInfo();
     if (null != sortIndexThriftWriter) {
       sortIndexThriftWriter.close();

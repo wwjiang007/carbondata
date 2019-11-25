@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.block;
 
 import java.util.ArrayList;
@@ -628,11 +629,11 @@ public class SegmentProperties {
   /**
    * This method will search for a given measure in the current block measures list
    *
-   * @param columnId
+   * @param measureToBeSearched
    * @return
    */
-  public CarbonMeasure getMeasureFromCurrentBlock(String columnId) {
-    return CarbonUtil.getMeasureFromCurrentBlock(this.measures, columnId);
+  public CarbonMeasure getMeasureFromCurrentBlock(CarbonMeasure measureToBeSearched) {
+    return CarbonUtil.getMeasureFromCurrentBlock(this.measures, measureToBeSearched);
   }
 
   public int getNumberOfSortColumns() {

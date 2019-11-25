@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.spark.dictionary.client;
 
 import java.nio.ByteBuffer;
@@ -79,7 +80,8 @@ public class SecureDictionaryClientHandler extends RpcHandler {
     }
   }
 
-  @Override public void receive(TransportClient transportClient, ByteBuffer byteBuffer,
+  @Override
+  public void receive(TransportClient transportClient, ByteBuffer byteBuffer,
       RpcResponseCallback rpcResponseCallback) {
     try {
       ByteBuf data = Unpooled.wrappedBuffer(byteBuffer);
@@ -97,7 +99,8 @@ public class SecureDictionaryClientHandler extends RpcHandler {
     }
   }
 
-  @Override public StreamManager getStreamManager() {
+  @Override
+  public StreamManager getStreamManager() {
     return new OneForOneStreamManager();
   }
 

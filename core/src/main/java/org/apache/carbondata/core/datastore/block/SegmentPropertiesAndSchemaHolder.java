@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.block;
 
 import java.util.ArrayList;
@@ -98,7 +99,7 @@ public class SegmentPropertiesAndSchemaHolder {
    * @param columnCardinality
    * @param segmentId
    */
-  public int addSegmentProperties(CarbonTable carbonTable,
+  public SegmentPropertiesWrapper addSegmentProperties(CarbonTable carbonTable,
       List<ColumnSchema> columnsInTable, int[] columnCardinality, String segmentId) {
     SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper segmentPropertiesWrapper =
         new SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper(carbonTable,
@@ -137,7 +138,7 @@ public class SegmentPropertiesAndSchemaHolder {
             .addMinMaxColumns(carbonTable);
       }
     }
-    return segmentIdSetAndIndexWrapper.getSegmentPropertiesIndex();
+    return getSegmentPropertiesWrapper(segmentIdSetAndIndexWrapper.getSegmentPropertiesIndex());
   }
 
   /**
@@ -222,17 +223,14 @@ public class SegmentPropertiesAndSchemaHolder {
    * Method to remove the given segment ID
    *
    * @param segmentId
-   * @param segmentPropertiesIndex
    * @param clearSegmentWrapperFromMap flag to specify whether to clear segmentPropertiesWrapper
    *                                   from Map if all the segment's using it have become stale
    */
-  public void invalidate(String segmentId, int segmentPropertiesIndex,
+  public void invalidate(String segmentId, SegmentPropertiesWrapper segmentPropertiesWrapper,
       boolean clearSegmentWrapperFromMap) {
-    SegmentPropertiesWrapper segmentPropertiesWrapper =
-        indexToSegmentPropertiesWrapperMapping.get(segmentPropertiesIndex);
-    if (null != segmentPropertiesWrapper) {
-      SegmentIdAndSegmentPropertiesIndexWrapper segmentIdAndSegmentPropertiesIndexWrapper =
-          segmentPropWrapperToSegmentSetMap.get(segmentPropertiesWrapper);
+    SegmentIdAndSegmentPropertiesIndexWrapper segmentIdAndSegmentPropertiesIndexWrapper =
+        segmentPropWrapperToSegmentSetMap.get(segmentPropertiesWrapper);
+    if (segmentIdAndSegmentPropertiesIndexWrapper != null) {
       synchronized (getOrCreateTableLock(segmentPropertiesWrapper.getTableIdentifier())) {
         segmentIdAndSegmentPropertiesIndexWrapper.removeSegmentId(segmentId);
         // if after removal of given SegmentId, the segmentIdSet becomes empty that means this
@@ -240,14 +238,16 @@ public class SegmentPropertiesAndSchemaHolder {
         // removed from all the holders
         if (clearSegmentWrapperFromMap && segmentIdAndSegmentPropertiesIndexWrapper.segmentIdSet
             .isEmpty()) {
-          indexToSegmentPropertiesWrapperMapping.remove(segmentPropertiesIndex);
+          indexToSegmentPropertiesWrapperMapping
+              .remove(segmentIdAndSegmentPropertiesIndexWrapper.getSegmentPropertiesIndex());
           segmentPropWrapperToSegmentSetMap.remove(segmentPropertiesWrapper);
         } else if (!clearSegmentWrapperFromMap
             && segmentIdAndSegmentPropertiesIndexWrapper.segmentIdSet.isEmpty()) {
           // min max columns can very when cache is modified. So even though entry is not required
           // to be deleted from map clear the column cache so that it can filled again
           segmentPropertiesWrapper.clear();
-          LOGGER.info("cleared min max for segmentProperties at index: " + segmentPropertiesIndex);
+          LOGGER.info("cleared min max for segmentProperties at index: "
+              + segmentIdAndSegmentPropertiesIndexWrapper.getSegmentPropertiesIndex());
         }
       }
     }
@@ -296,6 +296,8 @@ public class SegmentPropertiesAndSchemaHolder {
     // of maintaining 2 variables
     private CarbonRowSchema[] taskSummarySchemaForBlock;
     private CarbonRowSchema[] taskSummarySchemaForBlocklet;
+    private CarbonRowSchema[] taskSummarySchemaForBlockWithOutFilePath;
+    private CarbonRowSchema[] taskSummarySchemaForBlockletWithOutFilePath;
     private CarbonRowSchema[] fileFooterEntrySchemaForBlock;
     private CarbonRowSchema[] fileFooterEntrySchemaForBlocklet;
 
@@ -326,11 +328,14 @@ public class SegmentPropertiesAndSchemaHolder {
 
       taskSummarySchemaForBlock = null;
       taskSummarySchemaForBlocklet = null;
+      taskSummarySchemaForBlockWithOutFilePath = null;
+      taskSummarySchemaForBlockletWithOutFilePath = null;
       fileFooterEntrySchemaForBlock = null;
       fileFooterEntrySchemaForBlocklet = null;
     }
 
-    @Override public boolean equals(Object obj) {
+    @Override
+    public boolean equals(Object obj) {
       if (!(obj instanceof SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper)) {
         return false;
       }
@@ -358,13 +363,15 @@ public class SegmentPropertiesAndSchemaHolder {
 
     private void sortList(List<ColumnSchema> columnSchemas) {
       Collections.sort(columnSchemas, new Comparator<ColumnSchema>() {
-        @Override public int compare(ColumnSchema o1, ColumnSchema o2) {
+        @Override
+        public int compare(ColumnSchema o1, ColumnSchema o2) {
           return o1.getColumnUniqueId().compareTo(o2.getColumnUniqueId());
         }
       });
     }
 
-    @Override public int hashCode() {
+    @Override
+    public int hashCode() {
       int allColumnsHashCode = 0;
       // check column order
       StringBuilder builder = new StringBuilder();
@@ -394,7 +401,7 @@ public class SegmentPropertiesAndSchemaHolder {
 
     public CarbonRowSchema[] getTaskSummarySchemaForBlock(boolean storeBlockletCount,
         boolean filePathToBeStored) throws MemoryException {
-      if (null == taskSummarySchemaForBlock) {
+      if (null == taskSummarySchemaForBlock && filePathToBeStored) {
         synchronized (taskSchemaLock) {
           if (null == taskSummarySchemaForBlock) {
             taskSummarySchemaForBlock = SchemaGenerator
@@ -402,13 +409,26 @@ public class SegmentPropertiesAndSchemaHolder {
                     storeBlockletCount, filePathToBeStored);
           }
         }
+      } else if (null == taskSummarySchemaForBlockWithOutFilePath && !filePathToBeStored) {
+        synchronized (taskSchemaLock) {
+          if (null == taskSummarySchemaForBlockWithOutFilePath) {
+            taskSummarySchemaForBlockWithOutFilePath = SchemaGenerator
+                .createTaskSummarySchema(segmentProperties, getMinMaxCacheColumns(),
+                    storeBlockletCount, filePathToBeStored);
+          }
+        }
       }
-      return taskSummarySchemaForBlock;
+      if (filePathToBeStored) {
+        return taskSummarySchemaForBlock;
+      } else {
+        return taskSummarySchemaForBlockWithOutFilePath;
+      }
+
     }
 
     public CarbonRowSchema[] getTaskSummarySchemaForBlocklet(boolean storeBlockletCount,
         boolean filePathToBeStored) throws MemoryException {
-      if (null == taskSummarySchemaForBlocklet) {
+      if (null == taskSummarySchemaForBlocklet && filePathToBeStored) {
         synchronized (taskSchemaLock) {
           if (null == taskSummarySchemaForBlocklet) {
             taskSummarySchemaForBlocklet = SchemaGenerator
@@ -416,8 +436,20 @@ public class SegmentPropertiesAndSchemaHolder {
                     storeBlockletCount, filePathToBeStored);
           }
         }
+      } else if (null == taskSummarySchemaForBlockletWithOutFilePath && !filePathToBeStored) {
+        synchronized (taskSchemaLock) {
+          if (null == taskSummarySchemaForBlockletWithOutFilePath) {
+            taskSummarySchemaForBlockletWithOutFilePath = SchemaGenerator
+                .createTaskSummarySchema(segmentProperties, getMinMaxCacheColumns(),
+                    storeBlockletCount, filePathToBeStored);
+          }
+        }
       }
-      return taskSummarySchemaForBlocklet;
+      if (filePathToBeStored) {
+        return taskSummarySchemaForBlocklet;
+      } else {
+        return taskSummarySchemaForBlockletWithOutFilePath;
+      }
     }
 
     public CarbonRowSchema[] getBlockFileFooterEntrySchema() {

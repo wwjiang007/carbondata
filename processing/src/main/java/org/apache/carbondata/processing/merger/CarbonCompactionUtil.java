@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.merger;
 
 import java.io.IOException;
@@ -112,8 +113,7 @@ public class CarbonCompactionUtil {
         groupCorrespodingInfoBasedOnTask(info, taskBlockInfoMapping, taskNo);
         // put the taskBlockInfo with respective segment id
         segmentBlockInfoMapping.put(segId, taskBlockInfoMapping);
-      } else
-      {
+      } else {
         groupCorrespodingInfoBasedOnTask(info, taskBlockInfoMapping, taskNo);
       }
     }
@@ -362,8 +362,7 @@ public class CarbonCompactionUtil {
    */
   public static int[] updateColumnSchemaAndGetCardinality(Map<String, Integer> columnCardinalityMap,
       CarbonTable carbonTable, List<ColumnSchema> updatedColumnSchemaList) {
-    List<CarbonDimension> masterDimensions =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
+    List<CarbonDimension> masterDimensions = carbonTable.getVisibleDimensions();
     List<Integer> updatedCardinalityList = new ArrayList<>(columnCardinalityMap.size());
     for (CarbonDimension dimension : masterDimensions) {
       Integer value = columnCardinalityMap.get(dimension.getColumnId());
@@ -380,8 +379,7 @@ public class CarbonCompactionUtil {
       }
     }
     // add measures to the column schema list
-    List<CarbonMeasure> masterSchemaMeasures =
-        carbonTable.getMeasureByTableName(carbonTable.getTableName());
+    List<CarbonMeasure> masterSchemaMeasures = carbonTable.getVisibleMeasures();
     for (CarbonMeasure measure : masterSchemaMeasures) {
       updatedColumnSchemaList.add(measure.getColumnSchema());
     }
@@ -634,7 +632,7 @@ public class CarbonCompactionUtil {
       return false;
     }
     List<CarbonDimension> sortColumnsOfTable = new ArrayList<>();
-    for (CarbonDimension dimension : table.getDimensions()) {
+    for (CarbonDimension dimension : table.getVisibleDimensions()) {
       if (dimension.isSortColumn()) {
         sortColumnsOfTable.add(dimension);
       }

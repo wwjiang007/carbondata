@@ -81,6 +81,9 @@ public class LocalDictDimensionDataChunkStore implements DimensionDataChunkStore
         vector.putNull(i);
         dictionaryVector.putNull(i);
       } else {
+        // if vector is 'ColumnarVectorWrapperDirectWithDeleteDelta', it needs to call 'putNotNull'
+        // to increase 'counter', otherwise it will set the null value to the wrong index.
+        vector.putNotNull(i);
         dictionaryVector.putInt(i, surrogate);
       }
     }
@@ -89,11 +92,13 @@ public class LocalDictDimensionDataChunkStore implements DimensionDataChunkStore
     }
   }
 
-  @Override public byte[] getRow(int rowId) {
+  @Override
+  public byte[] getRow(int rowId) {
     return dictionary.getDictionaryValue(dimensionDataChunkStore.getSurrogate(rowId));
   }
 
-  @Override public void fillRow(int rowId, CarbonColumnVector vector, int vectorRow) {
+  @Override
+  public void fillRow(int rowId, CarbonColumnVector vector, int vectorRow) {
     if (!dictionary.isDictionaryUsed()) {
       vector.setDictionary(dictionary);
       dictionary.setDictionaryUsed();
@@ -108,38 +113,46 @@ public class LocalDictDimensionDataChunkStore implements DimensionDataChunkStore
     vector.getDictionaryVector().putInt(vectorRow, dimensionDataChunkStore.getSurrogate(rowId));
   }
 
-  @Override public void fillRow(int rowId, byte[] buffer, int offset) {
+  @Override
+  public void fillRow(int rowId, byte[] buffer, int offset) {
     throw new UnsupportedOperationException("Operation not supported");
   }
 
-  @Override public int getInvertedIndex(int rowId) {
+  @Override
+  public int getInvertedIndex(int rowId) {
     return this.dimensionDataChunkStore.getInvertedIndex(rowId);
   }
 
-  @Override public int getInvertedReverseIndex(int rowId) {
+  @Override
+  public int getInvertedReverseIndex(int rowId) {
     return this.dimensionDataChunkStore.getInvertedReverseIndex(rowId);
   }
 
-  @Override public int getSurrogate(int rowId) {
+  @Override
+  public int getSurrogate(int rowId) {
     throw new UnsupportedOperationException("Operation not supported");
   }
 
-  @Override public int getColumnValueSize() {
+  @Override
+  public int getColumnValueSize() {
     throw new UnsupportedOperationException("Operation not supported");
   }
 
-  @Override public boolean isExplicitSorted() {
+  @Override
+  public boolean isExplicitSorted() {
     return this.dimensionDataChunkStore.isExplicitSorted();
   }
 
-  @Override public int compareTo(int rowId, byte[] compareValue) {
+  @Override
+  public int compareTo(int rowId, byte[] compareValue) {
     return dimensionDataChunkStore.compareTo(rowId, compareValue);
   }
 
   /**
    * Below method will be used to free the memory occupied by the column chunk
    */
-  @Override public void freeMemory() {
+  @Override
+  public void freeMemory() {
     if (null != dimensionDataChunkStore) {
       this.dimensionDataChunkStore.freeMemory();
       this.dictionary = null;

@@ -34,8 +34,8 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
   test("test only column rename operation") {
     sql("alter table rename change empname empAddress string")
     val carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "rename")
-    assert(null != carbonTable.getColumnByName("rename", "empAddress"))
-    assert(null == carbonTable.getColumnByName("rename", "empname"))
+    assert(null != carbonTable.getColumnByName("empAddress"))
+    assert(null == carbonTable.getColumnByName("empname"))
   }
 
   test("test only column rename operation with datatype change also") {
@@ -46,8 +46,8 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
     }
     sql("alter table rename change deptno classNo Bigint")
     val carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "rename")
-    assert(null != carbonTable.getColumnByName("rename", "classNo"))
-    assert(null == carbonTable.getColumnByName("rename", "deptno"))
+    assert(null != carbonTable.getColumnByName("classNo"))
+    assert(null == carbonTable.getColumnByName("deptno"))
   }
 
   test("test trying to rename column which does not exists") {
@@ -74,10 +74,10 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
     sql("alter table rename change projectenddate newDate Timestamp")
     sql("alter table rename change workgroupcategory newCategory int")
     val carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "rename")
-    assert(null != carbonTable.getColumnByName("rename", "newDate"))
-    assert(null == carbonTable.getColumnByName("rename", "projectenddate"))
-    assert(null != carbonTable.getColumnByName("rename", "newCategory"))
-    assert(null == carbonTable.getColumnByName("rename", "workgroupcategory"))
+    assert(null != carbonTable.getColumnByName("newDate"))
+    assert(null == carbonTable.getColumnByName("projectenddate"))
+    assert(null != carbonTable.getColumnByName("newCategory"))
+    assert(null == carbonTable.getColumnByName("workgroupcategory"))
   }
 
   test("query count after column rename and filter results"){
@@ -114,14 +114,14 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
     createTableAndLoad()
     sql("alter table rename add columns(newAdded string)")
     var carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "rename")
-    assert(null != carbonTable.getColumnByName("rename", "newAdded"))
+    assert(null != carbonTable.getColumnByName("newAdded"))
     sql("alter table rename change newAdded addedRename string")
     carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "rename")
-    assert(null != carbonTable.getColumnByName("rename", "addedRename"))
-    assert(null == carbonTable.getColumnByName("rename", "newAdded"))
+    assert(null != carbonTable.getColumnByName("addedRename"))
+    assert(null == carbonTable.getColumnByName("newAdded"))
     sql("alter table rename drop columns(addedRename)")
     carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "rename")
-    assert(null == carbonTable.getColumnByName("rename", "addedRename"))
+    assert(null == carbonTable.getColumnByName("addedRename"))
     intercept[ProcessMetaDataException] {
       sql("alter table rename change addedRename test string")
     }
@@ -133,10 +133,10 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
     sql("alter table rename change empname name string")
     sql("update rename set (name) = ('joey') where workgroupcategory = 'developer'").show()
     sql("insert into rename select 20,'bill','PM','01-12-2015',3,'manager',14,'Learning',928479,'01-01-2016','30-11-2016',75,94,13547")
-    val df1 = sql("select * from rename where name = 'joey'")
+    val df1Count = sql("select * from rename where name = 'joey'").count
     sql("alter table rename change name empname string")
     val df2 = sql("select * from rename where empname = 'joey'")
-    assert(df1.count() == df2.count())
+    assert(df1Count == df2.count())
     sql("delete from rename where empname = 'joey'")
     val df3 = sql("select empname from rename")
     sql("alter table rename change empname newname string")
@@ -303,8 +303,8 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
     sql("create table biginttable(name string, age int, bigintfield bigint) stored by 'carbondata'")
     sql("alter table biginttable change bigintfield testfield bigint")
     val carbonTable = CarbonMetadata.getInstance().getCarbonTable("default", "biginttable")
-    assert(null != carbonTable.getColumnByName("biginttable", "testfield"))
-    assert(null == carbonTable.getColumnByName("biginttable", "bigintfield"))
+    assert(null != carbonTable.getColumnByName("testfield"))
+    assert(null == carbonTable.getColumnByName("bigintfield"))
     sql("drop table if exists biginttable")
   }
 
@@ -320,12 +320,66 @@ class AlterTableColumnRenameTestCase extends Spark2QueryTest with BeforeAndAfter
     }
   }
 
+  test("test compaction after table rename and alter set tblproerties") {
+    sql("DROP TABLE IF EXISTS test_rename")
+    sql("DROP TABLE IF EXISTS test_rename_compact")
+    sql(
+      "CREATE TABLE test_rename (empno int, empname String, designation String, doj Timestamp, " +
+      "workgroupcategory int, workgroupcategoryname String, deptno int, deptname String, " +
+      "projectcode int, projectjoindate Timestamp, projectenddate Timestamp,attendance int," +
+      "utilization int,salary int) STORED BY 'org.apache.carbondata.format'")
+    sql(
+      s"""LOAD DATA LOCAL INPATH '$resourcesPath/data.csv' INTO TABLE test_rename OPTIONS
+         |('DELIMITER'= ',', 'QUOTECHAR'= '\"')""".stripMargin)
+    sql("alter table test_rename rename to test_rename_compact")
+    sql("alter table test_rename_compact set tblproperties('sort_columns'='deptno,projectcode', 'sort_scope'='local_sort')")
+    sql(
+      s"""LOAD DATA LOCAL INPATH '$resourcesPath/data.csv' INTO TABLE test_rename_compact OPTIONS
+         |('DELIMITER'= ',', 'QUOTECHAR'= '\"')""".stripMargin)
+    val res1 = sql("select * from test_rename_compact")
+    sql("alter table test_rename_compact compact 'major'")
+    val res2 = sql("select * from test_rename_compact")
+    assert(res1.collectAsList().containsAll(res2.collectAsList()))
+    checkExistence(sql("show segments for table test_rename_compact"), true, "Compacted")
+    sql("DROP TABLE IF EXISTS test_rename")
+    sql("DROP TABLE IF EXISTS test_rename_compact")
+  }
+
+  test("test compaction after alter set tblproerties- add and drop") {
+    sql("DROP TABLE IF EXISTS test_alter")
+    sql(
+      "CREATE TABLE test_alter (empno int, empname String, designation String, doj Timestamp, " +
+      "workgroupcategory int, workgroupcategoryname String, deptno int, deptname String, " +
+      "projectcode int, projectjoindate Timestamp, projectenddate Timestamp,attendance int," +
+      "utilization int,salary int) STORED BY 'org.apache.carbondata.format'")
+    sql(
+      s"""LOAD DATA LOCAL INPATH '$resourcesPath/data.csv' INTO TABLE test_alter OPTIONS
+         |('DELIMITER'= ',', 'QUOTECHAR'= '\"')""".stripMargin)
+    sql("alter table test_alter set tblproperties('sort_columns'='deptno,projectcode', 'sort_scope'='local_sort')")
+    sql("alter table test_alter drop columns(deptno)")
+    sql(
+      s"""LOAD DATA LOCAL INPATH '$resourcesPath/data.csv' INTO TABLE test_alter OPTIONS
+         |('DELIMITER'= ',', 'QUOTECHAR'= '\"')""".stripMargin)
+    sql("alter table test_alter add columns(deptno int)")
+    sql(
+      s"""LOAD DATA LOCAL INPATH '$resourcesPath/data.csv' INTO TABLE test_alter OPTIONS
+         |('DELIMITER'= ',', 'QUOTECHAR'= '\"')""".stripMargin)
+    val res1 = sql("select * from test_alter")
+    sql("alter table test_alter compact 'major'")
+    val res2 = sql("select * from test_alter")
+    assert(res1.collectAsList().containsAll(res2.collectAsList()))
+    sql("DROP TABLE IF EXISTS test_alter")
+  }
+
   override def afterAll(): Unit = {
     dropTable()
   }
 
   def dropTable(): Unit = {
     sql("DROP TABLE IF EXISTS RENAME")
+    sql("DROP TABLE IF EXISTS test_rename")
+    sql("DROP TABLE IF EXISTS test_rename_compact")
+    sql("DROP TABLE IF EXISTS test_alter")
   }
 
   def createTableAndLoad(): Unit = {

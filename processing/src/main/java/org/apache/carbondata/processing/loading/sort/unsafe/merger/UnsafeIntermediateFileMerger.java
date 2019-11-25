@@ -92,7 +92,8 @@ public class UnsafeIntermediateFileMerger implements Callable<Void> {
     this.sortStepRowHandler = new SortStepRowHandler(tableFieldStat);
   }
 
-  @Override public Void call() throws Exception {
+  @Override
+  public Void call() throws Exception {
     long intermediateMergeStartTime = System.currentTimeMillis();
     int fileConterConst = fileCounter;
     try {
@@ -211,7 +212,7 @@ public class UnsafeIntermediateFileMerger implements Callable<Void> {
     for (File tempFile : intermediateFiles) {
       // create chunk holder
       sortTempFileChunkHolder =
-          new UnsafeSortTempFileChunkHolder(tempFile, mergerParameters, false);
+          new UnsafeSortTempFileChunkHolder(tempFile, mergerParameters, false, tableFieldStat);
 
       sortTempFileChunkHolder.readRow();
       this.totalNumberOfRecords += sortTempFileChunkHolder.numberOfRows();

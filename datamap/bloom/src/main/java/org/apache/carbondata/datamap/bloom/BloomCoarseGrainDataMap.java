@@ -232,7 +232,7 @@ public class BloomCoarseGrainDataMap extends CoarseGrainDataMap {
       LOGGER.warn(String.format("HitBlocklets is empty in bloom filter prune method. " +
               "bloomQueryModels size is %d, filterShards size if %d",
               bloomQueryModels.size(), filteredShard.size()));
-      return null;
+      return new ArrayList<>();
     }
     return new ArrayList<>(hitBlocklets);
   }
@@ -299,7 +299,6 @@ public class BloomCoarseGrainDataMap extends CoarseGrainDataMap {
 
     return queryModels;
   }
-
 
   private BloomQueryModel buildQueryModelForEqual(ColumnExpression ce,
       LiteralExpression le) throws DictionaryGenerationException, UnsupportedEncodingException {

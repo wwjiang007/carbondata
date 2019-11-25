@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore.blockletindex;
 
 import java.io.IOException;
@@ -96,22 +97,26 @@ public class BlockletDataRefNode implements DataRefNode {
     this.blockletSerializer = new BlockletSerializer();
   }
 
-  @Override public DataRefNode getNextDataRefNode() {
+  @Override
+  public DataRefNode getNextDataRefNode() {
     if (index + 1 < blockInfos.size()) {
       return new BlockletDataRefNode(blockInfos, index + 1, dimensionLens);
     }
     return null;
   }
 
-  @Override public int numRows() {
+  @Override
+  public int numRows() {
     return blockInfos.get(index).getDetailInfo().getRowCount();
   }
 
-  @Override public long nodeIndex() {
+  @Override
+  public long nodeIndex() {
     return index;
   }
 
-  @Override public short blockletIndex() {
+  @Override
+  public short blockletIndex() {
     return blockInfos.get(index).getDetailInfo().getBlockletId();
   }
 
@@ -172,7 +177,8 @@ public class BlockletDataRefNode implements DataRefNode {
     return measureRawColumnChunks;
   }
 
-  @Override public MeasureRawColumnChunk readMeasureChunk(FileReader fileReader, int columnIndex)
+  @Override
+  public MeasureRawColumnChunk readMeasureChunk(FileReader fileReader, int columnIndex)
       throws IOException {
     MeasureColumnChunkReader measureColumnChunkReader = getMeasureColumnChunkReader(fileReader);
     MeasureRawColumnChunk measureRawColumnChunk =

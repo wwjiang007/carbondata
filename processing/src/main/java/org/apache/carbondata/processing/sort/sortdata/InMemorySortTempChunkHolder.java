@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.sort.sortdata;
 
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
@@ -102,11 +103,13 @@ public class InMemorySortTempChunkHolder extends SortTempFileChunkHolder {
     return this.rawResultIterator.hasNext();
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     return super.equals(obj);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     int hash = rawResultIterator.hashCode();
     hash += segmentProperties.hashCode();
     return hash;

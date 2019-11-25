@@ -128,7 +128,6 @@ class NewCarbonDataLoadRDD[K, V](
       val uniqueLoadStatusId =
         carbonLoadModel.getTableName + CarbonCommonConstants.UNDERSCORE + theSplit.index
       try {
-        loadMetadataDetails.setPartitionCount(CarbonTablePath.DEPRECATED_PARTITION_ID)
         loadMetadataDetails.setSegmentStatus(SegmentStatus.SUCCESS)
 
         val preFetch = CarbonProperties.getInstance().getProperty(CarbonCommonConstants
@@ -259,7 +258,6 @@ class NewDataFrameLoaderRDD[K, V](
         carbonLoadModel.getTableName + CarbonCommonConstants.UNDERSCORE + theSplit.index
       try {
 
-        loadMetadataDetails.setPartitionCount(CarbonTablePath.DEPRECATED_PARTITION_ID)
         loadMetadataDetails.setSegmentStatus(SegmentStatus.SUCCESS)
         carbonLoadModel.setTaskNo(String.valueOf(theSplit.index))
         carbonLoadModel.setPreFetch(false)
@@ -346,8 +344,11 @@ class NewRddIterator(rddIter: Iterator[Row],
     carbonLoadModel.getSerializationNullFormat.split(CarbonCommonConstants.COMMA, 2)(1)
   import scala.collection.JavaConverters._
   private val isVarcharTypeMapping =
-    carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable.getCreateOrderColumn(
-      carbonLoadModel.getTableName).asScala.map(_.getDataType == DataTypes.VARCHAR)
+    carbonLoadModel.getCarbonDataLoadSchema
+      .getCarbonTable.getCreateOrderColumn.asScala.map(_.getDataType == DataTypes.VARCHAR)
+  private val isComplexTypeMapping =
+    carbonLoadModel.getCarbonDataLoadSchema
+      .getCarbonTable.getCreateOrderColumn.asScala.map(_.isComplex())
   def hasNext: Boolean = rddIter.hasNext
 
   def next: Array[AnyRef] = {
@@ -356,7 +357,8 @@ class NewRddIterator(rddIter: Iterator[Row],
     for (i <- 0 until columns.length) {
       columns(i) = CarbonScalaUtil.getString(row.get(i), serializationNullFormat,
         complexDelimiters, timeStampFormat, dateFormat,
-        isVarcharType = i < isVarcharTypeMapping.size && isVarcharTypeMapping(i))
+        isVarcharType = i < isVarcharTypeMapping.size && isVarcharTypeMapping(i),
+        isComplexType = i < isComplexTypeMapping.size && isComplexTypeMapping(i))
     }
     columns
   }
@@ -397,7 +399,7 @@ class LazyRddIterator(serializer: SerializerInstance,
   import scala.collection.JavaConverters._
   private val isVarcharTypeMapping = {
     val col2VarcharType = carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
-      .getCreateOrderColumn(carbonLoadModel.getTableName).asScala
+          .getCreateOrderColumn().asScala
       .map(c => c.getColName -> (c.getDataType == DataTypes.VARCHAR)).toMap
     carbonLoadModel.getCsvHeaderColumns.map(c => {
       val r = col2VarcharType.get(c.toLowerCase)
@@ -461,12 +463,11 @@ class PartitionTableDataLoaderRDD[K, V](
       val executionErrors = new ExecutionErrors(FailureCauses.NONE, "")
       val model: CarbonLoadModel = carbonLoadModel
       val carbonTable = model.getCarbonDataLoadSchema.getCarbonTable
-      val partitionInfo = carbonTable.getPartitionInfo(carbonTable.getTableName)
+      val partitionInfo = carbonTable.getPartitionInfo()
       val uniqueLoadStatusId =
         carbonLoadModel.getTableName + CarbonCommonConstants.UNDERSCORE + theSplit.index
       try {
 
-        loadMetadataDetails.setPartitionCount(CarbonTablePath.DEPRECATED_PARTITION_ID)
         loadMetadataDetails.setSegmentStatus(SegmentStatus.SUCCESS)
         carbonLoadModel.setTaskNo(String.valueOf(partitionInfo.getPartitionId(theSplit.index)))
         carbonLoadModel.setPreFetch(false)

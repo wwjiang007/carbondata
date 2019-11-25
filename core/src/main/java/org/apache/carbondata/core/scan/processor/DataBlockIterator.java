@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.processor;
 
 import java.io.IOException;
@@ -203,7 +204,8 @@ public class DataBlockIterator extends CarbonIterator<List<Object[]>> {
 
   private Future<BlockletScannedResult> scanNextBlockletAsync() {
     return executorService.submit(new Callable<BlockletScannedResult>() {
-      @Override public BlockletScannedResult call() throws Exception {
+      @Override
+      public BlockletScannedResult call() throws Exception {
         if (futureIo == null) {
           futureIo = readNextBlockletAsync();
         }
@@ -224,7 +226,8 @@ public class DataBlockIterator extends CarbonIterator<List<Object[]>> {
 
   private Future<RawBlockletColumnChunks> readNextBlockletAsync() {
     return executorService.submit(new Callable<RawBlockletColumnChunks>() {
-      @Override public RawBlockletColumnChunks call() throws Exception {
+      @Override
+      public RawBlockletColumnChunks call() throws Exception {
         try {
           TaskMetricsMap.getInstance().registerThreadCallback();
           if (blockletIterator.hasNext()) {
@@ -245,7 +248,6 @@ public class DataBlockIterator extends CarbonIterator<List<Object[]>> {
       this.scannerResultAggregator.collectResultInColumnarBatch(scannedResult, columnarBatch);
     }
   }
-
 
   /**
    * Close the resources

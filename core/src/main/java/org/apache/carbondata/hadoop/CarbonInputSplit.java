@@ -247,6 +247,7 @@ public class CarbonInputSplit extends FileSplit
     this.location = locations;
     this.numberOfBlocklets = numberOfBlocklets;
   }
+
   public CarbonInputSplit(String segmentId, String filePath, long start, long length,
       String[] locations, FileFormat fileFormat) {
     this.filePath = filePath;
@@ -353,8 +354,8 @@ public class CarbonInputSplit extends FileSplit
     return segment;
   }
 
-
-  @Override public void readFields(DataInput in) throws IOException {
+  @Override
+  public void readFields(DataInput in) throws IOException {
     // if serializeData is not null it means fields which is present below if condition are alredy
     // deserialize  org.apache.carbondata.hadoop.CarbonInputSplit#CarbonInputSplit(
     // int, java.io.DataInput, java.lang.String, java.lang.String[], java.lang.String)
@@ -392,7 +393,8 @@ public class CarbonInputSplit extends FileSplit
     this.isLegacyStore = in.readBoolean();
   }
 
-  @Override public void write(DataOutput out) throws IOException {
+  @Override
+  public void write(DataOutput out) throws IOException {
     // if serializeData is not null then its a index server flow so write fields
     // which is already deserialize and write serializeData to output stream
     if (null != serializeData) {
@@ -461,7 +463,6 @@ public class CarbonInputSplit extends FileSplit
     }
   }
 
-
   /**
    * returns the number of blocklets
    *
@@ -483,9 +484,12 @@ public class CarbonInputSplit extends FileSplit
     return bucketId;
   }
 
-  public String getBlockletId() { return blockletId; }
+  public String getBlockletId() {
+    return blockletId;
+  }
 
-  @Override public int compareTo(Distributable o) {
+  @Override
+  public int compareTo(Distributable o) {
     if (o == null) {
       return -1;
     }
@@ -540,7 +544,8 @@ public class CarbonInputSplit extends FileSplit
     return 0;
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -552,7 +557,8 @@ public class CarbonInputSplit extends FileSplit
     return 0 == this.compareTo(other);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     derserializeField();
     int result = taskId.hashCode();
     result = 31 * result + segment.hashCode();
@@ -561,18 +567,21 @@ public class CarbonInputSplit extends FileSplit
     return result;
   }
 
-  @Override public String getBlockPath() {
+  @Override
+  public String getBlockPath() {
     if (null == blockPath) {
       blockPath = getPath().getName();
     }
     return blockPath;
   }
 
-  @Override public List<Long> getMatchedBlocklets() {
+  @Override
+  public List<Long> getMatchedBlocklets() {
     return null;
   }
 
-  @Override public boolean fullScan() {
+  @Override
+  public boolean fullScan() {
     return true;
   }
 
@@ -758,7 +767,9 @@ public class CarbonInputSplit extends FileSplit
   }
 
   /** The position of the first byte in the file to process. */
-  public long getStart() { return start; }
+  public long getStart() {
+    return start;
+  }
 
   /**
    * In case of index server detail info won't be present
@@ -792,9 +803,12 @@ public class CarbonInputSplit extends FileSplit
   }
 
   @Override
-  public String toString() { return filePath + ":" + start + "+" + length; }
+  public String toString() {
+    return filePath + ":" + start + "+" + length;
+  }
 
-  @Override public String[] getLocations() throws IOException {
+  @Override
+  public String[] getLocations() throws IOException {
     if (this.location == null && dataMapRow == null) {
       return new String[] {};
     } else if (dataMapRow != null) {

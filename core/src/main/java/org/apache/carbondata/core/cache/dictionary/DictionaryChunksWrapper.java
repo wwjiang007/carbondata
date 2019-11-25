@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.cache.dictionary;
 
 import java.util.Iterator;
@@ -71,7 +72,8 @@ public class DictionaryChunksWrapper implements Iterator<byte[]> {
    *
    * @return {@code true} if the iteration has more elements
    */
-  @Override public boolean hasNext() {
+  @Override
+  public boolean hasNext() {
     return (currentIndex < size);
   }
 
@@ -82,7 +84,8 @@ public class DictionaryChunksWrapper implements Iterator<byte[]> {
    *
    * @return the next element in the iteration
    */
-  @Override public byte[] next() {
+  @Override
+  public byte[] next() {
     if (iteratorIndex >= dictionaryChunks.get(outerIndex).size()) {
       iteratorIndex = 0;
       outerIndex++;
@@ -110,7 +113,8 @@ public class DictionaryChunksWrapper implements Iterator<byte[]> {
    * @implSpec The default implementation throws an instance of
    * {@link UnsupportedOperationException} and performs no other action.
    */
-  @Override public void remove() {
+  @Override
+  public void remove() {
     throw new UnsupportedOperationException("Remove operation not supported");
   }
 

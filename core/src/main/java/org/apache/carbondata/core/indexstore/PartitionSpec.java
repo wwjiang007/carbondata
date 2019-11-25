@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore;
 
 import java.io.DataInput;
@@ -83,23 +84,27 @@ public class PartitionSpec implements Serializable, Writable {
     this.uuid = uuid;
   }
 
-  @Override public boolean equals(Object o) {
+  @Override
+  public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     PartitionSpec spec = (PartitionSpec) o;
     return Objects.equals(getLocation(), spec.getLocation());
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return Objects.hash(locationPath);
   }
 
-  @Override public String toString() {
+  @Override
+  public String toString() {
     return "PartitionSpec{" + "partitions=" + partitions + ", locationPath=" + locationPath
         + ", location='" + location + '\'' + '}';
   }
 
-  @Override public void write(DataOutput out) throws IOException {
+  @Override
+  public void write(DataOutput out) throws IOException {
     if (partitions == null) {
       out.writeBoolean(false);
     } else {
@@ -123,7 +128,8 @@ public class PartitionSpec implements Serializable, Writable {
     }
   }
 
-  @Override public void readFields(DataInput in) throws IOException {
+  @Override
+  public void readFields(DataInput in) throws IOException {
     if (in.readBoolean()) {
       int numPartitions = in.readInt();
       partitions = new ArrayList<>(numPartitions);

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.metadata;
 
 import java.io.Serializable;
@@ -77,14 +78,16 @@ public class ColumnIdentifier implements Serializable {
     return this.dataType;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     final int prime = 31;
     int result = 1;
     result = prime * result + ((columnId == null) ? 0 : columnId.hashCode());
     return result;
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -105,7 +108,8 @@ public class ColumnIdentifier implements Serializable {
     return true;
   }
 
-  @Override public String toString() {
+  @Override
+  public String toString() {
     return "ColumnIdentifier [columnId=" + columnId + "]";
   }
 

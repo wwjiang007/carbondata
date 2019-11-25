@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.filesystem;
 
 import java.io.IOException;
@@ -83,7 +84,8 @@ public class ViewFSCarbonFile extends AbstractDFSCarbonFile {
     return files;
   }
 
-  @Override public CarbonFile getParentFile() {
+  @Override
+  public CarbonFile getParentFile() {
     Path parent = fileStatus.getPath().getParent();
     return null == parent ? null : new ViewFSCarbonFile(parent);
   }

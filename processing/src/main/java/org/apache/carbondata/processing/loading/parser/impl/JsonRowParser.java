@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.parser.impl;
 
 import java.io.IOException;
@@ -42,7 +43,8 @@ public class JsonRowParser implements RowParser {
     this.dataFields = dataFields;
   }
 
-  @Override public Object[] parseRow(Object[] row) {
+  @Override
+  public Object[] parseRow(Object[] row) {
     try {
       return convertJsonToNoDictionaryToBytes((String) row[0]);
     } catch (IOException e) {

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.result.vector;
 
 import java.util.BitSet;
@@ -39,11 +40,13 @@ public class ColumnVectorInfo implements Comparable<ColumnVectorInfo> {
   public BitSet deletedRows;
   public DecimalConverterFactory.DecimalConverter decimalConverter;
 
-  @Override public int compareTo(ColumnVectorInfo o) {
+  @Override
+  public int compareTo(ColumnVectorInfo o) {
     return ordinal - o.ordinal;
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -59,7 +62,8 @@ public class ColumnVectorInfo implements Comparable<ColumnVectorInfo> {
     return ordinal == ((ColumnVectorInfo) obj).ordinal;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     final int prime = 31;
     int result = 1;
     result = prime * result + (ordinal);

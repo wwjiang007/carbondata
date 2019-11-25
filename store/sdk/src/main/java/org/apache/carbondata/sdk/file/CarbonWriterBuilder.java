@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.annotations.InterfaceStability;
@@ -39,9 +40,11 @@ import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.datatype.MapType;
 import org.apache.carbondata.core.metadata.datatype.StructField;
+import org.apache.carbondata.core.metadata.schema.SchemaReader;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.TableSchema;
 import org.apache.carbondata.core.metadata.schema.table.TableSchemaBuilder;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonUtil;
@@ -65,7 +68,10 @@ public class CarbonWriterBuilder {
   private int pageSizeInMb;
   private int blockSize;
   private long timestamp;
-  private Map<String, String> options;
+
+  // use TreeMap as keys need to be case insensitive
+  private Map<String, String> options = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
   private String taskNo;
   private int localDictionaryThreshold;
   private boolean isLocalDictionaryEnabled = Boolean.parseBoolean(
@@ -79,6 +85,9 @@ public class CarbonWriterBuilder {
   }
 
   private WRITER_TYPE writerType;
+
+  // can be set by withSchemaFile
+  private CarbonTable carbonTable;
 
   /**
    * Sets the output path of the writer builder
@@ -169,6 +178,7 @@ public class CarbonWriterBuilder {
    *                g. complex_delimiter_level_2 -- value to Split the nested complexTypeData
    *                h. quotechar
    *                i. escapechar
+   *                j. fileheader
    *                <p>
    *                Default values are as follows.
    *                <p>
@@ -181,6 +191,7 @@ public class CarbonWriterBuilder {
    *                g. complex_delimiter_level_2 -- "\002"
    *                h. quotechar -- "\""
    *                i. escapechar -- "\\"
+   *                j. fileheader -- None
    * @return updated CarbonWriterBuilder
    */
   public CarbonWriterBuilder withLoadOptions(Map<String, String> options) {
@@ -197,7 +208,8 @@ public class CarbonWriterBuilder {
           !option.equalsIgnoreCase("complex_delimiter_level_3") &&
           !option.equalsIgnoreCase("quotechar") &&
           !option.equalsIgnoreCase("escapechar") &&
-          !option.equalsIgnoreCase("binary_decoder")) {
+          !option.equalsIgnoreCase("binary_decoder") &&
+          !option.equalsIgnoreCase("fileheader")) {
         throw new IllegalArgumentException("Unsupported option:" + option
             + ". Refer method header or documentation");
       }
@@ -239,10 +251,6 @@ public class CarbonWriterBuilder {
       }
     }
 
-    if (this.options == null) {
-      // convert it to treeMap as keys need to be case insensitive
-      this.options = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-    }
     this.options.putAll(options);
     return this;
   }
@@ -442,7 +450,6 @@ public class CarbonWriterBuilder {
     return this;
   }
 
-
   /**
    * To set the blocklet size of CarbonData file
    *
@@ -481,7 +488,20 @@ public class CarbonWriterBuilder {
    */
   public CarbonWriterBuilder withCsvInput(Schema schema) {
     Objects.requireNonNull(schema, "schema should not be null");
+    if (this.schema != null) {
+      throw new IllegalArgumentException("schema should be set only once");
+    }
     this.schema = schema;
+    this.writerType = WRITER_TYPE.CSV;
+    return this;
+  }
+
+  /**
+   * to build a {@link CarbonWriter}, which accepts row in CSV format
+   *
+   * @return CarbonWriterBuilder
+   */
+  public CarbonWriterBuilder withCsvInput() {
     this.writerType = WRITER_TYPE.CSV;
     return this;
   }
@@ -494,6 +514,9 @@ public class CarbonWriterBuilder {
    */
   public CarbonWriterBuilder withCsvInput(String jsonSchema) {
     Objects.requireNonNull(jsonSchema, "schema should not be null");
+    if (this.schema != null) {
+      throw new IllegalArgumentException("schema should be set only once");
+    }
     this.schema = Schema.parseJson(jsonSchema);
     this.writerType = WRITER_TYPE.CSV;
     return this;
@@ -507,6 +530,9 @@ public class CarbonWriterBuilder {
    */
   public CarbonWriterBuilder withAvroInput(org.apache.avro.Schema avroSchema) {
     Objects.requireNonNull(avroSchema, "Avro schema should not be null");
+    if (this.schema != null) {
+      throw new IllegalArgumentException("schema should be set only once");
+    }
     this.schema = AvroCarbonWriter.getCarbonSchemaFromAvroSchema(avroSchema);
     this.writerType = WRITER_TYPE.AVRO;
     return this;
@@ -520,8 +546,37 @@ public class CarbonWriterBuilder {
    */
   public CarbonWriterBuilder withJsonInput(Schema carbonSchema) {
     Objects.requireNonNull(carbonSchema, "schema should not be null");
+    if (this.schema != null) {
+      throw new IllegalArgumentException("schema should be set only once");
+    }
     this.schema = carbonSchema;
     this.writerType = WRITER_TYPE.JSON;
+    return this;
+  }
+
+  /**
+   * to build a {@link CarbonWriter}, which accepts row in Json format
+   *
+   * @return CarbonWriterBuilder
+   */
+  public CarbonWriterBuilder withJsonInput() {
+    this.writerType = WRITER_TYPE.JSON;
+    return this;
+  }
+
+  public CarbonWriterBuilder withSchemaFile(String schemaFilePath) throws IOException {
+    Objects.requireNonNull(schemaFilePath, "schema file path should not be null");
+    if (path == null) {
+      throw new IllegalArgumentException("output path should be set before setting schema file");
+    }
+    carbonTable = SchemaReader.readCarbonTableFromSchema(schemaFilePath, new Configuration());
+    carbonTable.getTableInfo().setTablePath(path);
+    carbonTable.setTransactionalTable(false);
+    List<ColumnSchema> columnSchemas =
+        carbonTable.getCreateOrderColumn().stream().map(
+            CarbonColumn::getColumnSchema
+        ).collect(Collectors.toList());
+    schema = new Schema(columnSchemas);
     return this;
   }
 
@@ -537,7 +592,7 @@ public class CarbonWriterBuilder {
   public CarbonWriter build() throws IOException, InvalidLoadOptionException {
     Objects.requireNonNull(path, "path should not be null");
     if (this.writerType == null) {
-      throw new IOException(
+      throw new RuntimeException(
           "'writerType' must be set, use withCsvInput() or withAvroInput() or withJsonInput()  "
               + "API based on input");
     }
@@ -545,6 +600,9 @@ public class CarbonWriterBuilder {
       throw new RuntimeException(
           "'writtenBy' must be set when writing carbon files, use writtenBy() API to "
               + "set it, it can be the name of the application which is using the SDK");
+    }
+    if (this.schema == null) {
+      throw new RuntimeException("schema should be set");
     }
     CarbonLoadModel loadModel = buildLoadModel(schema);
     loadModel.setSdkWriterCores(numOfThreads);
@@ -614,10 +672,12 @@ public class CarbonWriterBuilder {
         }
       }
     }
-    // build CarbonTable using schema
-    CarbonTable table = buildCarbonTable();
+    if (carbonTable == null) {
+      // if carbonTable is not set by user, build it using schema
+      carbonTable = buildCarbonTable();
+    }
     // build LoadModel
-    return buildLoadModel(table, timestamp, taskNo, options);
+    return buildLoadModel(carbonTable, timestamp, taskNo, options);
   }
 
   private void validateLongStringColumns(Schema carbonSchema, Set<String> longStringColumns) {

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.sort.impl;
 
 import java.io.File;
@@ -71,13 +72,15 @@ public class UnsafeBatchParallelReadMergeSorterImpl extends AbstractMergeSorter 
     this.rowCounter = rowCounter;
   }
 
-  @Override public void initialize(SortParameters sortParameters) {
+  @Override
+  public void initialize(SortParameters sortParameters) {
     this.sortParameters = sortParameters;
     batchId = new AtomicInteger(0);
 
   }
 
-  @Override public Iterator<CarbonRowBatch>[] sort(Iterator<CarbonRowBatch>[] iterators)
+  @Override
+  public Iterator<CarbonRowBatch>[] sort(Iterator<CarbonRowBatch>[] iterators)
       throws CarbonDataLoadingException {
     this.executorService = Executors.newFixedThreadPool(iterators.length);
     this.threadStatusObserver = new ThreadStatusObserver(this.executorService);
@@ -99,18 +102,21 @@ public class UnsafeBatchParallelReadMergeSorterImpl extends AbstractMergeSorter 
     // Creates the iterator to read from merge sorter.
     Iterator<CarbonSortBatch> batchIterator = new CarbonIterator<CarbonSortBatch>() {
 
-      @Override public boolean hasNext() {
+      @Override
+      public boolean hasNext() {
         return sortBatchHolder.hasNext();
       }
 
-      @Override public CarbonSortBatch next() {
+      @Override
+      public CarbonSortBatch next() {
         return new CarbonSortBatch(sortBatchHolder.next());
       }
     };
     return new Iterator[] { batchIterator };
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     executorService.shutdown();
     try {
       executorService.awaitTermination(2, TimeUnit.DAYS);
@@ -240,7 +246,8 @@ public class UnsafeBatchParallelReadMergeSorterImpl extends AbstractMergeSorter 
       parameters.setTempFileLocation(tempDirs);
     }
 
-    @Override public UnsafeSingleThreadFinalSortFilesMerger next() {
+    @Override
+    public UnsafeSingleThreadFinalSortFilesMerger next() {
       try {
         UnsafeSingleThreadFinalSortFilesMerger unsafeSingleThreadFinalSortFilesMerger =
             mergerQueue.take();

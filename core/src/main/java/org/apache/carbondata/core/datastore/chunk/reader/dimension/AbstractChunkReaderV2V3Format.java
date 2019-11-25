@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.chunk.reader.dimension;
 
 import java.io.IOException;
@@ -57,7 +58,8 @@ public abstract class AbstractChunkReaderV2V3Format extends AbstractChunkReader 
    * @param columnIndexRange column index range to be read
    * @return dimension column chunks
    */
-  @Override public DimensionRawColumnChunk[] readRawDimensionChunks(final FileReader fileReader,
+  @Override
+  public DimensionRawColumnChunk[] readRawDimensionChunks(final FileReader fileReader,
       final int[][] columnIndexRange) throws IOException {
     // read the column chunk based on block index and add
     DimensionRawColumnChunk[] dataChunks =

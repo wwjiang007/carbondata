@@ -231,6 +231,17 @@ case class CarbonDictionaryDecoder(
            |  tuple.setValue(UTF8String.fromBytes((byte[])tuple.getValue()));
            |  return tuple;
            |}""".stripMargin)
+      val decodeBool = ctx.freshName("deDictBool")
+      ctx.addNewFunction(decodeBool,
+        s"""
+           |private org.apache.spark.sql.DictTuple $decodeBool(
+           |  org.apache.spark.sql.ForwardDictionaryWrapper dict, int surg)
+           | throws java.io.IOException {
+           |  org.apache.spark.sql.DictTuple tuple = $decodeDictionary(dict, surg);
+           |  tuple.setValue(Boolean.parseBoolean(new String((byte[])tuple.getValue(),
+           |  org.apache.carbondata.core.constants.CarbonCommonConstants.DEFAULT_CHARSET_CLASS)));
+           |  return tuple;
+           |}""".stripMargin)
 
 
       val resultVars = exprs.zipWithIndex.map { case (expr, index) =>
@@ -271,6 +282,11 @@ case class CarbonDictionaryDecoder(
                     |org.apache.spark.sql.DictTuple $value = $decodeLong($dictRef, ${ ev.value });
                  """.stripMargin
                 ExprCode(code, s"$value.getIsNull()", s"((Long)$value.getValue())")
+              case CarbonDataTypes.BOOLEAN => code +=
+                s"""
+                   |org.apache.spark.sql.DictTuple $value = $decodeBool($dictRef, ${ ev.value });
+                 """.stripMargin
+                ExprCode(code, s"$value.getIsNull()", s"((Boolean)$value.getValue())")
               case _ => code +=
                 s"""
                    |org.apache.spark.sql.DictTuple $value = $decodeStr($dictRef, ${ev.value});
@@ -394,8 +410,7 @@ object CarbonDictionaryDecoder {
       val relation = relations.find(p => p.contains(attr))
       if (relation.isDefined && canBeDecoded(attr, profile)) {
         val carbonTable = relation.get.carbonRelation.carbonRelation.metaData.carbonTable
-        val carbonDimension = carbonTable
-          .getDimensionByName(carbonTable.getTableName, attr.name)
+        val carbonDimension = carbonTable.getDimensionByName(attr.name)
         if (carbonDimension != null &&
             carbonDimension.hasEncoding(Encoding.DICTIONARY) &&
             !carbonDimension.hasEncoding(Encoding.DIRECT_DICTIONARY) &&
@@ -426,8 +441,7 @@ object CarbonDictionaryDecoder {
       val relation = relations.find(p => p.contains(attr))
       if (relation.isDefined) {
         val carbonTable = relation.get.carbonRelation.carbonRelation.metaData.carbonTable
-        val carbonDimension = carbonTable
-          .getDimensionByName(carbonTable.getTableName, attr.name)
+        val carbonDimension = carbonTable.getDimensionByName(attr.name)
         if (carbonDimension != null &&
             carbonDimension.hasEncoding(Encoding.DICTIONARY) &&
             !carbonDimension.hasEncoding(Encoding.DIRECT_DICTIONARY) &&
@@ -471,7 +485,7 @@ object CarbonDictionaryDecoder {
       if (relation.isDefined && CarbonDictionaryDecoder.canBeDecoded(attr, profile)) {
         val carbonTable = relation.get.carbonRelation.carbonRelation.metaData.carbonTable
         val carbonDimension =
-          carbonTable.getDimensionByName(carbonTable.getTableName, attr.name)
+          carbonTable.getDimensionByName(attr.name)
         if (carbonDimension != null &&
             carbonDimension.hasEncoding(Encoding.DICTIONARY) &&
             !carbonDimension.hasEncoding(Encoding.DIRECT_DICTIONARY) &&
@@ -526,7 +540,7 @@ class CarbonDecoderRDD(
       if (relation.isDefined && canBeDecoded(attr)) {
         val carbonTable = relation.get.carbonRelation.carbonRelation.metaData.carbonTable
         val carbonDimension =
-          carbonTable.getDimensionByName(carbonTable.getTableName, attr.name)
+          carbonTable.getDimensionByName(attr.name)
         if (carbonDimension != null &&
             carbonDimension.hasEncoding(Encoding.DICTIONARY) &&
             !carbonDimension.hasEncoding(Encoding.DIRECT_DICTIONARY) &&

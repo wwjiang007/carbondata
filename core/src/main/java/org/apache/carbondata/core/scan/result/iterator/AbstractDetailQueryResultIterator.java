@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.result.iterator;
 
 import java.io.IOException;
@@ -217,12 +218,12 @@ public abstract class AbstractDetailQueryResultIterator<E> extends CarbonIterato
   }
 
   private DataBlockIterator getDataBlockIterator() {
+    try {
+      fileReader.finish();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
     if (blockExecutionInfos.size() > 0) {
-      try {
-        fileReader.finish();
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
       BlockExecutionInfo executionInfo = blockExecutionInfos.get(0);
       blockExecutionInfos.remove(executionInfo);
       return new DataBlockIterator(executionInfo, fileReader, batchSize, queryStatisticsModel,
@@ -295,7 +296,8 @@ public abstract class AbstractDetailQueryResultIterator<E> extends CarbonIterato
     throw new UnsupportedOperationException("Please use VectorDetailQueryResultIterator");
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     if (null != dataBlockIterator) {
       dataBlockIterator.close();
     }

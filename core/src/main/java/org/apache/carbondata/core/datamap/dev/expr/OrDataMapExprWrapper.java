@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap.dev.expr;
 
 import java.io.IOException;
@@ -70,7 +71,8 @@ public class OrDataMapExprWrapper implements DataMapExprWrapper {
     return new ArrayList<>(andBlocklets);
   }
 
-  @Override public List<ExtendedBlocklet> pruneBlocklets(List<ExtendedBlocklet> blocklets)
+  @Override
+  public List<ExtendedBlocklet> pruneBlocklets(List<ExtendedBlocklet> blocklets)
       throws IOException {
     List<ExtendedBlocklet> leftPrune = left.pruneBlocklets(blocklets);
     List<ExtendedBlocklet> rightPrune = right.pruneBlocklets(blocklets);
@@ -80,7 +82,8 @@ public class OrDataMapExprWrapper implements DataMapExprWrapper {
     return new ArrayList<>(andBlocklets);
   }
 
-  @Override public List<DataMapDistributableWrapper> toDistributable(List<Segment> segments)
+  @Override
+  public List<DataMapDistributableWrapper> toDistributable(List<Segment> segments)
       throws IOException {
     List<DataMapDistributableWrapper> wrappers = new ArrayList<>();
     wrappers.addAll(left.toDistributable(segments));
@@ -88,11 +91,13 @@ public class OrDataMapExprWrapper implements DataMapExprWrapper {
     return wrappers;
   }
 
-  @Override public FilterResolverIntf getFilterResolverIntf() {
+  @Override
+  public FilterResolverIntf getFilterResolverIntf() {
     return resolverIntf;
   }
 
-  @Override public FilterResolverIntf getFilterResolverIntf(String uniqueId) {
+  @Override
+  public FilterResolverIntf getFilterResolverIntf(String uniqueId) {
     FilterResolverIntf leftExp = left.getFilterResolverIntf(uniqueId);
     FilterResolverIntf rightExp = right.getFilterResolverIntf(uniqueId);
     if (leftExp != null) {
@@ -103,8 +108,8 @@ public class OrDataMapExprWrapper implements DataMapExprWrapper {
     return null;
   }
 
-
-  @Override public DataMapLevel getDataMapLevel() {
+  @Override
+  public DataMapLevel getDataMapLevel() {
     return left.getDataMapLevel();
   }
 

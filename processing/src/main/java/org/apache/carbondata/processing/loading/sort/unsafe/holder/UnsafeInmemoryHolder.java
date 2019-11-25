@@ -17,10 +17,12 @@
 
 package org.apache.carbondata.processing.loading.sort.unsafe.holder;
 
+import java.util.Comparator;
+
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.processing.loading.row.IntermediateSortTempRow;
 import org.apache.carbondata.processing.loading.sort.unsafe.UnsafeCarbonRowPage;
-import org.apache.carbondata.processing.sort.sortdata.IntermediateSortTempRowComparator;
+import org.apache.carbondata.processing.sort.sortdata.FileMergeSortComparator;
 
 import org.apache.log4j.Logger;
 
@@ -39,15 +41,16 @@ public class UnsafeInmemoryHolder implements SortTempChunkHolder {
 
   private long address;
 
-  private IntermediateSortTempRowComparator comparator;
+  private Comparator<IntermediateSortTempRow> comparator;
 
   public UnsafeInmemoryHolder(UnsafeCarbonRowPage rowPage) {
     this.actualSize = rowPage.getBuffer().getActualSize();
     this.rowPage = rowPage;
     LOGGER.info("Processing unsafe inmemory rows page with size : " + actualSize);
-    this.comparator = new IntermediateSortTempRowComparator(
-        rowPage.getTableFieldStat().getIsSortColNoDictFlags(),
-        rowPage.getTableFieldStat().getNoDictDataType());
+    this.comparator =
+        new FileMergeSortComparator(rowPage.getTableFieldStat().getIsSortColNoDictFlags(),
+            rowPage.getTableFieldStat().getNoDictDataType(),
+            rowPage.getTableFieldStat().getNoDictSortColumnSchemaOrderMapping());
     this.rowPage.setReadConvertedNoSortField();
   }
 
@@ -68,11 +71,13 @@ public class UnsafeInmemoryHolder implements SortTempChunkHolder {
     return currentRow;
   }
 
-  @Override public int compareTo(SortTempChunkHolder o) {
+  @Override
+  public int compareTo(SortTempChunkHolder o) {
     return comparator.compare(currentRow, o.getRow());
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -86,7 +91,8 @@ public class UnsafeInmemoryHolder implements SortTempChunkHolder {
     return this == o;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return super.hashCode();
   }
 

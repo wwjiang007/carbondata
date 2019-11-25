@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.service.impl;
 
 import org.apache.carbondata.core.cache.dictionary.DictionaryColumnUniqueIdentifier;
@@ -42,7 +43,8 @@ public class DictionaryFactory implements DictionaryService {
    * @param dictionaryColumnUniqueIdentifier
    * @return
    */
-  @Override public CarbonDictionaryWriter getDictionaryWriter(
+  @Override
+  public CarbonDictionaryWriter getDictionaryWriter(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     return new CarbonDictionaryWriterImpl(dictionaryColumnUniqueIdentifier);
   }
@@ -53,7 +55,8 @@ public class DictionaryFactory implements DictionaryService {
    * @param dictionaryColumnUniqueIdentifier
    * @return
    */
-  @Override public CarbonDictionarySortIndexWriter getDictionarySortIndexWriter(
+  @Override
+  public CarbonDictionarySortIndexWriter getDictionarySortIndexWriter(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     return new CarbonDictionarySortIndexWriterImpl(dictionaryColumnUniqueIdentifier);
   }
@@ -64,7 +67,8 @@ public class DictionaryFactory implements DictionaryService {
    * @param dictionaryColumnUniqueIdentifier
    * @return
    */
-  @Override public CarbonDictionaryMetadataReader getDictionaryMetadataReader(
+  @Override
+  public CarbonDictionaryMetadataReader getDictionaryMetadataReader(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     return new CarbonDictionaryMetadataReaderImpl(dictionaryColumnUniqueIdentifier);
   }
@@ -75,7 +79,8 @@ public class DictionaryFactory implements DictionaryService {
    * @param dictionaryColumnUniqueIdentifier
    * @return
    */
-  @Override public CarbonDictionaryReader getDictionaryReader(
+  @Override
+  public CarbonDictionaryReader getDictionaryReader(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     return new CarbonDictionaryReaderImpl(dictionaryColumnUniqueIdentifier);
   }
@@ -86,7 +91,8 @@ public class DictionaryFactory implements DictionaryService {
    * @param dictionaryColumnUniqueIdentifier
    * @return
    */
-  @Override public CarbonDictionarySortIndexReader getDictionarySortIndexReader(
+  @Override
+  public CarbonDictionarySortIndexReader getDictionarySortIndexReader(
       DictionaryColumnUniqueIdentifier dictionaryColumnUniqueIdentifier) {
     return new CarbonDictionarySortIndexReaderImpl(dictionaryColumnUniqueIdentifier);
   }

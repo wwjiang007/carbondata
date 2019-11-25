@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.datamap.bloom;
 
 import java.io.Serializable;
@@ -100,7 +101,8 @@ public class BloomCacheKeyValue {
       return size;
     }
 
-    @Override public void invalidate() {
+    @Override
+    public void invalidate() {
       bloomFilters = null;
     }
 

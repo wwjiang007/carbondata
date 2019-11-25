@@ -34,6 +34,7 @@ import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
+import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.processing.loading.constants.DataLoadProcessorConstants;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
@@ -220,6 +221,16 @@ public final class DataLoadProcessBuilder {
     configuration.setSchemaUpdatedTimeStamp(carbonTable.getTableLastUpdatedTime());
     configuration.setHeader(loadModel.getCsvHeaderColumns());
     configuration.setSegmentId(loadModel.getSegmentId());
+    List<LoadMetadataDetails> loadMetadataDetails = loadModel.getLoadMetadataDetails();
+    if (loadMetadataDetails != null) {
+      for (LoadMetadataDetails detail : loadMetadataDetails) {
+        if (detail.getLoadName().equals(loadModel.getSegmentId()) && StringUtils
+            .isNotEmpty(detail.getPath())) {
+          configuration.setSegmentPath(detail.getPath());
+        }
+      }
+    }
+
     configuration.setTaskNo(loadModel.getTaskNo());
     String[] complexDelimiters = new String[loadModel.getComplexDelimiters().size()];
     loadModel.getComplexDelimiters().toArray(complexDelimiters);
@@ -251,10 +262,8 @@ public final class DataLoadProcessBuilder {
     configuration.setDataLoadProperty(CarbonLoadOptionConstants.CARBON_OPTIONS_BINARY_DECODER,
         loadModel.getBinaryDecoder());
 
-    List<CarbonDimension> dimensions =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
-    List<CarbonMeasure> measures =
-        carbonTable.getMeasureByTableName(carbonTable.getTableName());
+    List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
+    List<CarbonMeasure> measures = carbonTable.getVisibleMeasures();
     List<DataField> dataFields = new ArrayList<>();
     List<DataField> complexDataFields = new ArrayList<>();
 
@@ -291,8 +300,9 @@ public final class DataLoadProcessBuilder {
         dataFields.add(new DataField(column));
       }
     }
-    configuration.setDataFields(dataFields.toArray(new DataField[dataFields.size()]));
-    configuration.setBucketingInfo(carbonTable.getBucketingInfo(carbonTable.getTableName()));
+    configuration.setDataFields(
+        updateDataFieldsBasedOnSortColumns(dataFields).toArray(new DataField[dataFields.size()]));
+    configuration.setBucketingInfo(carbonTable.getBucketingInfo());
     // configuration for one pass load: dictionary server info
     configuration.setUseOnePass(loadModel.getUseOnePass());
     configuration.setDictionaryServerHost(loadModel.getDictionaryServerHost());
@@ -329,7 +339,7 @@ public final class DataLoadProcessBuilder {
    */
   private static void setSortColumnInfo(CarbonTable carbonTable, CarbonLoadModel loadModel,
       CarbonDataLoadConfiguration configuration) {
-    List<String> sortCols = carbonTable.getSortColumns(carbonTable.getTableName());
+    List<String> sortCols = carbonTable.getSortColumns();
     SortScopeOptions.SortScope sortScope = SortScopeOptions.getSortScope(loadModel.getSortScope());
     if (!SortScopeOptions.SortScope.LOCAL_SORT.equals(sortScope)
         || sortCols.size() == 0
@@ -387,5 +397,26 @@ public final class DataLoadProcessBuilder {
         sortColumnBounds,
         CarbonLoadOptionConstants.SORT_COLUMN_BOUNDS_FIELD_DELIMITER);
     configuration.setSortColumnRangeInfo(sortColumnRangeInfo);
+  }
+
+  /**
+   * This method rearrange the data fields where all the sort columns are added at first. Because
+   * if the column gets added in old version like carbon1.1, it will be added at last, so if it is
+   * sort column, bring it to first.
+   */
+  private static List<DataField> updateDataFieldsBasedOnSortColumns(List<DataField> dataFields) {
+    List<DataField> updatedDataFields = new ArrayList<>();
+    List<DataField> sortFields = new ArrayList<>();
+    List<DataField> nonSortFields = new ArrayList<>();
+    for (DataField dataField : dataFields) {
+      if (dataField.getColumn().getColumnSchema().isSortColumn()) {
+        sortFields.add(dataField);
+      } else {
+        nonSortFields.add(dataField);
+      }
+    }
+    updatedDataFields.addAll(sortFields);
+    updatedDataFields.addAll(nonSortFields);
+    return updatedDataFields;
   }
 }

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.indexstore;
 
 import java.io.ByteArrayInputStream;
@@ -165,7 +166,8 @@ public class BlockletDetailInfo implements Serializable, Writable {
     this.blockSize = blockSize;
   }
 
-  @Override public void write(DataOutput out) throws IOException {
+  @Override
+  public void write(DataOutput out) throws IOException {
     out.writeInt(rowCount);
     out.writeShort(pagesCount);
     out.writeShort(versionNumber);
@@ -196,7 +198,8 @@ public class BlockletDetailInfo implements Serializable, Writable {
     out.writeBoolean(useMinMaxForPruning);
   }
 
-  @Override public void readFields(DataInput in) throws IOException {
+  @Override
+  public void readFields(DataInput in) throws IOException {
     rowCount = in.readInt();
     pagesCount = in.readShort();
     versionNumber = in.readShort();

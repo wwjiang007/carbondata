@@ -326,9 +326,9 @@ class VarcharDataTypesBasicTestCase extends QueryTest with BeforeAndAfterEach wi
     val dmTableName = longStringTable + "_" + datamapName
     val dmTable = CarbonMetadata.getInstance().getCarbonTable("default", dmTableName)
     assert(null != dmTable)
-    assert(dmTable.getColumnByName(dmTableName.toLowerCase(), longStringTable + "_description").getDataType
+    assert(dmTable.getColumnByName(longStringTable + "_description").getDataType
       == DataTypes.VARCHAR)
-    assert(dmTable.getColumnByName(dmTableName.toLowerCase(), longStringTable + "_note").getDataType
+    assert(dmTable.getColumnByName(longStringTable + "_note").getDataType
       == DataTypes.VARCHAR)
     sql(s"DROP DATAMAP IF EXISTS $datamapName ON TABLE $longStringTable")
   }
@@ -388,6 +388,16 @@ class VarcharDataTypesBasicTestCase extends QueryTest with BeforeAndAfterEach wi
         "longstr21",mutable.WrappedArray.make(Array("ar1.2","ar1.3")))))
 
     sql("DROP TABLE IF EXISTS varchar_complex_table")
+  }
+  
+  test("update table with long string column") {
+    prepareTable()
+    // update non-varchar column
+    sql(s"update $longStringTable set(id)=(0) where name is not null").show()
+    // update varchar column
+    sql(s"update $longStringTable set(description)=('empty') where name is not null").show()
+    // update non-varchar&varchar column
+    sql(s"update $longStringTable set(description, id)=('sth.', 1) where name is not null").show()
   }
 
     // ignore this test in CI, because it will need at least 4GB memory to run successfully

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.keygenerator.directdictionary.timestamp;
 
 import java.text.ParseException;
@@ -124,7 +125,8 @@ public class TimeStampDirectDictionaryGenerator implements DirectDictionaryGener
    * @param memberStr date format string
    * @return dictionary value
    */
-  @Override public int generateDirectSurrogateKey(String memberStr) {
+  @Override
+  public int generateDirectSurrogateKey(String memberStr) {
     if (null == memberStr || memberStr.trim().isEmpty() || memberStr
         .equals(CarbonCommonConstants.MEMBER_DEFAULT_VAL)) {
       return CarbonCommonConstants.DIRECT_DICT_VALUE_NULL;
@@ -181,7 +183,8 @@ public class TimeStampDirectDictionaryGenerator implements DirectDictionaryGener
    * @param key
    * @return member value/actual value Date
    */
-  @Override public Object getValueFromSurrogate(int key) {
+  @Override
+  public Object getValueFromSurrogate(int key) {
     if (key == CarbonCommonConstants.DIRECT_DICT_VALUE_NULL) {
       return null;
     }
@@ -223,7 +226,8 @@ public class TimeStampDirectDictionaryGenerator implements DirectDictionaryGener
     }
   }
 
-  @Override public DataType getReturnType() {
+  @Override
+  public DataType getReturnType() {
     return DataTypes.LONG;
   }
 

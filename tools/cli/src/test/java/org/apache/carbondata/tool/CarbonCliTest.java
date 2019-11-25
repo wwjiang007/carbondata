@@ -24,8 +24,12 @@ import java.io.PrintStream;
 
 import org.apache.carbondata.common.exceptions.sql.InvalidLoadOptionException;
 import org.apache.carbondata.core.constants.CarbonVersionConstants;
+import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
+import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
+import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.util.CarbonUtil;
+import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.sdk.file.*;
 
 import org.apache.commons.io.FileUtils;
@@ -234,19 +238,16 @@ public class CarbonCliTest {
 
     expectedOutput = buildLines(
         "BLK  BLKLT  Meta Size  Data Size  LocalDict  DictEntries  DictSize  AvgPageSize  Min%  Max%   Min  Max      " ,
-        "0    0      3.36KB     5.14MB     false      0            0.0B      93.76KB      0.0   100.0  0    2999990  " ,
+        "0    0      3.36KB     2.57MB     false      0            0.0B      93.76KB      0.0   100.0  0    2999990  " ,
         "0    1      3.36KB     2.57MB     false      0            0.0B      93.76KB      0.0   100.0  1    2999992  " ,
-        "1    0      3.36KB     5.14MB     false      0            0.0B      93.76KB      0.0   100.0  3    2999994  " ,
+        "1    0      3.36KB     2.57MB     false      0            0.0B      93.76KB      0.0   100.0  3    2999994  " ,
         "1    1      3.36KB     2.57MB     false      0            0.0B      93.76KB      0.0   100.0  5    2999996  " ,
-        "2    0      3.36KB     4.06MB     false      0            0.0B      93.76KB      0.0   100.0  7    2999998  " ,
+        "2    0      3.36KB     2.57MB     false      0            0.0B      93.76KB      0.0   100.0  7    2999998  " ,
         "2    1      2.04KB     1.49MB     false      0            0.0B      89.62KB      0.0   100.0  9    2999999  ");
     Assert.assertTrue(output.contains(expectedOutput));
-
-    expectedOutput = buildLines(
-        "## version Details",
-        "written_by  Version         ",
-        "TestUtil    "+ CarbonVersionConstants.CARBONDATA_VERSION+"  ");
-    Assert.assertTrue(output.contains(expectedOutput));
+    Assert.assertTrue(output.contains("## version Details"));
+    Assert.assertTrue(output.contains("written_by  Version"));
+    Assert.assertTrue(output.contains("TestUtil    "+ CarbonVersionConstants.CARBONDATA_VERSION));
   }
 
   @Test
@@ -256,11 +257,39 @@ public class CarbonCliTest {
     PrintStream stream = new PrintStream(out);
     CarbonCli.run(args, stream);
     String output = new String(out.toByteArray());
-    System.out.println(output);
     String expectedOutput = buildLines(
         "Blocklet 0:",
         "Page 0 (offset 0, length 9): DataChunk2(chunk_meta:ChunkCompressionMeta(compression_codec:DEPRECATED, total_uncompressed_size:96000, total_compressed_size:9, compressor_name:snappy), rowMajor:false, data_page_length:5, rle_page_length:4, presence:PresenceMeta(represents_presence:false, present_bit_stream:00), sort_state:SORT_NATIVE, encoders:[RLE], encoder_meta:[], min_max:BlockletMinMaxIndex(min_values:[72 6F 62 6F 74 30], max_values:[72 6F 62 6F 74 30], min_max_presence:[true]), numberOfRowsInpage:32000)");
     Assert.assertTrue(output.contains(expectedOutput));
+  }
+
+  @Test
+  public void testSummaryAllColumns() {
+    String[] args = { "-cmd", "summary", "-p", path, "-C" };
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    PrintStream stream = new PrintStream(out);
+    CarbonCli.run(args, stream);
+    String output = new String(out.toByteArray());
+    Assert.assertTrue(output.contains("Block  Blocklet  Column Name  Meta Size  Data Size"));
+  }
+
+  @Test
+  public void testSummaryAllColumnsForOneFile() {
+    CarbonFile folder = FileFactory.getCarbonFile(path);
+    CarbonFile[] carbonFiles = folder.listFiles(new CarbonFileFilter() {
+
+      @Override
+      public boolean accept(CarbonFile file) {
+        return file.getName().endsWith(CarbonTablePath.CARBON_DATA_EXT);
+      }
+    });
+
+    String[] args = { "-cmd", "summary", "-p", carbonFiles[0].getCanonicalPath(), "-C" };
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    PrintStream stream = new PrintStream(out);
+    CarbonCli.run(args, stream);
+    String output = new String(out.toByteArray());
+    Assert.assertTrue(output.contains("Block  Blocklet  Column Name  Meta Size  Data Size"));
   }
 
   @Test
@@ -269,8 +298,6 @@ public class CarbonCliTest {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     PrintStream stream = new PrintStream(out);
     CarbonCli.run(args, stream);
-    String output = new String(out.toByteArray());
-    System.out.println(output);
   }
 
   @Test

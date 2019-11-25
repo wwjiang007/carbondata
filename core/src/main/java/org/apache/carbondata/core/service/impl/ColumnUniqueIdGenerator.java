@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.service.impl;
 
 import java.util.UUID;
@@ -28,7 +29,8 @@ public class ColumnUniqueIdGenerator implements ColumnUniqueIdService {
 
   private static ColumnUniqueIdService columnUniqueIdService = new ColumnUniqueIdGenerator();
 
-  @Override public String generateUniqueId(ColumnSchema columnSchema) {
+  @Override
+  public String generateUniqueId(ColumnSchema columnSchema) {
     return UUID.randomUUID().toString();
   }
 

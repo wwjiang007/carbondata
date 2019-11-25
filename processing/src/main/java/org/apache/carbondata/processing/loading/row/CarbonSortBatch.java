@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.loading.row;
 
 import org.apache.carbondata.core.datastore.row.CarbonRow;
@@ -31,15 +32,18 @@ public class CarbonSortBatch extends CarbonRowBatch {
     this.iterator = iterator;
   }
 
-  @Override public boolean hasNext() {
+  @Override
+  public boolean hasNext() {
     return iterator.hasNext();
   }
 
-  @Override public CarbonRow next() {
+  @Override
+  public CarbonRow next() {
     return new CarbonRow(iterator.next());
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     iterator.close();
   }
 }

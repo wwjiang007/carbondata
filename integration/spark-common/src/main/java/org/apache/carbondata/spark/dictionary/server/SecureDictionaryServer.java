@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.spark.dictionary.server;
 
 import java.io.IOException;
@@ -68,7 +69,8 @@ public class SecureDictionaryServer extends AbstractDictionaryServer implements 
     this.port = port;
     try {
       UserGroupInformation.getLoginUser().doAs(new PrivilegedExceptionAction<Void>() {
-        @Override public Void run() throws Exception {
+        @Override
+        public Void run() throws Exception {
           startServer();
           return null;
         }
@@ -188,7 +190,8 @@ public class SecureDictionaryServer extends AbstractDictionaryServer implements 
     return secretKey;
   }
 
-  @Override public boolean isEncryptSecureServer() {
+  @Override
+  public boolean isEncryptSecureServer() {
     return encryptSecureServer;
   }
 
@@ -202,7 +205,8 @@ public class SecureDictionaryServer extends AbstractDictionaryServer implements 
     LOGGER.info("Shutting down dictionary server");
     try {
       UserGroupInformation.getLoginUser().doAs(new PrivilegedExceptionAction<Void>() {
-        @Override public Void run() throws Exception {
+        @Override
+        public Void run() throws Exception {
           worker.shutdownGracefully();
           boss.shutdownGracefully();
           return null;

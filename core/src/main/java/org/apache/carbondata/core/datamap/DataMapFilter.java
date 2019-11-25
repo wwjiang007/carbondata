@@ -17,39 +17,140 @@
 
 package org.apache.carbondata.core.datamap;
 
+import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
 import org.apache.carbondata.core.scan.executor.util.RestructureUtil;
+import org.apache.carbondata.core.scan.expression.ColumnExpression;
 import org.apache.carbondata.core.scan.expression.Expression;
+import org.apache.carbondata.core.scan.filter.FilterExpressionProcessor;
+import org.apache.carbondata.core.scan.filter.intf.FilterOptimizer;
+import org.apache.carbondata.core.scan.filter.optimizer.RangeFilterOptmizer;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
+import org.apache.carbondata.core.scan.model.QueryModel;
+import org.apache.carbondata.core.util.ObjectSerializationUtil;
 
 /**
  * the filter of DataMap
  */
 public class DataMapFilter implements Serializable {
 
-  private CarbonTable table;
+  private static final long serialVersionUID = 6276855832288220240L;
+
+  private transient CarbonTable table;
 
   private Expression expression;
 
   private FilterResolverIntf resolver;
 
+  private String serializedExpression;
+
+  private SegmentProperties properties;
+
   public DataMapFilter(CarbonTable table, Expression expression) {
-    this.table = table;
+    this(table, expression, false);
+  }
+
+  public DataMapFilter(CarbonTable table, Expression expression, boolean lazyResolve) {
     this.expression = expression;
-    resolve();
+    this.table = table;
+    resolve(lazyResolve);
+    if (expression != null) {
+      checkIfFilterColumnExistsInTable();
+      try {
+        this.serializedExpression = ObjectSerializationUtil.convertObjectToString(expression);
+      } catch (IOException e) {
+        throw new RuntimeException("Error while serializing the exception", e);
+      }
+    }
   }
 
   public DataMapFilter(FilterResolverIntf resolver) {
     this.resolver = resolver;
   }
 
-  private void resolve() {
+  public DataMapFilter(SegmentProperties properties, CarbonTable table, Expression expression) {
+    this(table, expression);
+    this.properties = properties;
+    resolve(false);
+  }
+
+  Expression getNewCopyOfExpression() {
     if (expression != null) {
-      table.processFilterExpression(expression, null, null);
-      resolver = CarbonTable.resolveFilter(expression, table.getAbsoluteTableIdentifier());
+      try {
+        return (Expression) ObjectSerializationUtil
+            .convertStringToObject(this.serializedExpression);
+      } catch (IOException e) {
+        throw new RuntimeException("Error while deserializing the exception", e);
+      }
+    } else {
+      return null;
+    }
+  }
+
+  public void setTable(CarbonTable table) {
+    this.table = table;
+  }
+
+  private Set<String> extractColumnExpressions(Expression expression) {
+    Set<String> columnExpressionList = new HashSet<>();
+    for (Expression expressions: expression.getChildren()) {
+      if (expressions != null && expressions.getChildren() != null
+          && expressions.getChildren().size() > 0) {
+        columnExpressionList.addAll(extractColumnExpressions(expressions));
+      } else if (expressions instanceof ColumnExpression) {
+        columnExpressionList.add(((ColumnExpression) expressions).getColumnName());
+      }
+    }
+    return columnExpressionList;
+  }
+
+  private void checkIfFilterColumnExistsInTable() {
+    Set<String> columnExpressionList = extractColumnExpressions(expression);
+    for (String colExpression : columnExpressionList) {
+      if (colExpression.equalsIgnoreCase("positionid")) {
+        continue;
+      }
+      boolean exists = false;
+      for (CarbonMeasure carbonMeasure : table.getAllMeasures()) {
+        if (!carbonMeasure.isInvisible() && carbonMeasure.getColName()
+            .equalsIgnoreCase(colExpression)) {
+          exists = true;
+        }
+      }
+      for (CarbonDimension carbonDimension : table.getAllDimensions()) {
+        if (!carbonDimension.isInvisible() && carbonDimension.getColName()
+            .equalsIgnoreCase(colExpression)) {
+          exists = true;
+        }
+      }
+      if (!exists) {
+        throw new RuntimeException(
+            "Column " + colExpression + " not found in table " + table.getTableUniqueName());
+      }
+    }
+  }
+
+  /**
+   * Process the FilterExpression and create FilterResolverIntf.
+   *
+   * @param lazyResolve whether to create FilterResolverIntf immediately or not.
+   *                   Pass true if DataMapFilter object is created before checking the valid
+   *                   segments for pruning.
+   */
+  public void resolve(boolean lazyResolve) {
+    if (expression != null) {
+      processFilterExpression();
+      if (!lazyResolve) {
+        resolver = resolveFilter();
+      }
     }
   }
 
@@ -62,11 +163,10 @@ public class DataMapFilter implements Serializable {
   }
 
   public FilterResolverIntf getResolver() {
+    if (resolver == null) {
+      resolver = resolveFilter();
+    }
     return resolver;
-  }
-
-  public void setResolver(FilterResolverIntf resolver) {
-    this.resolver = resolver;
   }
 
   public boolean isEmpty() {
@@ -80,10 +180,52 @@ public class DataMapFilter implements Serializable {
     if (!table.isTransactionalTable()) {
       return false;
     }
-    if (table.hasColumnDrift() && RestructureUtil
-        .hasColumnDriftOnSegment(table, segmentProperties)) {
-      return false;
+    return !(table.hasColumnDrift() && RestructureUtil
+        .hasColumnDriftOnSegment(table, segmentProperties));
+  }
+
+  public void processFilterExpression() {
+    processFilterExpression(null, null);
+  }
+
+  public void processFilterExpression(boolean[] isFilterDimensions,
+      boolean[] isFilterMeasures) {
+    processFilterExpressionWithoutRange(isFilterDimensions, isFilterMeasures);
+    if (null != expression) {
+      // Optimize Filter Expression and fit RANGE filters is conditions apply.
+      FilterOptimizer rangeFilterOptimizer = new RangeFilterOptmizer(expression);
+      rangeFilterOptimizer.optimizeFilter();
     }
-    return true;
+  }
+
+  public void processFilterExpressionWithoutRange(boolean[] isFilterDimensions,
+      boolean[] isFilterMeasures) {
+    QueryModel.FilterProcessVO processVO;
+    if (properties != null) {
+      processVO =
+          new QueryModel.FilterProcessVO(properties.getDimensions(), properties.getMeasures(),
+              new ArrayList<CarbonDimension>());
+    } else {
+      processVO =
+          new QueryModel.FilterProcessVO(
+              table.getVisibleDimensions(),
+              table.getVisibleMeasures(),
+              table.getImplicitDimensions());
+    }
+    QueryModel.processFilterExpression(processVO, expression, isFilterDimensions, isFilterMeasures,
+        table);
+  }
+
+  /**
+   * Resolve the filter expression.
+   */
+  private FilterResolverIntf resolveFilter() {
+    try {
+      FilterExpressionProcessor filterExpressionProcessor = new FilterExpressionProcessor();
+      return filterExpressionProcessor
+          .getFilterResolver(expression, table.getAbsoluteTableIdentifier());
+    } catch (Exception e) {
+      throw new RuntimeException("Error while resolving filter expression", e);
+    }
   }
 }

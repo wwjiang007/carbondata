@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.hadoop.readsupport.impl;
 
 import java.io.IOException;
@@ -51,7 +52,8 @@ public class DictionaryDecodeReadSupport<T> implements CarbonReadSupport<T> {
    * @param carbonColumns column list
    * @param carbonTable table identifier
    */
-  @Override public void initialize(CarbonColumn[] carbonColumns,
+  @Override
+  public void initialize(CarbonColumn[] carbonColumns,
       CarbonTable carbonTable) throws IOException {
     this.carbonColumns = carbonColumns;
     dictionaries = new Dictionary[carbonColumns.length];
@@ -74,7 +76,8 @@ public class DictionaryDecodeReadSupport<T> implements CarbonReadSupport<T> {
     }
   }
 
-  @Override public T readRow(Object[] data) {
+  @Override
+  public T readRow(Object[] data) {
     assert (data.length == dictionaries.length);
     for (int i = 0; i < dictionaries.length; i++) {
       if (dictionaries[i] != null) {
@@ -89,7 +92,8 @@ public class DictionaryDecodeReadSupport<T> implements CarbonReadSupport<T> {
    * column involved during decode, to facilitate LRU cache policy if memory
    * threshold is reached
    */
-  @Override public void close() {
+  @Override
+  public void close() {
     if (dictionaries == null) {
       return;
     }

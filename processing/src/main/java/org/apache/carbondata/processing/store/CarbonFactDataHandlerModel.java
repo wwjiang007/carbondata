@@ -210,8 +210,7 @@ public class CarbonFactDataHandlerModel {
     CarbonTable carbonTable = configuration.getTableSpec().getCarbonTable();
 
     List<ColumnSchema> wrapperColumnSchema = CarbonUtil
-        .getColumnSchemaList(carbonTable.getDimensionByTableName(identifier.getTableName()),
-            carbonTable.getMeasureByTableName(identifier.getTableName()));
+        .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
     int[] colCardinality =
         CarbonUtil.getFormattedCardinality(dimLensWithComplex, wrapperColumnSchema);
 
@@ -260,7 +259,7 @@ public class CarbonFactDataHandlerModel {
       }
     }
     CarbonDataFileAttributes carbonDataFileAttributes =
-        new CarbonDataFileAttributes(Long.parseLong(configuration.getTaskNo()),
+        new CarbonDataFileAttributes(configuration.getTaskNo(),
             (Long) configuration.getDataLoadProperty(DataLoadProcessorConstants.FACT_TIME_STAMP));
     String carbonDataDirectoryPath = getCarbonDataFolderLocation(configuration);
 
@@ -326,7 +325,7 @@ public class CarbonFactDataHandlerModel {
       String[] tempStoreLocation, String carbonDataDirectoryPath) {
 
     // for dynamic page size in write step if varchar columns exist
-    List<CarbonDimension> allDimensions = carbonTable.getDimensions();
+    List<CarbonDimension> allDimensions = carbonTable.getVisibleDimensions();
     CarbonColumn[] noDicAndComplexColumns =
         new CarbonColumn[segmentProperties.getNumberOfNoDictionaryDimension() + segmentProperties
             .getComplexDimensions().size()];
@@ -354,8 +353,7 @@ public class CarbonFactDataHandlerModel {
         segmentProperties.getDimensions().size() - carbonFactDataHandlerModel
             .getNoDictionaryCount());
     List<ColumnSchema> wrapperColumnSchema = CarbonUtil
-        .getColumnSchemaList(carbonTable.getDimensionByTableName(tableName),
-            carbonTable.getMeasureByTableName(tableName));
+        .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
     carbonFactDataHandlerModel.setWrapperColumnSchema(wrapperColumnSchema);
     // get the cardinality for all all the columns including no
     // dictionary columns and complex columns
@@ -493,9 +491,13 @@ public class CarbonFactDataHandlerModel {
     if (!configuration.isCarbonTransactionalTable()) {
       carbonDataDirectoryPath = absoluteTableIdentifier.getTablePath();
     } else {
-      carbonDataDirectoryPath = CarbonTablePath
-          .getSegmentPath(absoluteTableIdentifier.getTablePath(),
-              configuration.getSegmentId() + "");
+      if (configuration.getSegmentPath() != null) {
+        carbonDataDirectoryPath = configuration.getSegmentPath();
+      } else {
+        carbonDataDirectoryPath = CarbonTablePath
+            .getSegmentPath(absoluteTableIdentifier.getTablePath(),
+                configuration.getSegmentId() + "");
+      }
     }
     CarbonUtil.checkAndCreateFolder(carbonDataDirectoryPath);
     return carbonDataDirectoryPath;
@@ -508,6 +510,7 @@ public class CarbonFactDataHandlerModel {
   public void setColCardinality(int[] colCardinality) {
     this.colCardinality = colCardinality;
   }
+
   public CarbonDataFileAttributes getCarbonDataFileAttributes() {
     return carbonDataFileAttributes;
   }
@@ -655,7 +658,9 @@ public class CarbonFactDataHandlerModel {
     return bucketId;
   }
 
-  public void setBucketId(Integer bucketId) { this.bucketId = bucketId; }
+  public void setBucketId(Integer bucketId) {
+    this.bucketId = bucketId;
+  }
 
   public long getSchemaUpdatedTimeStamp() {
     return schemaUpdatedTimeStamp;

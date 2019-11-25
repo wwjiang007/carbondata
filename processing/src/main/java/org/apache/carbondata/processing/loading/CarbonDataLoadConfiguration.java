@@ -46,6 +46,8 @@ public class CarbonDataLoadConfiguration {
 
   private BucketingInfo bucketingInfo;
 
+  private String segmentPath;
+
   private Map<String, Object> dataLoadProperties = new HashMap<>();
 
   /**
@@ -383,8 +385,6 @@ public class CarbonDataLoadConfiguration {
     return getCardinalityFinder().getCardinality();
   }
 
-
-
   public TableSpec getTableSpec() {
     return tableSpec;
   }
@@ -443,5 +443,13 @@ public class CarbonDataLoadConfiguration {
 
   public void setNumberOfLoadingCores(int numberOfLoadingCores) {
     this.numberOfLoadingCores = numberOfLoadingCores;
+  }
+
+  public String getSegmentPath() {
+    return segmentPath;
+  }
+
+  public void setSegmentPath(String segmentPath) {
+    this.segmentPath = segmentPath;
   }
 }

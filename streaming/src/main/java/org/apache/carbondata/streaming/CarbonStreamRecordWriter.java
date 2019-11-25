@@ -91,6 +91,7 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
   private boolean[] isNoDictionaryDimensionColumn;
   private int dimensionWithComplexCount;
   private int measureCount;
+  private boolean[] dimensionsIsVarcharTypeMap;
   private DataType[] measureDataTypes;
   private StreamBlockletWriter output = null;
   private String compressorName;
@@ -139,7 +140,7 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
 
     segmentDir = CarbonTablePath.getSegmentPath(
         carbonTable.getAbsoluteTableIdentifier().getTablePath(), segmentId);
-    fileName = CarbonTablePath.getCarbonDataFileName(0, taskNo, 0, 0, "0", segmentId);
+    fileName = CarbonTablePath.getCarbonDataFileName(0, taskNo + "", 0, 0, "0", segmentId);
 
     // initialize metadata
     isNoDictionaryDimensionColumn =
@@ -147,6 +148,10 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
     dimensionWithComplexCount = configuration.getDimensionCount();
     measureCount = configuration.getMeasureCount();
     dataFields = configuration.getDataFields();
+    dimensionsIsVarcharTypeMap = new boolean[dimensionWithComplexCount];
+    for (int i = 0; i < dimensionWithComplexCount; i++) {
+      dimensionsIsVarcharTypeMap[i] = dataFields[i].getColumn().getDataType() == DataTypes.VARCHAR;
+    }
     measureDataTypes = new DataType[measureCount];
     for (int i = 0; i < measureCount; i++) {
       measureDataTypes[i] =
@@ -200,7 +205,8 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
     isFirstRow = false;
   }
 
-  @Override public void write(Void key, Object value) throws IOException, InterruptedException {
+  @Override
+  public void write(Void key, Object value) throws IOException, InterruptedException {
     if (isFirstRow) {
       initializeAtFirstRow();
     }
@@ -234,7 +240,11 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
         if (null != columnValue) {
           if (isNoDictionaryDimensionColumn[dimCount]) {
             byte[] col = (byte[]) columnValue;
-            output.writeShort(col.length);
+            if (dimensionsIsVarcharTypeMap[dimCount]) {
+              output.writeInt(col.length);
+            } else {
+              output.writeShort(col.length);
+            }
             output.writeBytes(col);
             output.dimStatsCollectors[dimCount].update(col);
           } else {
@@ -301,8 +311,7 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
 
   private void writeFileHeader() throws IOException {
     List<ColumnSchema> wrapperColumnSchemaList = CarbonUtil
-        .getColumnSchemaList(carbonTable.getDimensionByTableName(carbonTable.getTableName()),
-            carbonTable.getMeasureByTableName(carbonTable.getTableName()));
+        .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
     int[] dimLensWithComplex = new int[wrapperColumnSchemaList.size()];
     for (int i = 0; i < dimLensWithComplex.length; i++) {
       dimLensWithComplex[i] = Integer.MAX_VALUE;

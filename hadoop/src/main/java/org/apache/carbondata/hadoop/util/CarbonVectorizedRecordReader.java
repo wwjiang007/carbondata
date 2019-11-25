@@ -71,12 +71,12 @@ public class CarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
   // it is used when same col is used in projection many times.So need to fetch only that col.
   private List<Integer> projectionMapping = new ArrayList<>();
 
-
   public CarbonVectorizedRecordReader(QueryModel queryModel) {
     this.queryModel = queryModel;
   }
 
-  @Override public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
+  @Override
+  public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
       throws IOException, InterruptedException {
     List<CarbonInputSplit> splitList;
     if (inputSplit instanceof CarbonInputSplit) {
@@ -121,14 +121,14 @@ public class CarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
     }
   }
 
-  @Override public boolean nextKeyValue() throws IOException, InterruptedException {
+  @Override
+  public boolean nextKeyValue() throws IOException, InterruptedException {
     if (batchIdx >= numBatched) {
       if (!nextBatch()) return false;
     }
     ++batchIdx;
     return true;
   }
-
 
   private boolean nextBatch() {
     carbonColumnarBatch.reset();
@@ -223,16 +223,19 @@ public class CarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
     return row;
   }
 
-  @Override public Void getCurrentKey() throws IOException, InterruptedException {
+  @Override
+  public Void getCurrentKey() throws IOException, InterruptedException {
     throw new UnsupportedOperationException("Operation not allowed on CarbonVectorizedReader");
   }
 
-  @Override public float getProgress() throws IOException, InterruptedException {
+  @Override
+  public float getProgress() throws IOException, InterruptedException {
     // TODO : Implement it based on total number of rows it is going to retrieve.
     return 0;
   }
 
-  @Override public void close() throws IOException {
+  @Override
+  public void close() throws IOException {
     logStatistics(rowCount, queryModel.getStatisticsRecorder());
     if (carbonColumnarBatch != null) {
       carbonColumnarBatch = null;

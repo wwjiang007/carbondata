@@ -139,8 +139,8 @@ public class Bits implements Serializable {
 
       if (nextIndex != idx) {
         int consideredBits = lens[i] - ll & 0x3f;
-        if (consideredBits < lens[i]) //Check for spill over only if all the bits are not considered
-        {
+        //Check for spill over only if all the bits are not considered
+        if (consideredBits < lens[i]) {
           mask = (val >> (lens[i] - ll & 0x3f));//& (0x7fffffffffffffffL >> (0x3f-pos));
           word = words[nextIndex];
           words[nextIndex] = (word | mask);
@@ -176,8 +176,8 @@ public class Bits implements Serializable {
 
       if (nextIndex != index) {
         int consideredBits = lens[i] - ll & 0x3f;
-        if (consideredBits < lens[i]) //Check for spill over only if all the bits are not considered
-        {
+        //Check for spill over only if all the bits are not considered
+        if (consideredBits < lens[i]) {
           // Check for spill over
           mask = (val >> (lens[i] - ll & 0x3f));
           word = words[nextIndex];
@@ -207,8 +207,8 @@ public class Bits implements Serializable {
       int nextIndex = ll >> 6;
       if (nextIndex != index) {
         pos = ll & 0x3f;
-        if (pos != 0) // Number of bits pending for current key is zero, no spill over
-        {
+        // Number of bits pending for current key is zero, no spill over
+        if (pos != 0) {
           mask = (LONG_MAX >>> (MAX_LENGTH - pos));
           val = words[nextIndex];
           vals[i] = vals[i] | ((val & mask) << (lens[i] - pos));
@@ -312,7 +312,8 @@ public class Bits implements Serializable {
 
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (obj instanceof Bits) {
       Bits other = (Bits) obj;
       return Arrays.equals(lens, other.lens);
@@ -320,7 +321,8 @@ public class Bits implements Serializable {
     return false;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return Arrays.hashCode(lens);
   }
 }

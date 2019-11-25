@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap;
 
 import java.io.DataInput;
@@ -28,7 +29,6 @@ import java.util.UUID;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.dev.DataMap;
 import org.apache.carbondata.core.datamap.dev.expr.DataMapDistributableWrapper;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
@@ -91,6 +91,11 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
 
   private boolean isWriteToFile = true;
 
+  private boolean isCountStarJob = false;
+
+  // Whether AsyncCall to the Index Server(true in the case of prepriming)
+  private boolean isAsyncCall;
+
   DistributableDataMapFormat() {
 
   }
@@ -99,14 +104,14 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
       List<Segment> validSegments, List<String> invalidSegments, boolean isJobToClearDataMaps,
       String dataMapToClear) throws IOException {
     this(table, null, validSegments, invalidSegments, null,
-        isJobToClearDataMaps, null, false);
+        isJobToClearDataMaps, null, false, false);
     this.dataMapToClear = dataMapToClear;
   }
 
-  DistributableDataMapFormat(CarbonTable table, FilterResolverIntf filterResolverIntf,
+  public DistributableDataMapFormat(CarbonTable table, FilterResolverIntf filterResolverIntf,
       List<Segment> validSegments, List<String> invalidSegments, List<PartitionSpec> partitions,
-      boolean isJobToClearDataMaps, DataMapLevel dataMapLevel, boolean isFallbackJob)
-      throws IOException {
+      boolean isJobToClearDataMaps, DataMapLevel dataMapLevel, boolean isFallbackJob,
+      boolean isAsyncCall) throws IOException {
     this.table = table;
     this.filterResolverIntf = filterResolverIntf;
     this.validSegments = validSegments;
@@ -118,6 +123,7 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
     this.isJobToClearDataMaps = isJobToClearDataMaps;
     this.dataMapLevel = dataMapLevel;
     this.isFallbackJob = isFallbackJob;
+    this.isAsyncCall = isAsyncCall;
   }
 
   @Override
@@ -136,7 +142,6 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
     return new RecordReader<Void, ExtendedBlocklet>() {
       private Iterator<ExtendedBlocklet> blockletIterator;
       private ExtendedBlocklet currBlocklet;
-      private List<DataMap> dataMaps;
 
       @Override
       public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
@@ -149,7 +154,6 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
         if (dataMapLevel == null) {
           TableDataMap defaultDataMap = DataMapStoreManager.getInstance()
               .getDataMap(table, distributable.getDistributable().getDataMapSchema());
-          dataMaps = defaultDataMap.getTableDataMaps(distributable.getDistributable());
           blocklets = defaultDataMap
               .prune(segmentsToLoad, new DataMapFilter(filterResolverIntf), partitions);
           blocklets = DataMapUtil
@@ -192,11 +196,6 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
 
       @Override
       public void close() throws IOException {
-        if (null != dataMaps) {
-          for (DataMap dataMap : dataMaps) {
-            dataMap.finish();
-          }
-        }
       }
     };
   }
@@ -227,6 +226,7 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
     if (partitions == null) {
       out.writeBoolean(false);
     } else {
+      out.writeBoolean(true);
       out.writeInt(partitions.size());
       for (PartitionSpec partitionSpec : partitions) {
         partitionSpec.write(out);
@@ -247,6 +247,8 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
     out.writeUTF(taskGroupDesc);
     out.writeUTF(queryId);
     out.writeBoolean(isWriteToFile);
+    out.writeBoolean(isCountStarJob);
+    out.writeBoolean(isAsyncCall);
   }
 
   @Override
@@ -292,6 +294,8 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
     this.taskGroupDesc = in.readUTF();
     this.queryId = in.readUTF();
     this.isWriteToFile = in.readBoolean();
+    this.isCountStarJob = in.readBoolean();
+    this.isAsyncCall = in.readBoolean();
   }
 
   private void initReadCommittedScope() throws IOException {
@@ -313,6 +317,13 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
    */
   public boolean isFallbackJob() {
     return isFallbackJob;
+  }
+
+  /**
+   * @return Whether asyncCall to the IndexServer.
+   */
+  public boolean ifAsyncCall() {
+    return isAsyncCall;
   }
 
   /**
@@ -398,9 +409,29 @@ public class DistributableDataMapFormat extends FileInputFormat<Void, ExtendedBl
     return validSegments;
   }
 
+  public List<Segment> getValidSegments() {
+    return validSegments;
+  }
+
   public void createDataMapChooser() throws IOException {
     if (null != filterResolverIntf) {
       this.dataMapChooser = new DataMapChooser(table);
     }
+  }
+
+  public void setCountStarJob() {
+    this.isCountStarJob = true;
+  }
+
+  public boolean isCountStarJob() {
+    return this.isCountStarJob;
+  }
+
+  public List<PartitionSpec> getPartitions() {
+    return partitions;
+  }
+
+  public ReadCommittedScope getReadCommittedScope() {
+    return readCommittedScope;
   }
 }

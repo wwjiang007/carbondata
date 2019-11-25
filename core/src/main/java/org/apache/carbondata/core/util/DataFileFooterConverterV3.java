@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.util;
 
 import java.io.IOException;
@@ -57,7 +58,8 @@ public class DataFileFooterConverterV3 extends AbstractDataFileFooterConverter {
    *        table block info
    * @return data file footer
    */
-  @Override public DataFileFooter readDataFileFooter(TableBlockInfo tableBlockInfo)
+  @Override
+  public DataFileFooter readDataFileFooter(TableBlockInfo tableBlockInfo)
       throws IOException {
     CarbonHeaderReader carbonHeaderReader = new CarbonHeaderReader(tableBlockInfo.getFilePath());
     FileHeader fileHeader = carbonHeaderReader.readHeader();
@@ -105,7 +107,8 @@ public class DataFileFooterConverterV3 extends AbstractDataFileFooterConverter {
     return dataFileFooter;
   }
 
-  @Override public List<ColumnSchema> getSchema(TableBlockInfo tableBlockInfo) throws IOException {
+  @Override
+  public List<ColumnSchema> getSchema(TableBlockInfo tableBlockInfo) throws IOException {
     CarbonHeaderReader carbonHeaderReader = new CarbonHeaderReader(tableBlockInfo.getFilePath());
     FileHeader fileHeader = carbonHeaderReader.readHeader();
     List<ColumnSchema> columnSchemaList = new ArrayList<ColumnSchema>();

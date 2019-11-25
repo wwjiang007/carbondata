@@ -37,6 +37,7 @@ import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionary
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
@@ -52,7 +53,8 @@ public final class DataTypeUtil {
       LogServiceFactory.getLogService(DataTypeUtil.class.getName());
 
   private static final ThreadLocal<DateFormat> timeStampformatter = new ThreadLocal<DateFormat>() {
-    @Override protected DateFormat initialValue() {
+    @Override
+    protected DateFormat initialValue() {
       DateFormat dateFormat = new SimpleDateFormat(CarbonProperties.getInstance()
           .getProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT,
               CarbonCommonConstants.CARBON_TIMESTAMP_DEFAULT_FORMAT));
@@ -62,7 +64,8 @@ public final class DataTypeUtil {
   };
 
   private static final ThreadLocal<DateFormat> dateformatter = new ThreadLocal<DateFormat>() {
-    @Override protected DateFormat initialValue() {
+    @Override
+    protected DateFormat initialValue() {
       return new SimpleDateFormat(CarbonProperties.getInstance()
           .getProperty(CarbonCommonConstants.CARBON_DATE_FORMAT,
               CarbonCommonConstants.CARBON_DATE_DEFAULT_FORMAT));
@@ -530,6 +533,7 @@ public final class DataTypeUtil {
   public static boolean isFixedSizeDataType(DataType dataType) {
     if (dataType == DataTypes.STRING ||
         dataType == DataTypes.VARCHAR ||
+        dataType == DataTypes.BINARY ||
         DataTypes.isDecimal(dataType)) {
       return false;
     } else {
@@ -638,7 +642,6 @@ public final class DataTypeUtil {
     return dataInBytes.length == 0;
   }
 
-
   /**
    * Below method will be used to convert the data passed to its actual data
    * type
@@ -712,6 +715,12 @@ public final class DataTypeUtil {
           javaDecVal = javaDecVal.setScale(dimension.getColumnSchema().getScale());
         }
         return getDataTypeConverter().convertFromBigDecimalToDecimal(javaDecVal);
+      } else if (dataType == DataTypes.BOOLEAN) {
+        String data8 = new String(dataInBytes, CarbonCommonConstants.DEFAULT_CHARSET_CLASS);
+        if (data8.isEmpty()) {
+          return null;
+        }
+        return BooleanConvert.parseBoolean(data8);
       } else {
         return getDataTypeConverter().convertFromByteToUTF8String(dataInBytes);
       }
@@ -759,7 +768,7 @@ public final class DataTypeUtil {
    *                  data type
    * @return
    */
-  public static String normalizeColumnValueForItsDataType(String value, CarbonDimension dimension) {
+  public static String normalizeColumnValueForItsDataType(String value, CarbonColumn dimension) {
     try {
       Object parsedValue = null;
       // validation will not be done for timestamp datatype as for timestamp direct dictionary
@@ -817,7 +826,7 @@ public final class DataTypeUtil {
     return value;
   }
 
-  private static String parseStringToBigDecimal(String value, CarbonDimension dimension) {
+  private static String parseStringToBigDecimal(String value, CarbonColumn dimension) {
     BigDecimal bigDecimal = new BigDecimal(value)
         .setScale(dimension.getColumnSchema().getScale(), RoundingMode.HALF_UP);
     BigDecimal normalizedValue =
@@ -1017,8 +1026,8 @@ public final class DataTypeUtil {
       return DataTypes.NULL;
     } else if (DataTypes.BYTE_ARRAY.getName().equalsIgnoreCase(name)) {
       return DataTypes.BYTE_ARRAY;
-    } else if (DataTypes.BYTE_ARRAY.getName().equalsIgnoreCase(name)) {
-      return DataTypes.BYTE_ARRAY;
+    } else if (DataTypes.BINARY.getName().equalsIgnoreCase(name)) {
+      return DataTypes.BINARY;
     } else if (name.equalsIgnoreCase("decimal")) {
       return DataTypes.createDefaultDecimalType();
     } else if (name.equalsIgnoreCase("array")) {
@@ -1065,8 +1074,6 @@ public final class DataTypeUtil {
       return DataTypes.VARCHAR;
     } else if (DataTypes.NULL.getName().equalsIgnoreCase(dataType.getName())) {
       return DataTypes.NULL;
-    } else if (DataTypes.BYTE_ARRAY.getName().equalsIgnoreCase(dataType.getName())) {
-      return DataTypes.BYTE_ARRAY;
     } else if (DataTypes.BYTE_ARRAY.getName().equalsIgnoreCase(dataType.getName())) {
       return DataTypes.BYTE_ARRAY;
     } else if (DataTypes.BINARY.getName().equalsIgnoreCase(dataType.getName())) {

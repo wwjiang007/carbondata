@@ -244,7 +244,8 @@ public class CSVCarbonWriterTest {
     }
 
     File[] dataFiles = new File(path).listFiles(new FileFilter() {
-      @Override public boolean accept(File pathname) {
+      @Override
+      public boolean accept(File pathname) {
         return pathname.getName().endsWith(CarbonCommonConstants.FACT_FILE_EXT);
       }
     });
@@ -281,7 +282,8 @@ public class CSVCarbonWriterTest {
 
     TestUtil.writeFilesAndVerify(1000 * 1000, new Schema(fields), path, null, 2, 2);
     File[] dataFiles = new File(path).listFiles(new FileFilter() {
-      @Override public boolean accept(File pathname) {
+      @Override
+      public boolean accept(File pathname) {
         return pathname.getName().endsWith(CarbonCommonConstants.FACT_FILE_EXT);
       }
     });
@@ -381,15 +383,16 @@ public class CSVCarbonWriterTest {
       writer.close();
 
       File[] dataFiles = new File(path).listFiles(new FileFilter() {
-        @Override public boolean accept(File pathname) {
+        @Override
+        public boolean accept(File pathname) {
           return pathname.getName().endsWith(CarbonCommonConstants.FACT_FILE_EXT);
         }
       });
       Assert.assertNotNull(dataFiles);
       Assert.assertTrue(dataFiles.length > 0);
       String taskNo = CarbonTablePath.DataFileUtil.getTaskNo(dataFiles[0].getName());
-      long taskID = CarbonTablePath.DataFileUtil.getTaskIdFromTaskNo(taskNo);
-      Assert.assertEquals("Task Id is not matched", taskID, 5);
+      String taskID = CarbonTablePath.DataFileUtil.getTaskIdFromTaskNo(taskNo);
+      Assert.assertEquals("Task Id is not matched", taskID, "5");
     } catch (Exception e) {
       e.printStackTrace();
       Assert.fail(e.getMessage());

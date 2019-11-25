@@ -26,6 +26,7 @@ import java.util.Objects;
 import org.apache.carbondata.common.CarbonIterator;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.cache.dictionary.Dictionary;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryGenerator;
@@ -38,7 +39,6 @@ import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.scan.executor.QueryExecutor;
 import org.apache.carbondata.core.scan.executor.QueryExecutorFactory;
-import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.model.ProjectionDimension;
 import org.apache.carbondata.core.scan.model.ProjectionMeasure;
 import org.apache.carbondata.core.scan.model.QueryModel;
@@ -181,19 +181,23 @@ class CarbondataPageSource implements ConnectorPageSource {
 
   }
 
-  @Override public long getCompletedBytes() {
+  @Override
+  public long getCompletedBytes() {
     return sizeOfData;
   }
 
-  @Override public long getReadTimeNanos() {
+  @Override
+  public long getReadTimeNanos() {
     return nanoStart > 0L ? (nanoEnd == 0 ? System.nanoTime() : nanoEnd) - nanoStart : 0L;
   }
 
-  @Override public boolean isFinished() {
+  @Override
+  public boolean isFinished() {
     return closed;
   }
 
-  @Override public Page getNextPage() {
+  @Override
+  public Page getNextPage() {
     if (fileFormat.ordinal() == FileFormat.ROW_V1.ordinal()) {
       return getNextPageForRow();
     } else {
@@ -304,11 +308,13 @@ class CarbondataPageSource implements ConnectorPageSource {
     }
   }
 
-  @Override public long getSystemMemoryUsage() {
+  @Override
+  public long getSystemMemoryUsage() {
     return sizeOfData;
   }
 
-  @Override public void close() {
+  @Override
+  public void close() {
     // some hive input formats are broken and bad things can happen if you close them multiple times
     if (closed) {
       return;
@@ -386,7 +392,8 @@ class CarbondataPageSource implements ConnectorPageSource {
       conf.set("query.id", queryId);
       JobConf jobConf = new JobConf(conf);
       CarbonTableInputFormat carbonTableInputFormat = createInputFormat(jobConf, carbonTable,
-          PrestoFilterUtil.parseFilterExpression(carbondataSplit.getEffectivePredicate()),
+          new DataMapFilter(carbonTable,
+              PrestoFilterUtil.parseFilterExpression(carbondataSplit.getEffectivePredicate())),
           carbonProjection);
       TaskAttemptContextImpl hadoopAttemptContext =
           new TaskAttemptContextImpl(jobConf, new TaskAttemptID("", 1, TaskType.MAP, 0, 0));
@@ -411,12 +418,12 @@ class CarbondataPageSource implements ConnectorPageSource {
   /**
    * @param conf
    * @param carbonTable
-   * @param filterExpression
+   * @param dataMapFilter
    * @param projection
    * @return
    */
   private CarbonTableInputFormat<Object> createInputFormat(Configuration conf,
-      CarbonTable carbonTable, Expression filterExpression, CarbonProjection projection) {
+      CarbonTable carbonTable, DataMapFilter dataMapFilter, CarbonProjection projection) {
 
     AbsoluteTableIdentifier identifier = carbonTable.getAbsoluteTableIdentifier();
     CarbonTableInputFormat format = new CarbonTableInputFormat<Object>();
@@ -430,7 +437,7 @@ class CarbondataPageSource implements ConnectorPageSource {
     } catch (Exception e) {
       throw new RuntimeException("Unable to create the CarbonTableInputFormat", e);
     }
-    CarbonTableInputFormat.setFilterPredicates(conf, filterExpression);
+    CarbonTableInputFormat.setFilterPredicates(conf, dataMapFilter);
     CarbonTableInputFormat.setColumnProjection(conf, projection);
 
     return format;
@@ -463,7 +470,8 @@ class CarbondataPageSource implements ConnectorPageSource {
       this.columnIndex = columnIndex;
     }
 
-    @Override public final void load(LazyBlock lazyBlock) {
+    @Override
+    public final void load(LazyBlock lazyBlock) {
       if (loaded) {
         return;
       }

@@ -281,7 +281,8 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   /*
    * set surrogate index
    */
-  @Override public void setSurrogateIndex(int surrIndex) {
+  @Override
+  public void setSurrogateIndex(int surrIndex) {
     if (this.carbonDimension != null && !this.carbonDimension.hasEncoding(Encoding.DICTIONARY)) {
       index = 0;
     } else if (this.carbonDimension == null && isDictionary == false) {
@@ -291,11 +292,13 @@ public class PrimitiveDataType implements GenericDataType<Object> {
     }
   }
 
-  @Override public boolean getIsColumnDictionary() {
+  @Override
+  public boolean getIsColumnDictionary() {
     return isDictionary;
   }
 
-  @Override public void writeByteArray(Object input, DataOutputStream dataOutputStream,
+  @Override
+  public void writeByteArray(Object input, DataOutputStream dataOutputStream,
       BadRecordLogHolder logHolder) throws IOException, DictionaryGenerationException {
     String parsedValue =
         input == null ? null : DataTypeUtil.parseValue(input.toString(), carbonDimension);
@@ -378,6 +381,9 @@ public class PrimitiveDataType implements GenericDataType<Object> {
                 } else {
                   value = ByteUtil.toXorBytes(Long.parseLong(parsedValue));
                 }
+              } else if (this.carbonDimension.getDataType().equals(DataTypes.BINARY)) {
+                value = DataTypeUtil.getBytesDataDataTypeForNoDictionaryColumn(input,
+                    this.carbonDimension.getDataType());
               } else {
                 value = DataTypeUtil.getBytesBasedOnDataTypeForNoDictionaryColumn(parsedValue,
                     this.carbonDimension.getDataType(), dateFormat);
@@ -451,7 +457,8 @@ public class PrimitiveDataType implements GenericDataType<Object> {
     }
   }
 
-  @Override public void fillCardinality(List<Integer> dimCardWithComplex) {
+  @Override
+  public void fillCardinality(List<Integer> dimCardWithComplex) {
     if (!this.carbonDimension.hasEncoding(Encoding.DICTIONARY)) {
       return;
     }
@@ -502,7 +509,8 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   /*
    * split column and return metadata and primitive column
    */
-  @Override public void getColumnarDataForComplexType(List<ArrayList<byte[]>> columnsArray,
+  @Override
+  public void getColumnarDataForComplexType(List<ArrayList<byte[]>> columnsArray,
       ByteBuffer inputArray) {
     if (!isDictionary) {
       byte[] key = new byte[inputArray.getShort()];

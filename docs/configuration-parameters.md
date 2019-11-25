@@ -49,6 +49,7 @@ This section provides the details of all the configurations required for the Car
 | carbon.lock.retries | 3 | CarbonData ensures consistency of operations by blocking certain operations from running in parallel. In order to block the operations from running in parallel, lock is obtained on the table. This configuration specifies the maximum number of retries to obtain the lock for any operations other than load. **NOTE:** Data manupulation operations like Compaction,UPDATE,DELETE  or LOADING,UPDATE,DELETE are not allowed to run in parallel. How ever data loading can happen in parallel to compaction. |
 | carbon.lock.retry.timeout.sec | 5 | Specifies the interval between the retries to obtain the lock for any operation other than load. **NOTE:** Refer to ***carbon.lock.retries*** for understanding why CarbonData uses locks for operations. |
 | carbon.fs.custom.file.provider | None | To support FileTypeInterface for configuring custom CarbonFile implementation to work with custom FileSystem. |
+| carbon.timeseries.first.day.of.week | SUNDAY | This parameter configures which day of the week to be considered as first day of the week. Because first day of the week will be different in different parts of the world. |
 
 ## Data Loading Configuration
 
@@ -96,6 +97,7 @@ This section provides the details of all the configurations required for the Car
 | carbon.minmax.allowed.byte.count | 200 | CarbonData will write the min max values for string/varchar types column using the byte count specified by this configuration. Max value is 1000 bytes(500 characters) and Min value is 10 bytes(5 characters). **NOTE:** This property is useful for reducing the store size thereby improving the query performance but can lead to query degradation if value is not configured properly. | |
 | carbon.merge.index.failure.throw.exception | true | It is used to configure whether or not merge index failure should result in data load failure also. |
 | carbon.binary.decoder | None | Support configurable decode for loading. Two decoders supported: base64 and hex |
+| carbon.local.dictionary.size.threshold.inmb | 4 | size based threshold for local dictionary in MB, maximum allowed size is 16 MB. |
 
 ## Compaction Configuration
 
@@ -142,6 +144,7 @@ This section provides the details of all the configurations required for the Car
 | carbon.max.driver.threads.for.block.pruning | 4 | Number of threads used for driver pruning when the carbon files are more than 100k Maximum memory. This configuration can used to set number of threads between 1 to 4. |
 | carbon.heap.memory.pooling.threshold.bytes | 1048576 | CarbonData supports unsafe operations of Java to avoid GC overhead for certain operations. Using unsafe, memory can be allocated on Java Heap or off heap. This configuration controls the allocation mechanism on Java HEAP. If the heap memory allocations of the given size is greater or equal than this value,it should go through the pooling mechanism. But if set this size to -1, it should not go through the pooling mechanism. Default value is 1048576(1MB, the same as Spark). Value to be specified in bytes. |
 | carbon.push.rowfilters.for.vector | false | When enabled complete row filters will be handled by carbon in case of vector. If it is disabled then only page level pruning will be done by carbon and row level filtering will be done by spark for vector. And also there are scan optimizations in carbon to avoid multiple data copies when this parameter is set to false. There is no change in flow for non-vector based queries. |
+| carbon.query.prefetch.enable | true | By default this property is true, so prefetch is used in query to read next blocklet asynchronously in other thread while processing current blocklet in main thread. This can help to reduce CPU idle time. Setting this property false will disable this prefetch feature in query. |
 
 ## Data Mutation Configuration
 | Parameter | Default Value | Description |

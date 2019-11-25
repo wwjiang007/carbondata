@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.chunk.reader.dimension.v3;
 
 import java.io.ByteArrayInputStream;
@@ -140,7 +141,8 @@ public class CompressedDimChunkFileBasedPageLevelReaderV3
    * @param pageNumber              number
    * @return DimensionColumnDataChunk
    */
-  @Override public DimensionColumnPage decodeColumnPage(
+  @Override
+  public DimensionColumnPage decodeColumnPage(
       DimensionRawColumnChunk dimensionRawColumnChunk, int pageNumber,
       ReusableDataBuffer reusableDataBuffer)
       throws IOException, MemoryException {

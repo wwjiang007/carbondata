@@ -49,7 +49,6 @@ class FileCollector {
   private CarbonFile tableStatusFile;
   private CarbonFile schemaFile;
 
-
   FileCollector(List<String> outPuts) {
     this.outPuts = outPuts;
   }
@@ -57,7 +56,14 @@ class FileCollector {
   void collectFiles(String dataFolder) throws IOException {
     Set<String> shards = new HashSet<>();
     CarbonFile folder = FileFactory.getCarbonFile(dataFolder);
-    List<CarbonFile> files = folder.listFiles(true);
+    List<CarbonFile> files = new ArrayList<>();
+    if (folder.exists()) {
+      if (folder.isDirectory()) {
+        files = folder.listFiles(true);
+      } else {
+        files.add(folder);
+      }
+    }
     List<DataFile> unsortedFiles = new ArrayList<>();
     for (CarbonFile file : files) {
       if (isColumnarFile(file.getName())) {
@@ -79,7 +85,8 @@ class FileCollector {
     }
 
     Collections.sort(unsortedFiles, new Comparator<DataFile>() {
-      @Override public int compare(DataFile o1, DataFile o2) {
+      @Override
+      public int compare(DataFile o1, DataFile o2) {
         if (o1.getShardName().equalsIgnoreCase(o2.getShardName())) {
           return Integer.parseInt(o1.getPartNo()) - Integer.parseInt(o2.getPartNo());
         } else {

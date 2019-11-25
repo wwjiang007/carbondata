@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datastore.block;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
@@ -57,11 +58,13 @@ public class TableBlockUniqueIdentifier {
     this.tableBlockInfo = tableBlockInfo;
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return this.absoluteTableIdentifier.hashCode() + this.tableBlockInfo.hashCode();
   }
 
-  @Override public boolean equals(Object other) {
+  @Override
+  public boolean equals(Object other) {
     if (this == other) return true;
     if (other == null || getClass() != other.getClass()) return false;
     TableBlockUniqueIdentifier tableBlockUniqueIdentifier = (TableBlockUniqueIdentifier) other;

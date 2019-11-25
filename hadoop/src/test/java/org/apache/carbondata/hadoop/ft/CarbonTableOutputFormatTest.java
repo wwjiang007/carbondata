@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.hadoop.ft;
 
 import java.io.File;
@@ -70,7 +71,8 @@ public class CarbonTableOutputFormatTest {
     File file = new File(segmentPath);
     Assert.assertTrue(file.exists());
     File[] listFiles = file.listFiles(new FilenameFilter() {
-      @Override public boolean accept(File dir, String name) {
+      @Override
+      public boolean accept(File dir, String name) {
         return name.endsWith(".carbondata") ||
             name.endsWith(".carbonindex") ||
             name.endsWith(".carbonindexmerge");
@@ -95,7 +97,8 @@ public class CarbonTableOutputFormatTest {
  public static class Map extends Mapper<NullWritable, StringArrayWritable, NullWritable, ObjectArrayWritable> {
 
    private ObjectArrayWritable writable = new ObjectArrayWritable();
-   @Override protected void map(NullWritable key, StringArrayWritable value, Context context)
+   @Override
+   protected void map(NullWritable key, StringArrayWritable value, Context context)
        throws IOException, InterruptedException {
      writable.set(value.get());
      context.write(key, writable);

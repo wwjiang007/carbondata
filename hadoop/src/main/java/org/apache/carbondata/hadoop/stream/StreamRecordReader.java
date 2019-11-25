@@ -81,6 +81,7 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
   protected CarbonTable carbonTable;
   private CarbonColumn[] storageColumns;
   private boolean[] isRequired;
+  private boolean[] dimensionsIsVarcharTypeMap;
   private DataType[] measureDataTypes;
   private int dimensionCount;
   private int measureCount;
@@ -129,7 +130,8 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
 
   }
 
-  @Override public void initialize(InputSplit split, TaskAttemptContext context)
+  @Override
+  public void initialize(InputSplit split, TaskAttemptContext context)
       throws IOException {
     // input
     if (split instanceof CarbonInputSplit) {
@@ -148,12 +150,12 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     }
     carbonTable = model.getTable();
     List<CarbonDimension> dimensions =
-        carbonTable.getDimensionByTableName(carbonTable.getTableName());
+        carbonTable.getVisibleDimensions();
     dimensionCount = dimensions.size();
-    List<CarbonMeasure> measures = carbonTable.getMeasureByTableName(carbonTable.getTableName());
+    List<CarbonMeasure> measures = carbonTable.getVisibleMeasures();
     measureCount = measures.size();
     List<CarbonColumn> carbonColumnList =
-        carbonTable.getStreamStorageOrderColumn(carbonTable.getTableName());
+        carbonTable.getStreamStorageOrderColumn();
     storageColumns = carbonColumnList.toArray(new CarbonColumn[carbonColumnList.size()]);
     isNoDictColumn = CarbonDataProcessorUtil.getNoDictionaryMapping(storageColumns);
     directDictionaryGenerators = new DirectDictionaryGenerator[storageColumns.length];
@@ -162,6 +164,10 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
         directDictionaryGenerators[i] = DirectDictionaryKeyGeneratorFactory
             .getDirectDictionaryGenerator(storageColumns[i].getDataType());
       }
+    }
+    dimensionsIsVarcharTypeMap = new boolean[dimensionCount];
+    for (int i = 0; i < dimensionCount; i++) {
+      dimensionsIsVarcharTypeMap[i] = storageColumns[i].getDataType() == DataTypes.VARCHAR;
     }
     measureDataTypes = new DataType[measureCount];
     for (int i = 0; i < measureCount; i++) {
@@ -207,7 +213,7 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     }
 
     // initialize filter
-    if (null != model.getFilterExpressionResolverTree()) {
+    if (null != model.getDataMapFilter()) {
       initializeFilter();
     } else if (projection.length == 0) {
       skipScanData = true;
@@ -216,10 +222,8 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
   }
 
   private void initializeFilter() {
-
     List<ColumnSchema> wrapperColumnSchemaList = CarbonUtil
-        .getColumnSchemaList(carbonTable.getDimensionByTableName(carbonTable.getTableName()),
-            carbonTable.getMeasureByTableName(carbonTable.getTableName()));
+        .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
     int[] dimLensWithComplex = new int[wrapperColumnSchemaList.size()];
     for (int i = 0; i < dimLensWithComplex.length; i++) {
       dimLensWithComplex[i] = Integer.MAX_VALUE;
@@ -231,7 +235,7 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
         new SegmentProperties(wrapperColumnSchemaList, dictionaryColumnCardinality);
     Map<Integer, GenericQueryType> complexDimensionInfoMap = new HashMap<>();
 
-    FilterResolverIntf resolverIntf = model.getFilterExpressionResolverTree();
+    FilterResolverIntf resolverIntf = model.getDataMapFilter().getResolver();
     filter =
         FilterUtil.getFilterExecuterTree(resolverIntf, segmentProperties, complexDimensionInfoMap);
     // for row filter, we need update column index
@@ -330,7 +334,8 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     }
   }
 
-  @Override public boolean nextKeyValue() throws IOException, InterruptedException {
+  @Override
+  public boolean nextKeyValue() throws IOException, InterruptedException {
     if (isFirstRow) {
       isFirstRow = false;
       initializeAtFirstRow();
@@ -342,11 +347,13 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     return nextRow();
   }
 
-  @Override public Void getCurrentKey() throws IOException, InterruptedException {
+  @Override
+  public Void getCurrentKey() throws IOException, InterruptedException {
     return null;
   }
 
-  @Override public Object getCurrentValue() throws IOException, InterruptedException {
+  @Override
+  public Object getCurrentValue() throws IOException, InterruptedException {
     return outputValues;
   }
 
@@ -387,7 +394,12 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
         }
       } else {
         if (isNoDictColumn[colCount]) {
-          int v = input.readShort();
+          int v = 0;
+          if (dimensionsIsVarcharTypeMap[colCount]) {
+            v = input.readInt();
+          } else {
+            v = input.readShort();
+          }
           if (isRequired[colCount]) {
             byte[] b = input.readBytes(v);
             if (isFilterRequired[colCount]) {
@@ -561,7 +573,12 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
         outputValues[colCount] = CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY;
       } else {
         if (isNoDictColumn[colCount]) {
-          int v = input.readShort();
+          int v = 0;
+          if (dimensionsIsVarcharTypeMap[colCount]) {
+            v = input.readInt();
+          } else {
+            v = input.readShort();
+          }
           outputValues[colCount] = input.readBytes(v);
         } else {
           outputValues[colCount] = input.readInt();
@@ -602,11 +619,13 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     }
   }
 
-  @Override public float getProgress() {
+  @Override
+  public float getProgress() {
     return 0;
   }
 
-  @Override public void close() throws IOException {
+  @Override
+  public void close() throws IOException {
     if (null != input) {
       input.close();
     }

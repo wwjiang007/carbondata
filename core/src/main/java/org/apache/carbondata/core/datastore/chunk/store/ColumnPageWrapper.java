@@ -17,7 +17,6 @@
 
 package org.apache.carbondata.core.datastore.chunk.store;
 
-
 import java.util.BitSet;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
@@ -32,7 +31,6 @@ import org.apache.carbondata.core.scan.result.vector.ColumnVectorInfo;
 import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeUtil;
-
 
 public class ColumnPageWrapper implements DimensionColumnPage {
 
@@ -95,7 +93,8 @@ public class ColumnPageWrapper implements DimensionColumnPage {
     return chunkIndex + 1;
   }
 
-  @Override public byte[] getChunkData(int rowId) {
+  @Override
+  public byte[] getChunkData(int rowId) {
     byte[] nullBitSet = getNullBitSet(rowId, columnPage.getColumnSpec().getColumnType());
     if (nullBitSet != null) {
       // if this row is null, return default null represent in byte array
@@ -279,11 +278,13 @@ public class ColumnPageWrapper implements DimensionColumnPage {
     }
   }
 
-  @Override public boolean isAdaptiveEncoded() {
+  @Override
+  public boolean isAdaptiveEncoded() {
     return isAdaptivePrimitivePage;
   }
 
-  @Override public BitSet getNullBits() {
+  @Override
+  public BitSet getNullBits() {
     return columnPage.getNullBits();
   }
 

@@ -22,11 +22,10 @@ import org.apache.carbondata.hadoop.InputMetricsStats;
 
 import org.apache.spark.TaskContext;
 
-
 /**
  * Initializes bytes read call back
  */
 public interface InitInputMetrics extends InputMetricsStats {
 
-  void initBytesReadCallback(TaskContext context, CarbonMultiBlockSplit carbonMultiBlockSplit);
+  void initBytesReadCallback(TaskContext context, CarbonMultiBlockSplit carbonMultiBlockSplit, Long inputMetricsInterval);
 }

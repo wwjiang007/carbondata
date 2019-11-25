@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.carbondata.integration.spark.testsuite.complexType
 
 import java.sql.Timestamp
@@ -1013,4 +1030,170 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
     checkAnswer(sql("select id,name,structField.intval,name,structField.stringval from table1"),Seq(Row(null,"aaa",23,"aaa","bb")))
   }
 
+  test("test array of binary data type") {
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+    sql("create table if not exists hive_table(id int, label boolean, name string," +
+        "binaryField array<binary>, autoLabel boolean) row format delimited fields terminated by ','")
+    sql("insert into hive_table values(1,true,'abc',array('binary'),false)")
+    sql("create table if not exists carbon_table(id int, label boolean, name string," +
+        "binaryField array<binary>, autoLabel boolean) stored by 'carbondata'")
+    sql("insert into carbon_table values(1,true,'abc',array('binary'),false)")
+    checkAnswer(sql("SELECT binaryField[0] FROM carbon_table"),
+      sql("SELECT binaryField[0] FROM hive_table"))
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+  }
+
+  test("test struct of binary data type") {
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists parquet_table")
+    sql("create table if not exists parquet_table(id int, label boolean, name string," +
+        "binaryField struct<b:binary>, autoLabel boolean) using parquet")
+    sql("insert into parquet_table values(1,true,'abc',named_struct('b','binary'),false)")
+    sql("create table if not exists carbon_table(id int, label boolean, name string," +
+        "binaryField struct<b:binary>, autoLabel boolean) stored by 'carbondata'")
+    sql("insert into carbon_table values(1,true,'abc',named_struct('b','binary'),false)")
+    sql("SELECT binaryField.b FROM carbon_table").show(false)
+    checkAnswer(sql("SELECT binaryField.b FROM carbon_table"),
+      sql("SELECT binaryField.b FROM parquet_table"))
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+  }
+
+  test("test map of binary data type") {
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+    sql("create table if not exists hive_table(id int, label boolean, name string," +
+        "binaryField map<int, binary>, autoLabel boolean) row format delimited fields terminated by ','")
+    sql("insert into hive_table values(1,true,'abc',map(1,'binary'),false)")
+    sql("create table if not exists carbon_table(id int, label boolean, name string," +
+        "binaryField map<int, binary>, autoLabel boolean) stored by 'carbondata'")
+    sql("insert into carbon_table values(1,true,'abc',map(1,'binary'),false)")
+    checkAnswer(sql("SELECT binaryField[1] FROM carbon_table"),
+      sql("SELECT binaryField[1] FROM hive_table"))
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+  }
+
+  test("test map of array and struct binary data type") {
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists parquet_table")
+    sql("create table if not exists parquet_table(id int, label boolean, name string," +
+        "binaryField1 map<int, array<binary>>, binaryField2 map<int, struct<b:binary>> ) " +
+        "using parquet")
+    sql("insert into parquet_table values(1,true,'abc',map(1,array('binary')),map(1," +
+        "named_struct('b','binary')))")
+    sql("create table if not exists carbon_table(id int, label boolean, name string," +
+        "binaryField1 map<int, array<binary>>, binaryField2 map<int, struct<b:binary>> ) " +
+        "stored by 'carbondata'")
+    sql("insert into carbon_table values(1,true,'abc',map(1,array('binary')),map(1," +
+        "named_struct('b','binary')))")
+    checkAnswer(sql("SELECT binaryField1[1][1] FROM carbon_table"),
+      sql("SELECT binaryField1[1][1] FROM parquet_table"))
+    checkAnswer(sql("SELECT binaryField2[1].b FROM carbon_table"),
+      sql("SELECT binaryField2[1].b FROM parquet_table"))
+    sql("drop table if exists hive_table")
+    sql("drop table if exists carbon_table")
+  }
+
+  test("test of array of struct and struct of array of binary data type") {
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+    sql("create table if not exists hive_table(id int, label boolean, name string," +
+        "binaryField1 array<struct<b1:binary>>, binaryField2 struct<b2:array<binary>> ) " +
+        "row format delimited fields terminated by ','")
+    sql("insert into hive_table values(1,true,'abc',array(named_struct('b1','binary'))," +
+        "named_struct('b2',array('binary')))")
+    sql("create table if not exists carbon_table(id int, label boolean, name string," +
+        "binaryField1 array<struct<b1:binary>>, binaryField2 struct<b2:array<binary>> ) " +
+        "stored by 'carbondata'")
+    sql("insert into carbon_table values(1,true,'abc',array(named_struct('b1','binary'))," +
+        "named_struct('b2',array('binary')))")
+    checkAnswer(sql("SELECT binaryField1[1].b1 FROM carbon_table"),
+      sql("SELECT  binaryField1[1].b1 FROM hive_table"))
+    checkAnswer(sql("SELECT binaryField2.b2[0] FROM carbon_table"),
+      sql("SELECT binaryField2.b2[0] FROM hive_table"))
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+  }
+
+  test("test dataload to complex of binary type column using load ddl ") {
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+    sql("create table if not exists hive_table(id int, label boolean, name string," +
+        "binaryField1 array<binary>, binaryField2 struct<b2:binary>, binaryField3 map<int," +
+        "binary>) row format delimited fields terminated by ','")
+    sql(
+      "insert into hive_table values(1,true,'abc',array('binary1','binary2'), named_struct('b2'," +
+      "'binary1'), map(1,'binary1'))")
+    sql("create table if not exists carbon_table(id int, label boolean, name string," +
+        "binaryField1 array<binary>, binaryField2 struct<b2:binary>, binaryField3 map<int,binary>) " +
+        "stored by 'carbondata'")
+    sql(
+      "load data inpath '" + resourcesPath + "/complexbinary.csv' into table carbon_table options" +
+      "('delimiter'=',',  'quotechar'='\\','fileheader'='id,label,name,binaryField1,binaryField2," +
+      "binaryField3','complex_delimiter_level_1'='$', 'complex_delimiter_level_2'='&')")
+    checkAnswer(sql("SELECT binaryField1[0] FROM carbon_table where id=1"),
+      sql("SELECT  binaryField1[0] FROM hive_table where id=1"))
+    checkAnswer(sql("SELECT binaryField2.b2 FROM carbon_table where id=1"),
+      sql("SELECT  binaryField2.b2 FROM hive_table where id=1"))
+    checkAnswer(sql("SELECT binaryField3[1] FROM carbon_table where id=1"),
+      sql("SELECT binaryField3[1] FROM hive_table where id=1"))
+    sql("drop table if exists carbon_table")
+    sql("drop table if exists hive_table")
+  }
+
+  test("[CARBONDATA-3527] Fix 'String length cannot exceed 32000 characters' issue when load data with 'GLOBAL_SORT' from csv files which include big complex type data") {
+    val tableName = "complexdata3_table"
+    sql(s"drop table if exists ${tableName}")
+    sql(
+      s"""
+         |CREATE TABLE IF NOT EXISTS ${tableName} (
+         | begin_time LONG,
+         | id string,
+         | phone string,
+         | other_phone string,
+         | vtl LONG,
+         | gender string,
+         | lang string,
+         | lang_dec string,
+         | phone_country string,
+         | phone_province string,
+         | phone_city string,
+         | other_phone_country string,
+         | other_phone_province string,
+         | other_phone_city string,
+         | call_type INT,
+         | begin_hhmm INT,
+         | ds string,
+         | voice_flag INT,
+         | dss string,
+         | dur LONG,
+         | modela array < array < FLOAT >>, modelb array < array < FLOAT >>, modela_pk array < array < FLOAT >>, modelb_pk array < array < FLOAT >>, modela_ms array < array < FLOAT >>, modelb_ms array < array < FLOAT >>, tl LONG,
+         | lang_sc FLOAT,
+         | nlp_sc FLOAT,
+         | create_time LONG,
+         | cdr_create_time LONG,
+         | fulltext string,
+         | tag_label string,
+         | tag_memo string,
+         | tag_listen string,
+         | tag_imp string,
+         | prop string,
+         | files string
+         | )
+         | STORED AS carbondata TBLPROPERTIES (
+         | 'SORT_COLUMNS' = 'begin_time,id,phone,other_phone,vtl,gender,lang,lang_dec,phone_country,phone_province,phone_city,other_phone_country,other_phone_province,other_phone_city,call_type,begin_hhmm,ds,voice_flag',
+         | 'SORT_SCOPE' = 'GLOBAL_SORT','LONG_STRING_COLUMNS' = 'fulltext,files')""".stripMargin)
+    sql(s"""LOAD DATA inpath '${resourcesPath}/complexdata3.csv' INTO table ${tableName}
+        options('DELIMITER'='\t','QUOTECHAR'='"','COMMENTCHAR'='#','HEADER'='false',
+                'FILEHEADER'='id,phone,phone_country,phone_province,phone_city,other_phone,other_phone_country,other_phone_province,other_phone_city,call_type,begin_time,begin_hhmm,ds,dss,dur,voice_flag,modela,modelb,modela_pk,modelb_pk,modela_ms,modelb_ms,lang,lang_dec,lang_sc,gender,nlp_sc,tl,vtl,create_time,cdr_create_time,fulltext,tag_label,tag_memo,tag_listen,tag_imp,prop,files',
+                'MULTILINE'='true','ESCAPECHAR'='\','COMPLEX_DELIMITER_LEVEL_1'='\\001','COMPLEX_DELIMITER_LEVEL_2'='\\002',
+                'SINGLE_PASS'='TRUE')""")
+    checkAnswer(sql(s"select count(1) from ${tableName}"), Seq(Row(10)))
+    checkAnswer(sql(s"select modela[0][0], modela_ms[0][1] from ${tableName} where id = 'e01a1773-bd37-40be-a1de-d7e74837a281'"),
+      Seq(Row(0.0, 0.10781755)))
+    sql(s"drop table if exists ${tableName}")
+  }
 }

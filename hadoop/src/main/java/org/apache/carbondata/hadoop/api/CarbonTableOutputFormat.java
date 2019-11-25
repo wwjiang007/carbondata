@@ -19,6 +19,7 @@ package org.apache.carbondata.hadoop.api;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -221,8 +222,8 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       return (String[]) ObjectSerializationUtil.convertStringToObject(encodedString);
     }
     return new String[] {
-        System.getProperty("java.io.tmpdir") + "/" + System.nanoTime() + "_" + taskAttemptContext
-            .getTaskAttemptID().toString() };
+        System.getProperty("java.io.tmpdir") + "/" + UUID.randomUUID().toString().replace("-", "")
+            + "_" + taskAttemptContext.getTaskAttemptID().toString() };
   }
 
   @Override
@@ -266,7 +267,8 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
                 true));
     // It should be started in new thread as the underlying iterator uses blocking queue.
     Future future = executorService.submit(new Thread() {
-      @Override public void run() {
+      @Override
+      public void run() {
         ThreadLocalSessionInfo.setConfigurationToCurrentThread(taskAttemptContext
             .getConfiguration());
         try {
@@ -457,14 +459,16 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       this.future = future;
     }
 
-    @Override public void write(NullWritable aVoid, ObjectArrayWritable objects)
+    @Override
+    public void write(NullWritable aVoid, ObjectArrayWritable objects)
         throws InterruptedException {
       if (iteratorWrapper != null) {
         iteratorWrapper.write(objects.get());
       }
     }
 
-    @Override public void close(TaskAttemptContext taskAttemptContext) throws InterruptedException {
+    @Override
+    public void close(TaskAttemptContext taskAttemptContext) throws InterruptedException {
       if (!isClosed) {
         isClosed = true;
         if (iteratorWrapper != null) {
@@ -509,7 +513,8 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       counter = new AtomicLong(0);
     }
 
-    @Override public void write(NullWritable aVoid, ObjectArrayWritable objects)
+    @Override
+    public void write(NullWritable aVoid, ObjectArrayWritable objects)
         throws InterruptedException {
       int iteratorNum = (int) (counter.incrementAndGet() % iterators.length);
       synchronized (iterators[iteratorNum]) {
@@ -517,7 +522,8 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       }
     }
 
-    @Override public void close(TaskAttemptContext taskAttemptContext) throws InterruptedException {
+    @Override
+    public void close(TaskAttemptContext taskAttemptContext) throws InterruptedException {
       for (int i = 0; i < iterators.length; i++) {
         synchronized (iterators[i]) {
           iterators[i].closeWriter(false);

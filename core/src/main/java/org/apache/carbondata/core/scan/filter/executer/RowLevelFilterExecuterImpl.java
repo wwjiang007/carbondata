@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.scan.filter.executer;
 
 import java.io.ByteArrayOutputStream;
@@ -181,8 +182,8 @@ public class RowLevelFilterExecuterImpl implements FilterExecuter {
   private void initMeasureChunkIndexes() {
     for (int i = 0; i < msrColEvalutorInfoList.size(); i++) {
       // find the measure in the current block measures list
-      CarbonMeasure measureFromCurrentBlock = segmentProperties.getMeasureFromCurrentBlock(
-          msrColEvalutorInfoList.get(i).getCarbonColumn().getColumnId());
+      CarbonMeasure measureFromCurrentBlock =
+          segmentProperties.getMeasureFromCurrentBlock(msrColEvalutorInfoList.get(i).getMeasure());
       if (null != measureFromCurrentBlock) {
         msrColEvalutorInfoList.get(i).setColumnIndex(measureFromCurrentBlock.getOrdinal());
         this.measureChunkIndex[i] = msrColEvalutorInfoList.get(i).getColumnIndexInMinMaxByteArray();
@@ -621,8 +622,7 @@ public class RowLevelFilterExecuterImpl implements FilterExecuter {
     for (int i = 0; i < dimColEvaluatorInfoList.size(); i++) {
       DimColumnResolvedFilterInfo dimColumnEvaluatorInfo = dimColEvaluatorInfoList.get(i);
       if (!dimColumnEvaluatorInfo.getDimension().getDataType().isComplexType()) {
-        if (null == rawBlockletColumnChunks.getDimensionRawColumnChunks()[dimensionChunkIndex[i]])
-        {
+        if (null == rawBlockletColumnChunks.getDimensionRawColumnChunks()[dimensionChunkIndex[i]]) {
           rawBlockletColumnChunks.getDimensionRawColumnChunks()[dimensionChunkIndex[i]] =
               rawBlockletColumnChunks.getDataBlock().readDimensionChunk(
                   rawBlockletColumnChunks.getFileReader(), dimensionChunkIndex[i]);

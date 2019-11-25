@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.reader;
 
 import java.io.IOException;
@@ -73,7 +74,8 @@ public class CarbonHeaderReader {
   private ThriftReader openThriftReader(String filePath) {
     Configuration conf = configuration != null ? configuration : FileFactory.getConfiguration();
     return new ThriftReader(filePath, new ThriftReader.TBaseCreator() {
-      @Override public TBase create() {
+      @Override
+      public TBase create() {
         return new FileHeader();
       }
     }, conf);

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.metadata.converter;
 
 import org.apache.carbondata.core.metadata.schema.SchemaEvolution;
@@ -94,16 +95,19 @@ public interface SchemaConverter {
       org.apache.carbondata.format.TableSchema externalTableSchema, String tableNam);
 
   /**
-   * @param externalTableInfo
-   * @param dbName
-   * @param tableName
-   * @return
+   * method to convert thrift table info object to wrapper table info
+   *
+   * @param externalTableInfo thrift table info object
+   * @param dbName database name
+   * @param tableName table name
+   * @param tablePath table path
+   * @return TableInfo
    */
   TableInfo fromExternalToWrapperTableInfo(
       org.apache.carbondata.format.TableInfo externalTableInfo,
       String dbName,
       String tableName,
-      String storePath);
+      String tablePath);
 
   /**
    * method to convert thrift datamap schema object to wrapper

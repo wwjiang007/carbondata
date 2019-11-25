@@ -237,7 +237,7 @@ class MVUtil {
       parentTableName: String,
       parentDatabaseName: String,
       carbonTable: CarbonTable): ColumnTableRelation = {
-    val parentColumn = carbonTable.getColumnByName(parentTableName, parentColumnName)
+    val parentColumn = carbonTable.getColumnByName(parentColumnName)
     var columnTableRelation: ColumnTableRelation = null
     if (null != parentColumn) {
       val parentColumnId = parentColumn.getColumnId
@@ -314,7 +314,8 @@ class MVUtil {
     if (a.child.isInstanceOf[GetMapValue] || a.child.isInstanceOf[GetStructField] ||
         a.child.isInstanceOf[GetArrayItem]) {
       throw new UnsupportedOperationException(
-        s"MV datamap is unsupported for ComplexData type child column: " + a.child.simpleString)
+        s"MV datamap is not supported for complex datatype child columns and complex datatype " +
+        s"return types of function :" + a.child.simpleString)
     }
   }
 

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.datamap;
 
 import java.io.IOException;
@@ -263,7 +264,6 @@ public class DataMapChooser {
     return new ExpressionTuple();
   }
 
-
   private void extractColumnExpression(Expression expression,
       List<ColumnExpression> columnExpressions) {
     if (expression instanceof ColumnExpression) {
@@ -349,11 +349,13 @@ public class DataMapChooser {
       this.dataMap = dataMap;
     }
 
-    @Override public int compareTo(DataMapTuple o) {
+    @Override
+    public int compareTo(DataMapTuple o) {
       return order - o.order;
     }
 
-    @Override public boolean equals(Object o) {
+    @Override
+    public boolean equals(Object o) {
       if (this == o) return true;
       if (o == null || getClass() != o.getClass()) return false;
 
@@ -363,7 +365,8 @@ public class DataMapChooser {
       return dataMap != null ? dataMap.equals(that.dataMap) : that.dataMap == null;
     }
 
-    @Override public int hashCode() {
+    @Override
+    public int hashCode() {
       int result = order;
       result = 31 * result + (dataMap != null ? dataMap.hashCode() : 0);
       return result;

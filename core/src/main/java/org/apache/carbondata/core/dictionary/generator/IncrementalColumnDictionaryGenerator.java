@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.core.dictionary.generator;
 
 import java.io.IOException;
@@ -35,7 +36,7 @@ import org.apache.carbondata.core.devapi.DictionaryGenerator;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.ColumnIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
-import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.service.CarbonCommonFactory;
 import org.apache.carbondata.core.service.DictionaryService;
 import org.apache.carbondata.core.util.CarbonUtil;
@@ -68,11 +69,11 @@ public class IncrementalColumnDictionaryGenerator implements BiDictionary<Intege
 
   private int maxValue;
 
-  private CarbonDimension dimension;
+  private CarbonColumn dimension;
 
   private CarbonTable carbonTable;
 
-  public IncrementalColumnDictionaryGenerator(CarbonDimension dimension, int maxValue,
+  public IncrementalColumnDictionaryGenerator(CarbonColumn dimension, int maxValue,
       CarbonTable carbonTable) {
     this.carbonTable = carbonTable;
     this.maxValue = maxValue;
@@ -80,7 +81,8 @@ public class IncrementalColumnDictionaryGenerator implements BiDictionary<Intege
     this.dimension = dimension;
   }
 
-  @Override public Integer getOrGenerateKey(String value) throws DictionaryGenerationException {
+  @Override
+  public Integer getOrGenerateKey(String value) throws DictionaryGenerationException {
     Integer dict = getKey(value);
     if (dict == null) {
       dict = generateKey(value);
@@ -88,21 +90,25 @@ public class IncrementalColumnDictionaryGenerator implements BiDictionary<Intege
     return dict;
   }
 
-  @Override public Integer getKey(String value) {
+  @Override
+  public Integer getKey(String value) {
     return incrementalCache.get(value);
   }
 
-  @Override public String getValue(Integer key) {
+  @Override
+  public String getValue(Integer key) {
     return reverseIncrementalCache.get(key);
   }
 
-  @Override public int size() {
+  @Override
+  public int size() {
     synchronized (lock) {
       return currentDictionarySize;
     }
   }
 
-  @Override public Integer generateKey(String value) throws DictionaryGenerationException {
+  @Override
+  public Integer generateKey(String value) throws DictionaryGenerationException {
     synchronized (lock) {
       Integer dict = incrementalCache.get(value);
       if (dict == null) {
@@ -114,7 +120,8 @@ public class IncrementalColumnDictionaryGenerator implements BiDictionary<Intege
     }
   }
 
-  @Override public void writeDictionaryData() throws IOException {
+  @Override
+  public void writeDictionaryData() throws IOException {
     // initialize params
     AbsoluteTableIdentifier absoluteTableIdentifier = carbonTable.getAbsoluteTableIdentifier();
     ColumnIdentifier columnIdentifier = dimension.getColumnIdentifier();

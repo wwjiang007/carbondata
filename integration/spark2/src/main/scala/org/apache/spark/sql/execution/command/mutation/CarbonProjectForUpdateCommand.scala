@@ -20,11 +20,13 @@ package org.apache.spark.sql.execution.command.mutation
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql._
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.command.management.CarbonLoadDataCommand
 import org.apache.spark.sql.execution.datasources.LogicalRelation
-import org.apache.spark.sql.types.ArrayType
+import org.apache.spark.sql.execution.strategy.MixedFormatHandler
+import org.apache.spark.sql.types.{ArrayType, LongType}
 import org.apache.spark.storage.StorageLevel
 
 import org.apache.carbondata.common.exceptions.sql.MalformedCarbonCommandException
@@ -39,8 +41,7 @@ import org.apache.carbondata.core.metadata.schema.partition.PartitionType
 import org.apache.carbondata.core.mutate.CarbonUpdateUtil
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager
 import org.apache.carbondata.core.util.CarbonProperties
-import org.apache.carbondata.events.{OperationContext, OperationListenerBus, UpdateTablePostEvent, UpdateTablePreEvent}
-import org.apache.carbondata.indexserver.IndexServer
+import org.apache.carbondata.events.{IndexServerLoadEvent, OperationContext, OperationListenerBus, UpdateTablePostEvent, UpdateTablePreEvent}
 import org.apache.carbondata.processing.loading.FailureCauses
 
 private[sql] case class CarbonProjectForUpdateCommand(
@@ -50,8 +51,13 @@ private[sql] case class CarbonProjectForUpdateCommand(
     columns: List[String])
   extends DataCommand {
 
+  override val output: Seq[Attribute] = {
+    Seq(AttributeReference("Updated Row Count", LongType, nullable = false)())
+  }
+
   override def processData(sparkSession: SparkSession): Seq[Row] = {
     val LOGGER = LogServiceFactory.getLogService(this.getClass.getName)
+    var updatedRowCount = 0L
     IUDCommonUtil.checkIfSegmentListIsSet(sparkSession, plan)
     val res = plan find {
       case relation: LogicalRelation if relation.relation
@@ -61,7 +67,7 @@ private[sql] case class CarbonProjectForUpdateCommand(
     }
 
     if (res.isEmpty) {
-      return Seq.empty
+      return Array(Row(updatedRowCount)).toSeq
     }
     val carbonTable = CarbonEnv.getCarbonTable(databaseNameOp, tableName)(sparkSession)
     if (carbonTable.getPartitionInfo != null &&
@@ -71,10 +77,11 @@ private[sql] case class CarbonProjectForUpdateCommand(
       throw new UnsupportedOperationException("Unsupported update operation for range/" +
         "hash/list partition table")
     }
+
     setAuditTable(carbonTable)
     setAuditInfo(Map("plan" -> plan.simpleString))
     columns.foreach { col =>
-      val dataType = carbonTable.getColumnByName(tableName, col).getColumnSchema.getDataType
+      val dataType = carbonTable.getColumnByName(col).getColumnSchema.getDataType
       if (dataType.isComplexType) {
         throw new UnsupportedOperationException("Unsupported operation on Complex data type")
       }
@@ -90,6 +97,12 @@ private[sql] case class CarbonProjectForUpdateCommand(
     if (!carbonTable.canAllow(carbonTable, TableOperation.UPDATE)) {
       throw new MalformedCarbonCommandException(
         "update operation is not supported for index datamap")
+    }
+
+    // Block the update operation for non carbon formats
+    if (MixedFormatHandler.otherFormatSegmentsExist(carbonTable.getMetadataPath)) {
+      throw new MalformedCarbonCommandException(
+        s"Unsupported update operation on table containing mixed format segments")
     }
 
     // trigger event for Update table
@@ -135,7 +148,7 @@ private[sql] case class CarbonProjectForUpdateCommand(
           CarbonUpdateUtil.cleanUpDeltaFiles(carbonTable, false)
 
           // do delete operation.
-          val segmentsToBeDeleted = DeleteExecution.deleteDeltaExecution(
+          val (segmentsToBeDeleted, updatedRowCountTemp) = DeleteExecution.deleteDeltaExecution(
             databaseNameOp,
             tableName,
             sparkSession,
@@ -148,6 +161,7 @@ private[sql] case class CarbonProjectForUpdateCommand(
             throw new Exception(executionErrors.errorMsg)
           }
 
+          updatedRowCount = updatedRowCountTemp
           // do update operation.
           performUpdate(dataSet,
             databaseNameOp,
@@ -158,8 +172,9 @@ private[sql] case class CarbonProjectForUpdateCommand(
             executionErrors,
             segmentsToBeDeleted)
 
-          DeleteExecution
-            .clearDistributedSegmentCache(carbonTable, segmentsToBeDeleted)(sparkSession)
+          // prepriming for update command
+          DeleteExecution.reloadDistributedSegmentCache(carbonTable,
+            segmentsToBeDeleted, operationContext)(sparkSession)
 
         } else {
           throw new ConcurrentOperationException(carbonTable, "compaction", "update")
@@ -217,7 +232,7 @@ private[sql] case class CarbonProjectForUpdateCommand(
         CarbonLockUtil.fileUnlock(metadataLock, LockUsage.METADATA_LOCK)
       }
     }
-    Seq.empty
+    Seq(Row(updatedRowCount))
   }
 
   private def performUpdate(
@@ -304,9 +319,6 @@ private[sql] case class CarbonProjectForUpdateCommand(
 
     executorErrors.errorMsg = updateTableModel.executorErrors.errorMsg
     executorErrors.failureCauses = updateTableModel.executorErrors.failureCauses
-
-    Seq.empty
-
   }
 
   override protected def opName: String = "UPDATE DATA"

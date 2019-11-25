@@ -40,7 +40,7 @@ import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, RelationId
 import org.apache.carbondata.core.metadata.schema.table.column.{ColumnSchema, ParentColumnTableRelation}
 import org.apache.carbondata.core.service.impl.ColumnUniqueIdGenerator
 import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentUpdateStatusManager}
-import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil, DataTypeUtil}
+import org.apache.carbondata.core.util.{CarbonUtil, DataTypeUtil}
 import org.apache.carbondata.processing.loading.FailureCauses
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel
 import org.apache.carbondata.processing.merger.CompactionType
@@ -650,6 +650,9 @@ class TableNewProcessor(cm: TableModel) {
             columnRelation.parentDatabaseName,
             columnRelation.parentTableName,
             columnRelation.parentTableId)
+          if (cm.parentTable.isDefined) {
+            relationIdentifier.setTablePath(cm.parentTable.get.getTablePath)
+          }
           val parentColumnTableRelation = new ParentColumnTableRelation(
             relationIdentifier,
             columnRelation.parentColumnId,
@@ -683,9 +686,8 @@ class TableNewProcessor(cm: TableModel) {
       val field = cm.dimCols.find(keyDim equals _.column).get
       val encoders = if (getEncoderFromParent(field)) {
         cm.parentTable.get.getColumnByName(
-          cm.parentTable.get.getTableName,
-          cm.dataMapRelation.get.get(field).get.columnTableRelationList.
-            get(0).parentColumnName).getEncoder
+          cm.dataMapRelation.get(field).columnTableRelationList.get.head.parentColumnName
+        ).getEncoder
       } else {
         val encoders = new java.util.ArrayList[Encoding]()
         encoders.add(Encoding.DICTIONARY)
@@ -710,10 +712,8 @@ class TableNewProcessor(cm: TableModel) {
       val sortField = cm.sortKeyDims.get.find(field.column equals _)
       if (sortField.isEmpty) {
         val encoders = if (getEncoderFromParent(field)) {
-          cm.parentTable.get.getColumnByName(
-            cm.parentTable.get.getTableName,
-            cm.dataMapRelation.get.get(field).get.
-              columnTableRelationList.get(0).parentColumnName).getEncoder
+          cm.parentTable.get.getColumnByName(cm.dataMapRelation.get.get(field).get.
+                        columnTableRelationList.get(0).parentColumnName).getEncoder
         } else {
           val encoders = new java.util.ArrayList[Encoding]()
           encoders.add(Encoding.DICTIONARY)
@@ -756,14 +756,13 @@ class TableNewProcessor(cm: TableModel) {
       // same encoder can be applied on aggregate table
       val encoders = if (getEncoderFromParent(field)) {
         isAggFunPresent =
-          cm.dataMapRelation.get.get(field).get.aggregateFunction.equalsIgnoreCase("sum") ||
-          cm.dataMapRelation.get.get(field).get.aggregateFunction.equals("avg") ||
-          cm.dataMapRelation.get.get(field).get.aggregateFunction.equals("count")
+          cm.dataMapRelation.get(field).aggregateFunction.equalsIgnoreCase("sum") ||
+          cm.dataMapRelation.get(field).aggregateFunction.equals("avg") ||
+          cm.dataMapRelation.get(field).aggregateFunction.equals("count")
         if (!isAggFunPresent) {
           cm.parentTable.get.getColumnByName(
-            cm.parentTable.get.getTableName,
-            cm.dataMapRelation.get.get(field).get.columnTableRelationList.get(0).parentColumnName)
-            .getEncoder
+            cm.dataMapRelation.get(field).columnTableRelationList.get.head.parentColumnName
+          ).getEncoder
         } else {
           new java.util.ArrayList[Encoding]()
         }

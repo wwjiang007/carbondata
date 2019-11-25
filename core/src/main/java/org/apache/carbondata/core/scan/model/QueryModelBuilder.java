@@ -25,12 +25,11 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
+import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
-import org.apache.carbondata.core.scan.expression.Expression;
-import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.carbondata.core.util.DataTypeConverter;
 
 import org.apache.log4j.Logger;
@@ -39,7 +38,7 @@ public class QueryModelBuilder {
 
   private CarbonTable table;
   private QueryProjection projection;
-  private Expression filterExpression;
+  private DataMapFilter dataMapFilter;
   private DataTypeConverter dataTypeConverter;
   private boolean forcedDetailRawQuery;
   private boolean readPageByPage;
@@ -61,7 +60,7 @@ public class QueryModelBuilder {
 
     int i = 0;
     for (String projectionColumnName : projectionColumns) {
-      CarbonDimension dimension = table.getDimensionByName(factTableName, projectionColumnName);
+      CarbonDimension dimension = table.getDimensionByName(projectionColumnName);
       if (dimension != null) {
         CarbonDimension complexParentDimension = dimension.getComplexParentDimension();
         if (null != complexParentDimension && dimension.hasEncoding(Encoding.DICTIONARY)) {
@@ -74,7 +73,7 @@ public class QueryModelBuilder {
           i++;
         }
       } else {
-        CarbonMeasure measure = table.getMeasureByName(factTableName, projectionColumnName);
+        CarbonMeasure measure = table.getMeasureByName(projectionColumnName);
         if (measure == null) {
           throw new RuntimeException(
               projectionColumnName + " column not found in the table " + factTableName);
@@ -192,7 +191,7 @@ public class QueryModelBuilder {
     QueryProjection queryProjection = new QueryProjection();
     int i = 0;
     for (String projectionColumnName : projectionColumns) {
-      CarbonDimension dimension = table.getDimensionByName(factTableName, projectionColumnName);
+      CarbonDimension dimension = table.getDimensionByName(projectionColumnName);
       if (dimension != null) {
         if (!mergedDimensions.contains(dimension)) {
           if (!isAlreadyExists(dimension, queryProjection.getDimensions())) {
@@ -201,7 +200,7 @@ public class QueryModelBuilder {
           }
         }
       } else {
-        CarbonMeasure measure = table.getMeasureByName(factTableName, projectionColumnName);
+        CarbonMeasure measure = table.getMeasureByName(projectionColumnName);
         if (measure == null) {
           throw new RuntimeException(
               projectionColumnName + " column not found in the table " + factTableName);
@@ -216,7 +215,7 @@ public class QueryModelBuilder {
   private List<CarbonDimension> mergeChildColumns(List<Integer> childOrdinals) {
     // Check If children if they are in the path of not.
     List<CarbonDimension> mergedChild = new ArrayList<>();
-    List<CarbonDimension> dimList = table.getDimensions();
+    List<CarbonDimension> dimList = table.getVisibleDimensions();
     for (int i = 0; i < childOrdinals.size(); i++) {
       for (int j = i; j < childOrdinals.size(); j++) {
         CarbonDimension parentDimension = getDimensionBasedOnOrdinal(dimList, childOrdinals.get(i));
@@ -275,11 +274,11 @@ public class QueryModelBuilder {
 
   public QueryModelBuilder projectAllColumns() {
     QueryProjection projection = new QueryProjection();
-    List<CarbonDimension> dimensions = table.getDimensions();
+    List<CarbonDimension> dimensions = table.getVisibleDimensions();
     for (int i = 0; i < dimensions.size(); i++) {
       projection.addDimension(dimensions.get(i), i);
     }
-    List<CarbonMeasure> measures = table.getMeasures();
+    List<CarbonMeasure> measures = table.getVisibleMeasures();
     for (int i = 0; i < measures.size(); i++) {
       projection.addMeasure(measures.get(i), i);
     }
@@ -287,8 +286,8 @@ public class QueryModelBuilder {
     return this;
   }
 
-  public QueryModelBuilder filterExpression(Expression filterExpression) {
-    this.filterExpression = filterExpression;
+  public QueryModelBuilder filterExpression(DataMapFilter filterExpression) {
+    this.dataMapFilter = filterExpression;
     return this;
   }
 
@@ -326,21 +325,18 @@ public class QueryModelBuilder {
       // set the filter to the query model in order to filter blocklet before scan
       boolean[] isFilterDimensions = new boolean[table.getDimensionOrdinalMax()];
       boolean[] isFilterMeasures = new boolean[table.getAllMeasures().size()];
-      // In case of Dictionary Include Range Column we donot optimize the range expression
-      if (isConvertToRangeFilter()) {
-        table.processFilterExpression(filterExpression, isFilterDimensions, isFilterMeasures);
-      } else {
-        table.processFilterExpressionWithoutRange(filterExpression, isFilterDimensions,
-            isFilterMeasures);
-      }
       queryModel.setIsFilterDimensions(isFilterDimensions);
       queryModel.setIsFilterMeasures(isFilterMeasures);
-      FilterResolverIntf filterIntf =
-          CarbonTable.resolveFilter(filterExpression, table.getAbsoluteTableIdentifier());
-      queryModel.setFilterExpressionResolverTree(filterIntf);
-    } else {
-      queryModel.setFilterExpression(filterExpression);
+      // In case of Dictionary Include Range Column we donot optimize the range expression
+      if (dataMapFilter != null) {
+        if (isConvertToRangeFilter()) {
+          dataMapFilter.processFilterExpression(isFilterDimensions, isFilterMeasures);
+        } else {
+          dataMapFilter.processFilterExpressionWithoutRange(isFilterDimensions, isFilterMeasures);
+        }
+      }
     }
+    queryModel.setDataMapFilter(dataMapFilter);
     return queryModel;
   }
 }

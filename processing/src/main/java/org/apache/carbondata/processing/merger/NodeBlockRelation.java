@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.carbondata.processing.merger;
 
 import org.apache.carbondata.core.datastore.block.Distributable;
@@ -40,11 +41,13 @@ public class NodeBlockRelation implements Comparable<NodeBlockRelation> {
     return node;
   }
 
-  @Override public int compareTo(NodeBlockRelation obj) {
+  @Override
+  public int compareTo(NodeBlockRelation obj) {
     return this.getNode().compareTo(obj.getNode());
   }
 
-  @Override public boolean equals(Object obj) {
+  @Override
+  public boolean equals(Object obj) {
     if (!(obj instanceof NodeBlockRelation)) {
       return false;
     }
@@ -52,7 +55,8 @@ public class NodeBlockRelation implements Comparable<NodeBlockRelation> {
     return node.equals(o.node);
   }
 
-  @Override public int hashCode() {
+  @Override
+  public int hashCode() {
     return node.hashCode();
   }
 }

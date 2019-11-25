@@ -28,7 +28,6 @@ import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.ThreadLocalTaskInfo;
 
-
 // This extension uses unsafe memory to store page data, for fix length data type only (byte,
 // short, integer, long, float, double)
 public class UnsafeFixLengthColumnPage extends ColumnPage {
@@ -127,8 +126,6 @@ public class UnsafeFixLengthColumnPage extends ColumnPage {
     totalLength += ByteUtil.SIZEOF_BYTE;
     updatePageSize(rowId);
   }
-
-
 
   @Override
   public void putShort(int rowId, short value) {
@@ -234,7 +231,8 @@ public class UnsafeFixLengthColumnPage extends ColumnPage {
         "invalid data type: " + columnPageEncoderMeta.getStoreDataType());
   }
 
-  @Override public void putDecimal(int rowId, BigDecimal decimal) {
+  @Override
+  public void putDecimal(int rowId, BigDecimal decimal) {
     throw new UnsupportedOperationException(
         "invalid data type: " + columnPageEncoderMeta.getStoreDataType());
   }
@@ -303,7 +301,8 @@ public class UnsafeFixLengthColumnPage extends ColumnPage {
     return data;
   }
 
-  @Override public byte[] getDecimalPage() {
+  @Override
+  public byte[] getDecimalPage() {
     throw new UnsupportedOperationException(
         "invalid data type: " + columnPageEncoderMeta.getStoreDataType());
   }
@@ -396,7 +395,8 @@ public class UnsafeFixLengthColumnPage extends ColumnPage {
         "invalid data type: " + columnPageEncoderMeta.getStoreDataType());
   }
 
-  @Override public byte[] getComplexChildrenLVFlattenedBytePage() {
+  @Override
+  public byte[] getComplexChildrenLVFlattenedBytePage() {
     byte[] data = new byte[totalLength];
     CarbonUnsafe.getUnsafe()
         .copyMemory(baseAddress, baseOffset, data, CarbonUnsafe.BYTE_ARRAY_OFFSET, totalLength);
@@ -472,7 +472,8 @@ public class UnsafeFixLengthColumnPage extends ColumnPage {
     }
   }
 
-  @Override public void convertValue(ColumnPageValueConverter codec) {
+  @Override
+  public void convertValue(ColumnPageValueConverter codec) {
     int endLoop = getEndLoop();
     if (columnPageEncoderMeta.getStoreDataType() == DataTypes.BYTE) {
       for (long i = 0; i < endLoop; i++) {

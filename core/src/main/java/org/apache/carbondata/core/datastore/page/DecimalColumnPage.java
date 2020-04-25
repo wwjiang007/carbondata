@@ -26,7 +26,7 @@ import org.apache.carbondata.core.metadata.datatype.DecimalConverterFactory;
 /**
  * Represent a columnar data in one page for one column of decimal data type
  */
-public abstract class DecimalColumnPage extends VarLengthColumnPageBase {
+public abstract class DecimalColumnPage extends UnsafeVarLengthColumnPageBase {
 
   /**
    * decimal converter instance
@@ -128,7 +128,7 @@ public abstract class DecimalColumnPage extends VarLengthColumnPageBase {
         "invalid data type: " + columnPageEncoderMeta.getStoreDataType());
   }
 
-  // used for building datamap in loading process
+  // used for building index in loading process
   private BigDecimal getDecimalFromRawData(int rowId) {
     long value;
     switch (decimalConverter.getDecimalConverterType()) {

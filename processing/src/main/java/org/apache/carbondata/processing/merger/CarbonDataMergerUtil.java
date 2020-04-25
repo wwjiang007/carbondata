@@ -35,19 +35,16 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.carbondata.common.exceptions.sql.MalformedCarbonCommandException;
-import org.apache.carbondata.common.exceptions.sql.NoSuchDataMapException;
+import org.apache.carbondata.common.exceptions.sql.NoSuchMVException;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.Segment;
-import org.apache.carbondata.core.datamap.status.DataMapSegmentStatusUtil;
-import org.apache.carbondata.core.datamap.status.DataMapStatusManager;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.locks.ICarbonLock;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
-import org.apache.carbondata.core.metadata.schema.table.DataMapSchema;
 import org.apache.carbondata.core.mutate.CarbonUpdateUtil;
 import org.apache.carbondata.core.mutate.DeleteDeltaBlockDetails;
 import org.apache.carbondata.core.mutate.SegmentUpdateDetails;
@@ -59,6 +56,8 @@ import org.apache.carbondata.core.statusmanager.SegmentUpdateStatusManager;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
+import org.apache.carbondata.core.view.MVManager;
+import org.apache.carbondata.core.view.MVSchema;
 import org.apache.carbondata.core.writer.CarbonDeleteDeltaWriterImpl;
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel;
 import org.apache.carbondata.processing.util.CarbonLoaderUtil;
@@ -302,8 +301,8 @@ public final class CarbonDataMergerUtil {
    */
   public static boolean updateLoadMetadataWithMergeStatus(List<LoadMetadataDetails> loadsToMerge,
       String metaDataFilepath, String mergedLoadNumber, CarbonLoadModel carbonLoadModel,
-      CompactionType compactionType, String segmentFile) throws IOException,
-      NoSuchDataMapException {
+      CompactionType compactionType, String segmentFile, MVManager viewManager)
+      throws IOException, NoSuchMVException {
     boolean tableStatusUpdationStatus = false;
     AbsoluteTableIdentifier identifier =
         carbonLoadModel.getCarbonDataLoadSchema().getCarbonTable().getAbsoluteTableIdentifier();
@@ -353,20 +352,19 @@ public final class CarbonDataMergerUtil {
           loadMetadataDetails.setMajorCompacted("true");
         }
 
-        if (carbonTable.isChildTable()) {
-          // If table is child table, then get segment mapping and set to extraInfo
-          DataMapSchema dataMapSchema = null;
-          try {
-            dataMapSchema = DataMapStatusManager.getDataMapSchema(
-                carbonTable.getTableInfo().getFactTable().getTableProperties()
-                    .get(CarbonCommonConstants.DATAMAP_NAME));
-          } catch (NoSuchDataMapException e) {
-            throw e;
-          }
-          if (null != dataMapSchema) {
-            String segmentMap = DataMapSegmentStatusUtil
-                .getUpdatedSegmentMap(mergedLoadNumber, dataMapSchema, loadDetails);
+        if (carbonTable.isMV()) {
+          // If table is mv table, then get segment mapping and set to extraInfo
+          MVSchema viewSchema = viewManager.getSchema(
+                carbonTable.getDatabaseName(),
+                carbonTable.getTableName()
+            );
+          if (null != viewSchema) {
+            String segmentMap = MVManager
+                .getUpdatedSegmentMap(mergedLoadNumber, viewSchema, loadDetails);
             loadMetadataDetails.setExtraInfo(segmentMap);
+          } else {
+            throw new NoSuchMVException(
+                carbonTable.getDatabaseName(), carbonTable.getTableName());
           }
         }
 
@@ -736,7 +734,7 @@ public final class CarbonDataMergerUtil {
   private static long getSizeOfSegment(String tablePath, String segId) {
     String loadPath = CarbonTablePath.getSegmentPath(tablePath, segId);
     CarbonFile segmentFolder =
-        FileFactory.getCarbonFile(loadPath, FileFactory.getFileType(loadPath));
+        FileFactory.getCarbonFile(loadPath);
     return getSizeOfFactFileInLoad(segmentFolder);
   }
 
@@ -946,18 +944,14 @@ public final class CarbonDataMergerUtil {
 
   /**
    * This method returns the valid segments attached to the table Identifier.
-   *
-   * @param absoluteTableIdentifier
-   * @return
    */
-  public static List<Segment> getValidSegmentList(AbsoluteTableIdentifier absoluteTableIdentifier,
-      Boolean isChildTable)
+  public static List<Segment> getValidSegmentList(CarbonTable carbonTable)
           throws IOException {
 
     SegmentStatusManager.ValidAndInvalidSegmentsInfo validAndInvalidSegments = null;
     try {
-      validAndInvalidSegments = new SegmentStatusManager(absoluteTableIdentifier)
-          .getValidAndInvalidSegments(isChildTable);
+      validAndInvalidSegments = new SegmentStatusManager(carbonTable.getAbsoluteTableIdentifier())
+          .getValidAndInvalidSegments(carbonTable.isMV());
     } catch (IOException e) {
       LOGGER.error("Error while getting valid segment list for a table identifier");
       throw new IOException();
@@ -1099,7 +1093,7 @@ public final class CarbonDataMergerUtil {
     String segmentPath = CarbonTablePath.getSegmentPath(
         identifier.getTablePath(), seg.getSegmentNo());
     CarbonFile segDir =
-        FileFactory.getCarbonFile(segmentPath, FileFactory.getFileType(segmentPath));
+        FileFactory.getCarbonFile(segmentPath);
     CarbonFile[] allSegmentFiles = segDir.listFiles();
 
     updateDeltaFiles = segmentUpdateStatusManager
@@ -1296,8 +1290,7 @@ public final class CarbonDataMergerUtil {
       throw new IOException();
     }
     CarbonDeleteDeltaWriterImpl carbonDeleteWriter =
-            new CarbonDeleteDeltaWriterImpl(fullBlockFilePath,
-                    FileFactory.getFileType(fullBlockFilePath));
+            new CarbonDeleteDeltaWriterImpl(fullBlockFilePath);
     try {
       carbonDeleteWriter.write(deleteDeltaBlockDetails);
     } catch (IOException e) {

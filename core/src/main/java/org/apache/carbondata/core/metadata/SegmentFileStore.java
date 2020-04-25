@@ -17,21 +17,35 @@
 
 package org.apache.carbondata.core.metadata;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.Serializable;
 import java.nio.charset.Charset;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.DataMapStoreManager;
-import org.apache.carbondata.core.datamap.Segment;
-import org.apache.carbondata.core.datamap.TableDataMap;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.fileoperations.AtomicFileOperationFactory;
 import org.apache.carbondata.core.fileoperations.AtomicFileOperations;
 import org.apache.carbondata.core.fileoperations.FileWriteOperation;
+import org.apache.carbondata.core.index.IndexStoreManager;
+import org.apache.carbondata.core.index.Segment;
+import org.apache.carbondata.core.index.TableIndex;
 import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.indexstore.blockletindex.SegmentIndexFileStore;
 import org.apache.carbondata.core.locks.CarbonLockUtil;
@@ -40,13 +54,18 @@ import org.apache.carbondata.core.metadata.blocklet.DataFileFooter;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.mutate.CarbonUpdateUtil;
+import org.apache.carbondata.core.segmentmeta.SegmentColumnMetaDataInfo;
+import org.apache.carbondata.core.segmentmeta.SegmentMetaDataInfo;
+import org.apache.carbondata.core.segmentmeta.SegmentMetaDataInfoStats;
 import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
 import org.apache.carbondata.core.statusmanager.SegmentStatus;
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager;
 import org.apache.carbondata.core.statusmanager.SegmentUpdateStatusManager;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataFileFooterConverter;
+import org.apache.carbondata.core.util.ObjectSerializationUtil;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
+import org.apache.carbondata.core.writer.CarbonIndexFileMergeWriter;
 
 import com.google.gson.Gson;
 import org.apache.hadoop.conf.Configuration;
@@ -95,9 +114,9 @@ public class SegmentFileStore {
     String writePath = CarbonTablePath.getSegmentFilesLocation(tablePath) + "/" + tempFolderLoc;
     CarbonFile carbonFile = FileFactory.getCarbonFile(writePath);
     if (!carbonFile.exists()) {
-      carbonFile.mkdirs(writePath);
+      carbonFile.mkdirs();
     }
-    CarbonFile tempFolder = null;
+    CarbonFile tempFolder;
     if (isMergeIndexFlow) {
       tempFolder = FileFactory.getCarbonFile(location);
     } else {
@@ -166,11 +185,17 @@ public class SegmentFileStore {
    * @param carbonTable CarbonTable
    * @param segmentId segment id
    * @param UUID      a UUID string used to construct the segment file name
+   * @param segmentMetaDataInfo list of block level min and max values for segment
    * @return segment file name
    */
+  public static String writeSegmentFile(CarbonTable carbonTable, String segmentId, String UUID,
+      SegmentMetaDataInfo segmentMetaDataInfo) throws IOException {
+    return writeSegmentFile(carbonTable, segmentId, UUID, null, segmentMetaDataInfo);
+  }
+
   public static String writeSegmentFile(CarbonTable carbonTable, String segmentId, String UUID)
       throws IOException {
-    return writeSegmentFile(carbonTable, segmentId, UUID, null);
+    return writeSegmentFile(carbonTable, segmentId, UUID, null, null);
   }
 
   /**
@@ -179,12 +204,18 @@ public class SegmentFileStore {
    * @param carbonTable CarbonTable
    * @param segmentId segment id
    * @param UUID      a UUID string used to construct the segment file name
+   * @param segPath segment path
+   * @param segmentMetaDataInfo segment metadata info
    * @return segment file name
    */
   public static String writeSegmentFile(CarbonTable carbonTable, String segmentId, String UUID,
-      String segPath)
-      throws IOException {
-    return writeSegmentFile(carbonTable, segmentId, UUID, null, segPath);
+      String segPath, SegmentMetaDataInfo segmentMetaDataInfo) throws IOException {
+    return writeSegmentFile(carbonTable, segmentId, UUID, null, segPath, segmentMetaDataInfo);
+  }
+
+  public static String writeSegmentFile(CarbonTable carbonTable, String segmentId, String UUID,
+      String segPath) throws IOException {
+    return writeSegmentFile(carbonTable, segmentId, UUID, null, segPath, null);
   }
 
   /**
@@ -233,7 +264,7 @@ public class SegmentFileStore {
       String segmentFileFolder = CarbonTablePath.getSegmentFilesLocation(tablePath);
       CarbonFile carbonFile = FileFactory.getCarbonFile(segmentFileFolder);
       if (!carbonFile.exists()) {
-        carbonFile.mkdirs(segmentFileFolder);
+        carbonFile.mkdirs();
       }
       // write segment info to new file.
       writeSegmentFile(segmentFile,
@@ -279,7 +310,7 @@ public class SegmentFileStore {
       String segmentFileFolder = CarbonTablePath.getSegmentFilesLocation(tablePath);
       CarbonFile carbonFile = FileFactory.getCarbonFile(segmentFileFolder);
       if (!carbonFile.exists()) {
-        carbonFile.mkdirs(segmentFileFolder);
+        carbonFile.mkdirs();
       }
       // write segment info to new file.
       writeSegmentFile(segmentFile,
@@ -288,6 +319,21 @@ public class SegmentFileStore {
       return true;
     }
     return false;
+  }
+
+  public static void mergeIndexAndWriteSegmentFile(CarbonTable carbonTable, String segmentId,
+      String UUID) {
+    String tablePath = carbonTable.getTablePath();
+    String segmentFileName = genSegmentFileName(segmentId, UUID) + CarbonTablePath.SEGMENT_EXT;
+    try {
+      SegmentFileStore sfs = new SegmentFileStore(tablePath, segmentFileName);
+      List<CarbonFile> carbonIndexFiles = sfs.getIndexCarbonFiles();
+      new CarbonIndexFileMergeWriter(carbonTable)
+          .writeMergeIndexFileBasedOnSegmentFile(segmentId, null, sfs,
+              carbonIndexFiles.toArray(new CarbonFile[carbonIndexFiles.size()]), UUID, null);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   /**
@@ -301,7 +347,8 @@ public class SegmentFileStore {
    * @throws IOException
    */
   public static String writeSegmentFile(CarbonTable carbonTable, String segmentId, String UUID,
-      final String currentLoadTimeStamp, String absSegPath) throws IOException {
+      final String currentLoadTimeStamp, String absSegPath, SegmentMetaDataInfo segmentMetaDataInfo)
+      throws IOException {
     String tablePath = carbonTable.getTablePath();
     boolean supportFlatFolder = carbonTable.isSupportFlatFolder();
     String segmentPath = absSegPath;
@@ -342,10 +389,14 @@ public class SegmentFileStore {
         }
       }
       segmentFile.addPath(segmentRelativePath, folderDetails);
+      // set segmentMinMax to segmentFile
+      if (null != segmentMetaDataInfo) {
+        segmentFile.setSegmentMetaDataInfo(segmentMetaDataInfo);
+      }
       String segmentFileFolder = CarbonTablePath.getSegmentFilesLocation(tablePath);
       CarbonFile carbonFile = FileFactory.getCarbonFile(segmentFileFolder);
       if (!carbonFile.exists()) {
-        carbonFile.mkdirs(segmentFileFolder);
+        carbonFile.mkdirs();
       }
       String segmentFileName = genSegmentFileName(segmentId, UUID) + CarbonTablePath.SEGMENT_EXT;
       // write segment info to new file.
@@ -492,10 +543,11 @@ public class SegmentFileStore {
         for (LoadMetadataDetails detail : listOfLoadFolderDetailsArray) {
           // if the segments is in the list of marked for delete then update the status.
           if (segmentId.equals(detail.getLoadName())) {
+            detail.setLoadEndTime(System.currentTimeMillis());
             detail.setSegmentFile(segmentFile);
             if (segmentStatus != null) {
               HashMap<String, Long> dataSizeAndIndexSize =
-                  CarbonUtil.getDataSizeAndIndexSize(segmentFileStore);
+                  CarbonUtil.getDataSizeAndIndexSize(segmentFileStore, detail.isCarbonFormat());
               detail.setDataSize(
                   dataSizeAndIndexSize.get(CarbonCommonConstants.CARBON_TOTAL_DATA_SIZE)
                       .toString());
@@ -513,8 +565,8 @@ public class SegmentFileStore {
 
         SegmentStatusManager
             .writeLoadDetailsIntoFile(tableStatusPath, listOfLoadFolderDetailsArray);
-        // clear dataMap cache for the segmentId for which the table status file is getting updated
-        clearBlockDataMapCache(carbonTable, segmentId);
+        // clear index cache for the segmentId for which the table status file is getting updated
+        clearBlockIndexCache(carbonTable, segmentId);
         status = true;
       } else {
         LOGGER.error(
@@ -533,20 +585,20 @@ public class SegmentFileStore {
   }
 
   /**
-   * After updating table status file clear the dataMap cache for all segmentId's on which
-   * dataMap is being created because flows like merge index file creation involves modification of
+   * After updating table status file clear the index cache for all segmentId's on which
+   * index is being created because flows like merge index file creation involves modification of
    * segment file and once segment file is modified the cache for that segment need to be cleared
    * otherwise the old cache will be used which is stale
    *
    * @param carbonTable
    * @param segmentId
    */
-  public static void clearBlockDataMapCache(CarbonTable carbonTable, String segmentId) {
-    TableDataMap defaultDataMap = DataMapStoreManager.getInstance().getDefaultDataMap(carbonTable);
+  public static void clearBlockIndexCache(CarbonTable carbonTable, String segmentId) {
+    TableIndex defaultIndex = IndexStoreManager.getInstance().getDefaultIndex(carbonTable);
     LOGGER.info(
         "clearing cache while updating segment file entry in table status file for segmentId: "
             + segmentId);
-    defaultDataMap.getDataMapFactory().clear(segmentId);
+    defaultIndex.getIndexFactory().clear(segmentId);
   }
 
   private static CarbonFile[] getSegmentFiles(String segmentPath) {
@@ -625,7 +677,7 @@ public class SegmentFileStore {
         AtomicFileOperationFactory.getAtomicFileOperations(segmentFilePath);
 
     try {
-      if (!FileFactory.isFileExist(segmentFilePath, FileFactory.getFileType(segmentFilePath))) {
+      if (!FileFactory.isFileExist(segmentFilePath)) {
         return null;
       }
       dataInputStream = fileOperation.openForRead();
@@ -703,7 +755,7 @@ public class SegmentFileStore {
       // duplicates
       Set<String> blocks = new LinkedHashSet<>();
       for (DataFileFooter footer : indexInfo) {
-        blocks.add(footer.getBlockInfo().getTableBlockInfo().getFilePath());
+        blocks.add(footer.getBlockInfo().getFilePath());
       }
       indexFilesMap.put(entry.getKey(), new ArrayList<>(blocks));
       boolean added = false;
@@ -901,7 +953,7 @@ public class SegmentFileStore {
     if (toBeDeleteSegments.size() > 0 || toBeUpdatedSegments.size() > 0) {
       Set<Segment> segmentSet = new HashSet<>(
           new SegmentStatusManager(carbonTable.getAbsoluteTableIdentifier())
-              .getValidAndInvalidSegments(carbonTable.isChildTable()).getValidSegments());
+              .getValidAndInvalidSegments(carbonTable.isMV()).getValidSegments());
       CarbonUpdateUtil.updateTableMetadataStatus(segmentSet, carbonTable, uniqueId, true,
           Segment.toSegmentList(toBeDeleteSegments, null),
           Segment.toSegmentList(toBeUpdatedSegments, null), uuid);
@@ -971,10 +1023,10 @@ public class SegmentFileStore {
         }
         if (toBeDeletedIndexFiles.size() > 0) {
           for (String dataFile : toBeDeletedIndexFiles) {
-            FileFactory.deleteFile(dataFile, FileFactory.getFileType(dataFile));
+            FileFactory.deleteFile(dataFile);
           }
           for (String dataFile : toBeDeletedDataFiles) {
-            FileFactory.deleteFile(dataFile, FileFactory.getFileType(dataFile));
+            FileFactory.deleteFile(dataFile);
           }
         }
       }
@@ -996,21 +1048,21 @@ public class SegmentFileStore {
         FileFactory.getConfiguration());
     Map<String, List<String>> indexFilesMap = fileStore.getIndexFilesMap();
     for (Map.Entry<String, List<String>> entry : indexFilesMap.entrySet()) {
-      FileFactory.deleteFile(entry.getKey(), FileFactory.getFileType(entry.getKey()));
+      FileFactory.deleteFile(entry.getKey());
       for (String file : entry.getValue()) {
         String[] deltaFilePaths =
             updateStatusManager.getDeleteDeltaFilePath(file, segment.getSegmentNo());
         for (String deltaFilePath : deltaFilePaths) {
-          FileFactory.deleteFile(deltaFilePath, FileFactory.getFileType(deltaFilePath));
+          FileFactory.deleteFile(deltaFilePath);
         }
-        FileFactory.deleteFile(file, FileFactory.getFileType(file));
+        FileFactory.deleteFile(file);
       }
     }
     deletePhysicalPartition(partitionSpecs, indexFilesMap, indexOrMergeFiles, tablePath);
     String segmentFilePath =
         CarbonTablePath.getSegmentFilePath(tablePath, segment.getSegmentFileName());
     // Deletes the physical segment file
-    FileFactory.deleteFile(segmentFilePath, FileFactory.getFileType(segmentFilePath));
+    FileFactory.deleteFile(segmentFilePath);
   }
 
   /**
@@ -1020,8 +1072,7 @@ public class SegmentFileStore {
    * If partition specs are null, then directly delete parent directory in locationMap.
    */
   private static void deletePhysicalPartition(List<PartitionSpec> partitionSpecs,
-      Map<String, List<String>> locationMap, List<String> indexOrMergeFiles, String tablePath)
-      throws IOException {
+      Map<String, List<String>> locationMap, List<String> indexOrMergeFiles, String tablePath) {
     for (String indexOrMergFile : indexOrMergeFiles) {
       if (null != partitionSpecs) {
         Path location = new Path(indexOrMergFile);
@@ -1109,7 +1160,7 @@ public class SegmentFileStore {
       }
       return partitionSpecs;
     }
-    return null;
+    return new ArrayList<>();
   }
 
   /**
@@ -1194,6 +1245,24 @@ public class SegmentFileStore {
   }
 
   /**
+   * This method returns the list of indx/merge index files for a segment in carbonTable.
+   */
+  public static Set<String> getIndexFilesListForSegment(Segment segment, String tablePath)
+      throws IOException {
+    Set<String> indexFiles;
+    if (segment.getSegmentFileName() == null) {
+      String segmentPath = CarbonTablePath.getSegmentPath(tablePath, segment.getSegmentNo());
+      indexFiles =
+          new SegmentIndexFileStore().getMergeOrIndexFilesFromSegment(segmentPath).keySet();
+    } else {
+      SegmentFileStore segmentFileStore =
+          new SegmentFileStore(tablePath, segment.getSegmentFileName());
+      indexFiles = segmentFileStore.getIndexOrMergeFiles().keySet();
+    }
+    return indexFiles;
+  }
+
+  /**
    * It contains the segment information like location, partitions and related index files
    */
   public static class SegmentFile implements Serializable {
@@ -1210,16 +1279,21 @@ public class SegmentFileStore {
      */
     private Map<String, String> options;
 
-    SegmentFile() {
+    /**
+     * Segment metadata information such as column_id, min-max, alter properties
+     */
+    private String segmentMetaDataInfo;
+
+    public SegmentFile() {
       locationMap = new HashMap<>();
     }
 
-    SegmentFile merge(SegmentFile mapper) {
-      if (this == mapper) {
+    public SegmentFile merge(SegmentFile segmentFile) throws IOException {
+      if (this == segmentFile) {
         return this;
       }
-      if (locationMap != null && mapper.locationMap != null) {
-        for (Map.Entry<String, FolderDetails> entry : mapper.locationMap.entrySet()) {
+      if (locationMap != null && segmentFile.locationMap != null) {
+        for (Map.Entry<String, FolderDetails> entry : segmentFile.locationMap.entrySet()) {
           FolderDetails folderDetails = locationMap.get(entry.getKey());
           if (folderDetails != null) {
             folderDetails.merge(entry.getValue());
@@ -1227,9 +1301,40 @@ public class SegmentFileStore {
             locationMap.put(entry.getKey(), entry.getValue());
           }
         }
+        if (segmentMetaDataInfo != null) {
+          SegmentMetaDataInfo currentSegmentMetaDataInfo =
+              (SegmentMetaDataInfo) ObjectSerializationUtil
+                  .convertStringToObject(segmentMetaDataInfo);
+          if (null != segmentFile.getSegmentMetaDataInfo()) {
+            // get updated segmentColumnMetaDataInfo based on comparing block min-max values
+            Map<String, SegmentColumnMetaDataInfo> previousBlockColumnMetaDataInfo =
+                segmentFile.getSegmentMetaDataInfo().getSegmentColumnMetaDataInfoMap();
+            for (Map.Entry<String, SegmentColumnMetaDataInfo> entry :
+                previousBlockColumnMetaDataInfo.entrySet()) {
+              if (currentSegmentMetaDataInfo.getSegmentColumnMetaDataInfoMap()
+                  .containsKey(entry.getKey())) {
+                SegmentColumnMetaDataInfo currentBlockMinMaxInfo =
+                    currentSegmentMetaDataInfo.getSegmentColumnMetaDataInfoMap()
+                        .get(entry.getKey());
+                byte[] blockMaxValue = SegmentMetaDataInfoStats.getInstance()
+                    .compareAndUpdateMinMax(currentBlockMinMaxInfo.getColumnMaxValue(),
+                        entry.getValue().getColumnMaxValue(), false);
+                byte[] blockMinValue = SegmentMetaDataInfoStats.getInstance()
+                    .compareAndUpdateMinMax(currentBlockMinMaxInfo.getColumnMinValue(),
+                        entry.getValue().getColumnMinValue(), true);
+                currentSegmentMetaDataInfo.getSegmentColumnMetaDataInfoMap().get(entry.getKey())
+                    .setColumnMaxValue(blockMaxValue);
+                currentSegmentMetaDataInfo.getSegmentColumnMetaDataInfoMap().get(entry.getKey())
+                    .setColumnMinValue(blockMinValue);
+              }
+            }
+          }
+          segmentMetaDataInfo =
+              ObjectSerializationUtil.convertObjectToString(currentSegmentMetaDataInfo);
+        }
       }
       if (locationMap == null) {
-        locationMap = mapper.locationMap;
+        locationMap = segmentFile.locationMap;
       }
       return this;
     }
@@ -1252,6 +1357,28 @@ public class SegmentFileStore {
     public void setOptions(Map<String, String> options) {
       this.options = options;
     }
+
+    public SegmentMetaDataInfo getSegmentMetaDataInfo() {
+      SegmentMetaDataInfo newSegmentMetaDataInfo = null;
+      try {
+        newSegmentMetaDataInfo = (SegmentMetaDataInfo) ObjectSerializationUtil
+            .convertStringToObject(segmentMetaDataInfo);
+      } catch (IOException e) {
+        LOGGER.error("Error while getting segment metadata info");
+      }
+      return newSegmentMetaDataInfo;
+    }
+
+    public void setSegmentMetaDataInfo(SegmentMetaDataInfo segmentMetaDataInfo) throws IOException {
+      this.segmentMetaDataInfo = ObjectSerializationUtil.convertObjectToString(
+          segmentMetaDataInfo);
+    }
+  }
+
+  public static SegmentFile createSegmentFile(String partitionPath, FolderDetails folderDetails) {
+    SegmentFile segmentFile = new SegmentFile();
+    segmentFile.addPath(partitionPath, folderDetails);
+    return segmentFile;
   }
 
   /**

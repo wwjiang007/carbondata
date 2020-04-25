@@ -21,20 +21,17 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.carbondata.common.CarbonIterator;
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.datamap.DataMapStoreManager;
 import org.apache.carbondata.core.datastore.FileReader;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
+import org.apache.carbondata.core.index.IndexStoreManager;
 import org.apache.carbondata.core.scan.executor.QueryExecutor;
 import org.apache.carbondata.core.scan.executor.QueryExecutorFactory;
 import org.apache.carbondata.core.scan.executor.exception.QueryExecutionException;
 import org.apache.carbondata.core.scan.model.QueryModel;
 import org.apache.carbondata.core.scan.result.iterator.ChunkRowIterator;
-import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.hadoop.readsupport.CarbonReadSupport;
 
 import org.apache.hadoop.conf.Configuration;
@@ -56,10 +53,10 @@ public class CarbonRecordReader<T> extends AbstractRecordReader<T> {
   private InputMetricsStats inputMetricsStats;
 
   /**
-   * Whether to clear datamap when reader is closed. In some scenarios such as datamap rebuild,
-   * we will set it to true and will clear the datamap after rebuild
+   * Whether to clear Index when reader is closed. In some scenarios such as Index rebuild,
+   * we will set it to true and will clear the Index after rebuild
    */
-  private boolean skipClearDataMapAtClose = false;
+  private boolean skipClearIndexAtClose = false;
 
   public CarbonRecordReader(QueryModel queryModel, CarbonReadSupport<T> readSupport,
       InputMetricsStats inputMetricsStats, Configuration configuration) {
@@ -117,11 +114,7 @@ public class CarbonRecordReader<T> extends AbstractRecordReader<T> {
       queryModel.setTableBlockInfos(tableBlockInfoList);
     }
     readSupport.initialize(queryModel.getProjectionColumns(), queryModel.getTable());
-    try {
-      carbonIterator = new ChunkRowIterator(queryExecutor.execute(queryModel));
-    } catch (QueryExecutionException e) {
-      throw new InterruptedException(e.getMessage());
-    }
+    carbonIterator = new ChunkRowIterator(queryExecutor.execute(queryModel));
   }
 
   @Override
@@ -130,12 +123,12 @@ public class CarbonRecordReader<T> extends AbstractRecordReader<T> {
   }
 
   @Override
-  public Void getCurrentKey() throws IOException, InterruptedException {
+  public Void getCurrentKey() {
     return null;
   }
 
   @Override
-  public T getCurrentValue() throws IOException, InterruptedException {
+  public T getCurrentValue() {
     rowCount += 1;
     if (null != inputMetricsStats) {
       inputMetricsStats.incrementRecordRead(1L);
@@ -158,7 +151,7 @@ public class CarbonRecordReader<T> extends AbstractRecordReader<T> {
   }
 
   @Override
-  public float getProgress() throws IOException, InterruptedException {
+  public float getProgress() {
     // TODO : Implement it based on total number of rows it is going to retrieve.
     return 0;
   }
@@ -166,16 +159,9 @@ public class CarbonRecordReader<T> extends AbstractRecordReader<T> {
   @Override
   public void close() throws IOException {
     logStatistics(rowCount, queryModel.getStatisticsRecorder());
-    // clear dictionary cache
-    Map<String, Dictionary> columnToDictionaryMapping = queryModel.getColumnToDictionaryMapping();
-    if (null != columnToDictionaryMapping) {
-      for (Map.Entry<String, Dictionary> entry : columnToDictionaryMapping.entrySet()) {
-        CarbonUtil.clearDictionaryCache(entry.getValue());
-      }
-    }
-    if (!skipClearDataMapAtClose) {
-      // Clear the datamap cache
-      DataMapStoreManager.getInstance().clearDataMaps(
+    if (!skipClearIndexAtClose) {
+      // Clear the Index cache
+      IndexStoreManager.getInstance().clearIndexCache(
           queryModel.getTable().getAbsoluteTableIdentifier(), false);
     }
     // close read support
@@ -188,7 +174,7 @@ public class CarbonRecordReader<T> extends AbstractRecordReader<T> {
     }
   }
 
-  public void setSkipClearDataMapAtClose(boolean skipClearDataMapAtClose) {
-    this.skipClearDataMapAtClose = skipClearDataMapAtClose;
+  public void setSkipClearIndexAtClose(boolean skipClearIndexAtClose) {
+    this.skipClearIndexAtClose = skipClearIndexAtClose;
   }
 }

@@ -28,7 +28,7 @@ import java.util.List;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.metadata.blocklet.BlockletInfo;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
-import org.apache.carbondata.core.util.BlockletDataMapUtil;
+import org.apache.carbondata.core.util.BlockletIndexUtil;
 
 import org.apache.hadoop.io.Writable;
 import org.apache.log4j.Logger;
@@ -54,8 +54,6 @@ public class BlockletDetailInfo implements Serializable, Writable {
 
   // default blockletId should be -1,which means consider all the blocklets in block
   private short blockletId = -1;
-
-  private int[] dimLens;
 
   private long schemaUpdatedTimeStamp;
 
@@ -142,14 +140,6 @@ public class BlockletDetailInfo implements Serializable, Writable {
     }
   }
 
-  public int[] getDimLens() {
-    return dimLens;
-  }
-
-  public void setDimLens(int[] dimLens) {
-    this.dimLens = dimLens;
-  }
-
   public long getSchemaUpdatedTimeStamp() {
     return schemaUpdatedTimeStamp;
   }
@@ -172,10 +162,6 @@ public class BlockletDetailInfo implements Serializable, Writable {
     out.writeShort(pagesCount);
     out.writeShort(versionNumber);
     out.writeShort(blockletId);
-    out.writeShort(dimLens.length);
-    for (int i = 0; i < dimLens.length; i++) {
-      out.writeInt(dimLens[i]);
-    }
     out.writeLong(schemaUpdatedTimeStamp);
     out.writeBoolean(blockletInfo != null);
     if (blockletInfo != null) {
@@ -204,10 +190,6 @@ public class BlockletDetailInfo implements Serializable, Writable {
     pagesCount = in.readShort();
     versionNumber = in.readShort();
     blockletId = in.readShort();
-    dimLens = new int[in.readShort()];
-    for (int i = 0; i < dimLens.length; i++) {
-      dimLens[i] = in.readInt();
-    }
     schemaUpdatedTimeStamp = in.readLong();
     if (in.readBoolean()) {
       blockletInfo = new BlockletInfo();
@@ -236,13 +218,13 @@ public class BlockletDetailInfo implements Serializable, Writable {
    */
   public void readColumnSchema(byte[] schemaArray) throws IOException {
     if (null != schemaArray) {
-      columnSchemas = BlockletDataMapUtil.readColumnSchema(schemaArray);
+      columnSchemas = BlockletIndexUtil.readColumnSchema(schemaArray);
     }
   }
 
   private void convertColumnSchemaToBinary() throws IOException {
     if (null != columnSchemas) {
-      columnSchemaBinary = BlockletDataMapUtil.convertSchemaToBinary(columnSchemas);
+      columnSchemaBinary = BlockletIndexUtil.convertSchemaToBinary(columnSchemas);
     }
   }
 
@@ -255,7 +237,6 @@ public class BlockletDetailInfo implements Serializable, Writable {
     detailInfo.pagesCount = pagesCount;
     detailInfo.versionNumber = versionNumber;
     detailInfo.blockletId = blockletId;
-    detailInfo.dimLens = dimLens;
     detailInfo.schemaUpdatedTimeStamp = schemaUpdatedTimeStamp;
     detailInfo.blockletInfo = blockletInfo;
     detailInfo.blockletInfoBinary = blockletInfoBinary;

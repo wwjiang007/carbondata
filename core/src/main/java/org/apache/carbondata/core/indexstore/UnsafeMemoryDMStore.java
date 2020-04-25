@@ -18,11 +18,11 @@
 package org.apache.carbondata.core.indexstore;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.indexstore.row.DataMapRow;
-import org.apache.carbondata.core.indexstore.row.UnsafeDataMapRow;
+import org.apache.carbondata.core.indexstore.row.IndexRow;
+import org.apache.carbondata.core.indexstore.row.UnsafeIndexRow;
 import org.apache.carbondata.core.indexstore.schema.CarbonRowSchema;
+import org.apache.carbondata.core.memory.CarbonUnsafe;
 import org.apache.carbondata.core.memory.MemoryBlock;
-import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.memory.MemoryType;
 import org.apache.carbondata.core.memory.UnsafeMemoryManager;
 import org.apache.carbondata.core.metadata.datatype.DataType;
@@ -32,7 +32,7 @@ import static org.apache.carbondata.core.memory.CarbonUnsafe.BYTE_ARRAY_OFFSET;
 import static org.apache.carbondata.core.memory.CarbonUnsafe.getUnsafe;
 
 /**
- * Store the data map row @{@link DataMapRow} data to unsafe.
+ * Store the data map row @{@link IndexRow} data to unsafe.
  */
 public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
 
@@ -50,7 +50,9 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
 
   private int rowCount;
 
-  public UnsafeMemoryDMStore() throws MemoryException {
+  private byte[] data;
+
+  public UnsafeMemoryDMStore() {
     this.allocatedSize = capacity;
     this.memoryBlock =
         UnsafeMemoryManager.allocateMemoryWithRetry(MemoryType.ONHEAP, taskId, allocatedSize);
@@ -63,7 +65,7 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
    *
    * @param rowSize
    */
-  private void ensureSize(int rowSize) throws MemoryException {
+  private void ensureSize(int rowSize) {
     if (runningLength + rowSize >= allocatedSize) {
       increaseMemory(runningLength + rowSize);
     }
@@ -74,7 +76,7 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
     }
   }
 
-  private void increaseMemory(int requiredMemory) throws MemoryException {
+  private void increaseMemory(int requiredMemory) {
     MemoryBlock newMemoryBlock = UnsafeMemoryManager
         .allocateMemoryWithRetry(MemoryType.ONHEAP, taskId, allocatedSize + requiredMemory);
     getUnsafe().copyMemory(this.memoryBlock.getBaseObject(), this.memoryBlock.getBaseOffset(),
@@ -114,7 +116,7 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
    *
    * @param indexRow
    */
-  public void addIndexRow(CarbonRowSchema[] schema, DataMapRow indexRow) throws MemoryException {
+  public void addIndexRow(CarbonRowSchema[] schema, IndexRow indexRow) {
     // First calculate the required memory to keep the row in unsafe
     int rowSize = indexRow.getTotalSizeInBytes();
     // Check whether allocated memory is sufficient or not.
@@ -149,7 +151,7 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
         case STRUCT:
           CarbonRowSchema[] childSchemas =
               ((CarbonRowSchema.StructCarbonRowSchema) schema[i]).getChildSchemas();
-          DataMapRow row = indexRow.getRow(i);
+          IndexRow row = indexRow.getRow(i);
           for (int j = 0; j < childSchemas.length; j++) {
             currentPosition = addToUnsafe(childSchemas[j], row, j, pointer, varColPosition);
             if (currentPosition > 0) {
@@ -175,7 +177,7 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
     pointers[rowCount++] = pointer;
   }
 
-  private int addToUnsafe(CarbonRowSchema schema, DataMapRow row, int index, int startOffset,
+  private int addToUnsafe(CarbonRowSchema schema, IndexRow row, int index, int startOffset,
       int varPosition) {
     switch (schema.getSchemaType()) {
       case FIXED:
@@ -231,10 +233,12 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
         getUnsafe().putInt(memoryBlock.getBaseObject(),
             memoryBlock.getBaseOffset() + startOffset + schema.getBytePosition(), varPosition);
         runningLength += 4;
-        getUnsafe().copyMemory(data, BYTE_ARRAY_OFFSET, memoryBlock.getBaseObject(),
-            memoryBlock.getBaseOffset() + startOffset + varPosition, data.length);
-        runningLength += data.length;
-        varPosition += data.length;
+        if (data != null) {
+          getUnsafe().copyMemory(data, BYTE_ARRAY_OFFSET, memoryBlock.getBaseObject(),
+                  memoryBlock.getBaseOffset() + startOffset + varPosition, data.length);
+          runningLength += data.length;
+          varPosition += data.length;
+        }
         return varPosition;
       default:
         throw new UnsupportedOperationException(
@@ -242,12 +246,12 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
     }
   }
 
-  public DataMapRow getDataMapRow(CarbonRowSchema[] schema, int index) {
+  public IndexRow getIndexRow(CarbonRowSchema[] schema, int index) {
     assert (index < rowCount);
-    return new UnsafeDataMapRow(schema, memoryBlock, pointers[index]);
+    return new UnsafeIndexRow(schema, memoryBlock, pointers[index]);
   }
 
-  public void finishWriting() throws MemoryException {
+  public void finishWriting() {
     if (runningLength < allocatedSize) {
       MemoryBlock allocate =
           UnsafeMemoryManager.allocateMemoryWithRetry(MemoryType.ONHEAP, taskId, runningLength);
@@ -279,4 +283,23 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
     return rowCount;
   }
 
+  public void serializeMemoryBlock() {
+    this.data = new byte[runningLength];
+    CarbonUnsafe.getUnsafe().copyMemory(memoryBlock.getBaseObject(),
+        memoryBlock.getBaseOffset(), data,
+        CarbonUnsafe.BYTE_ARRAY_OFFSET, data.length);
+    freeMemory();
+    isSerialized = true;
+  }
+
+  public void copyToMemoryBlock() {
+    this.memoryBlock =
+        UnsafeMemoryManager.allocateMemoryWithRetry(MemoryType.ONHEAP, taskId, this.data.length);
+    isMemoryFreed = false;
+    CarbonUnsafe.getUnsafe()
+        .copyMemory(data, CarbonUnsafe.BYTE_ARRAY_OFFSET, memoryBlock.getBaseObject(),
+            memoryBlock.getBaseOffset(), this.data.length);
+    isSerialized = false;
+    this.data = null;
+  }
 }

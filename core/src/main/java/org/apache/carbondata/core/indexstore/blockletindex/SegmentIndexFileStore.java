@@ -228,10 +228,8 @@ public class SegmentIndexFileStore {
    *
    * @param segmentPath
    * @return
-   * @throws IOException
    */
-  public Map<String, String> getMergeOrIndexFilesFromSegment(String segmentPath)
-      throws IOException {
+  public Map<String, String> getMergeOrIndexFilesFromSegment(String segmentPath) {
     CarbonFile[] carbonIndexFiles =
         getCarbonIndexFiles(segmentPath, FileFactory.getConfiguration());
     Map<String, String> indexFiles = new HashMap<>();
@@ -300,14 +298,12 @@ public class SegmentIndexFileStore {
   public void readIndexFile(CarbonFile indexFile) throws IOException {
     String indexFilePath = indexFile.getCanonicalPath();
     DataInputStream dataInputStream = FileFactory
-        .getDataInputStream(indexFilePath, FileFactory.getFileType(indexFilePath), configuration);
+        .getDataInputStream(indexFilePath, configuration);
     byte[] bytes = new byte[(int) indexFile.getSize()];
     try {
       dataInputStream.readFully(bytes);
       carbonIndexMap.put(indexFile.getName(), bytes);
-      carbonIndexMapWithFullPath.put(
-          indexFile.getParentFile().getAbsolutePath() + CarbonCommonConstants.FILE_SEPARATOR
-              + indexFile.getName(), bytes);
+      carbonIndexMapWithFullPath.put(indexFile.getAbsolutePath(), bytes);
     } finally {
       dataInputStream.close();
     }

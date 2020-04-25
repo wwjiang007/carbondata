@@ -21,6 +21,7 @@ CarbonData DML statements are documented here,which includes:
 
 * [LOAD DATA](#load-data)
 * [INSERT DATA](#insert-data-into-carbondata-table)
+* [INSERT DATA STAGE](#insert-data-into-carbondata-table-from-stage-input-files)
 * [Load Data Using Static Partition](#load-data-using-static-partition)
 * [Load Data Using Dynamic Partition](#load-data-using-dynamic-partition)
 * [UPDATE AND DELETE](#update-and-delete)
@@ -49,6 +50,7 @@ CarbonData DML statements are documented here,which includes:
 | ------------------------------------------------------- | ------------------------------------------------------------ |
 | [DELIMITER](#delimiter)                                 | Character used to separate the data in the input csv file    |
 | [QUOTECHAR](#quotechar)                                 | Character used to quote the data in the input csv file       |
+| [LINE_SEPARATOR](#line_separator)                       | Characters used to specify the line separator in the input csv file. If not provide, csv parser will detect it automatically. | 
 | [COMMENTCHAR](#commentchar)                             | Character used to comment the rows in the input csv file. Those rows will be skipped from processing |
 | [HEADER](#header)                                       | Whether the input csv files have header row                  |
 | [FILEHEADER](#fileheader)                               | If header is not present in the input csv, what is the column names to be used for data read from input csv |
@@ -58,12 +60,9 @@ CarbonData DML statements are documented here,which includes:
 | [SKIP_EMPTY_LINE](#skip_empty_line)                     | Whether empty lines in input csv file should be skipped or loaded as null row |
 | [COMPLEX_DELIMITER_LEVEL_1](#complex_delimiter_level_1) | Starting delimiter for complex type data in input csv file   |
 | [COMPLEX_DELIMITER_LEVEL_2](#complex_delimiter_level_2) | Ending delimiter for complex type data in input csv file     |
-| [ALL_DICTIONARY_PATH](#all_dictionary_path)             | Path to read the dictionary data from all columns            |
-| [COLUMNDICT](#columndict)                               | Path to read the dictionary data from for particular column  |
 | [DATEFORMAT](#dateformattimestampformat)                | Format of date in the input csv file                         |
 | [TIMESTAMPFORMAT](#dateformattimestampformat)           | Format of timestamp in the input csv file                    |
 | [SORT_COLUMN_BOUNDS](#sort-column-bounds)               | How to partition the sort columns to make the evenly distributed |
-| [SINGLE_PASS](#single_pass)                             | When to enable single pass data loading                      |
 | [BAD_RECORDS_LOGGER_ENABLE](#bad-records-handling)      | Whether to enable bad records logging                        |
 | [BAD_RECORD_PATH](#bad-records-handling)                | Bad records logging path. Useful when bad record logging is enabled |
 | [BAD_RECORDS_ACTION](#bad-records-handling)             | Behavior of data loading when bad record is found            |
@@ -86,6 +85,13 @@ CarbonData DML statements are documented here,which includes:
 
     ```
     OPTIONS('QUOTECHAR'='"')
+    ```
+
+  - ##### LINE_SEPARATOR:
+    Line separator Characters can be provided in the load command.
+
+    ```
+    OPTIONS('LINE_SEPARATOR'='\n')
     ```
 
   - ##### COMMENTCHAR:
@@ -117,7 +123,7 @@ CarbonData DML statements are documented here,which includes:
     Requirement: Sort Columns must be set while creating table. If Sort Columns is null, Sort Scope is always NO_SORT.
   
     ```
-    OPTIONS('SORT_SCOPE'='BATCH_SORT')
+    OPTIONS('SORT_SCOPE'='GLOBAL_SORT')
     ```
     
     Priority order for choosing Sort Scope is:
@@ -176,23 +182,6 @@ CarbonData DML statements are documented here,which includes:
     OPTIONS('COMPLEX_DELIMITER_LEVEL_3'='\003')
     ```
 
-  - ##### ALL_DICTIONARY_PATH:
-
-    All dictionary files path.
-
-    ```
-    OPTIONS('ALL_DICTIONARY_PATH'='/opt/alldictionary/data.dictionary')
-    ```
-
-  - ##### COLUMNDICT:
-
-    Dictionary file path for specified column.
-
-    ```
-    OPTIONS('COLUMNDICT'='column1:dictionaryFilePath1,column2:dictionaryFilePath2')
-    ```
-    **NOTE:** ALL_DICTIONARY_PATH and COLUMNDICT can't be used together.
-
   - ##### DATEFORMAT/TIMESTAMPFORMAT:
 
     Date and Timestamp format for specified column.
@@ -215,38 +204,9 @@ CarbonData DML statements are documented here,which includes:
     **NOTE:**
     * SORT_COLUMN_BOUNDS will be used only when the SORT_SCOPE is 'local_sort'.
     * Carbondata will use these bounds as ranges to process data concurrently during the final sort procedure. The records will be sorted and written out inside each partition. Since the partition is sorted, all records will be sorted.
-    * Since the actual order and literal order of the dictionary column are not necessarily the same, we do not recommend you to use this feature if the first sort column is 'dictionary_include'.
     * The option works better if your CPU usage during loading is low. If your current system CPU usage is high, better not to use this option. Besides, it depends on the user to specify the bounds. If user does not know the exactly bounds to make the data distributed evenly among the bounds, loading performance will still be better than before or at least the same as before.
     * Users can find more information about this option in the description of PR1953.
 
-  - ##### SINGLE_PASS:
-
-    Single Pass Loading enables single job to finish data loading with dictionary generation on the fly. It enhances performance in the scenarios where the subsequent data loading after initial load involves fewer incremental updates on the dictionary.
-
-  This option specifies whether to use single pass for loading data or not. By default this option is set to FALSE.
-
-   ```
-    OPTIONS('SINGLE_PASS'='TRUE')
-   ```
-
-   **NOTE:**
-   * If this option is set to TRUE then data loading will take less time.
-   * If this option is set to some invalid value other than TRUE or FALSE then it uses the default value.
-
-   Example:
-
-   ```
-   LOAD DATA inpath '/opt/rawdata/data.csv' INTO table carbontable
-   options('DELIMITER'=',', 'QUOTECHAR'='"','COMMENTCHAR'='#',
-   'HEADER'='false',
-   'FILEHEADER'='empno,empname,designation,doj,workgroupcategory,
-   workgroupcategoryname,deptno,deptname,projectcode,
-   projectjoindate,projectenddate,attendance,utilization,salary',
-   'MULTILINE'='true','ESCAPECHAR'='\','COMPLEX_DELIMITER_LEVEL_1'='\\\001',
-   'COMPLEX_DELIMITER_LEVEL_2'='\\\002',
-   'ALL_DICTIONARY_PATH'='/opt/alldictionary/data.dictionary',
-   'SINGLE_PASS'='TRUE')
-   ```
 
   - ##### BAD RECORDS HANDLING:
 
@@ -356,6 +316,53 @@ CarbonData DML statements are documented here,which includes:
   INSERT OVERWRITE TABLE table1 SELECT * FROM TABLE2
   ```
 
+### INSERT DATA INTO CARBONDATA TABLE From Stage Input Files
+
+  Stage input files are data files written by external application (such as Flink). These files 
+  are committed but not loaded into the table. 
+  
+  You can use this command to insert them into the table, so that making them visible for query.
+  
+  ```
+  INSERT INTO <CARBONDATA TABLE> STAGE OPTIONS(property_name=property_value, ...)
+  ```
+  **Supported Properties:**
+
+| Property                                                | Description                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------ |
+| [BATCH_FILE_COUNT](#batch_file_count)                   | The number of stage files per processing                     |
+| [BATCH_FILE_ORDER](#batch_file_order)                   | The order type of stage files in per processing                     |
+
+-
+  You can use the following options to load data:
+
+  - ##### BATCH_FILE_COUNT: 
+    The number of stage files per processing.
+
+    ``` 
+    OPTIONS('batch_file_count'='5')
+    ```
+
+  - ##### BATCH_FILE_ORDER: 
+    The order type of stage files in per processing, choices: ASC, DESC.
+    The default is ASC.
+    Stage files will order by the last modified time with the specified order type.
+
+    ``` 
+    OPTIONS('batch_file_order'='DESC')
+    ```
+
+  Examples:
+  ```
+  INSERT INTO table1 STAGE
+
+  INSERT INTO table1 STAGE OPTIONS('batch_file_count' = '5')
+  Note: This command use the default file order, will insert the earliest stage files into the table.
+
+  INSERT INTO table1 STAGE OPTIONS('batch_file_count' = '5', 'batch_file_order'='DESC')
+  Note: This command will insert the latest stage files into the table.
+  ```
+
 ### Load Data Using Static Partition 
 
   This command allows you to load data using static partition.
@@ -460,6 +467,37 @@ CarbonData DML statements are documented here,which includes:
 
   ```
   DELETE FROM carbontable WHERE column1 IN (SELECT column11 FROM sourceTable2 WHERE column1 = 'USA')
+  ```
+    
+### DELETE STAGE
+
+  This command allows us to delete the data files (stage data) which is already loaded into the table.
+  ```
+  DELETE FROM TABLE [db_name.]table_name STAGE OPTIONS(property_name=property_value, ...)
+  ```  
+  **Supported Properties:**
+
+| Property                                                | Description                                                 |
+| ------------------------------------------------------- | ----------------------------------------------------------- |
+| [retain_hour](#retain_hour)                             | Data file retain time in hours                              |
+
+-
+  You can use the following options to delete data:
+  - ##### retain_hour: 
+    Data file retain time in second, the command just delete overdue files only.
+
+    ``` 
+    OPTIONS('retain_hour'='1')
+    ```
+
+  Examples:
+
+  ```
+  DELETE FROM TABLE carbontable STAGE
+  ```
+
+  ```
+  DELETE FROM TABLE carbontable STAGE OPTIONS ('retain_hour'='1')
   ```
 
 ## COMPACTION

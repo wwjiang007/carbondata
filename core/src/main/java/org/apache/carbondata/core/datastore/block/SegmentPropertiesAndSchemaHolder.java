@@ -18,7 +18,6 @@
 package org.apache.carbondata.core.datastore.block;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -32,7 +31,6 @@ import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.indexstore.schema.CarbonRowSchema;
 import org.apache.carbondata.core.indexstore.schema.SchemaGenerator;
-import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
@@ -96,14 +94,13 @@ public class SegmentPropertiesAndSchemaHolder {
    *
    * @param carbonTable
    * @param columnsInTable
-   * @param columnCardinality
    * @param segmentId
    */
   public SegmentPropertiesWrapper addSegmentProperties(CarbonTable carbonTable,
-      List<ColumnSchema> columnsInTable, int[] columnCardinality, String segmentId) {
+      List<ColumnSchema> columnsInTable, String segmentId) {
     SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper segmentPropertiesWrapper =
         new SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper(carbonTable,
-            columnsInTable, columnCardinality);
+            columnsInTable);
     SegmentIdAndSegmentPropertiesIndexWrapper segmentIdSetAndIndexWrapper =
         this.segmentPropWrapperToSegmentSetMap.get(segmentPropertiesWrapper);
     if (null == segmentIdSetAndIndexWrapper) {
@@ -283,7 +280,6 @@ public class SegmentPropertiesAndSchemaHolder {
     private static final Object minMaxLock = new Object();
 
     private List<ColumnSchema> columnsInTable;
-    private int[] columnCardinality;
     private SegmentProperties segmentProperties;
     private List<CarbonColumn> minMaxCacheColumns;
     private CarbonTable carbonTable;
@@ -301,15 +297,17 @@ public class SegmentPropertiesAndSchemaHolder {
     private CarbonRowSchema[] fileFooterEntrySchemaForBlock;
     private CarbonRowSchema[] fileFooterEntrySchemaForBlocklet;
 
-    public SegmentPropertiesWrapper(CarbonTable carbonTable,
-        List<ColumnSchema> columnsInTable, int[] columnCardinality) {
+    public SegmentPropertiesWrapper(CarbonTable carbonTable, List<ColumnSchema> columnsInTable) {
       this.carbonTable = carbonTable;
       this.columnsInTable = columnsInTable;
-      this.columnCardinality = columnCardinality;
+    }
+
+    public CarbonTable getCarbonTable() {
+      return this.carbonTable;
     }
 
     public void initSegmentProperties() {
-      segmentProperties = new SegmentProperties(columnsInTable, columnCardinality);
+      segmentProperties = new SegmentProperties(columnsInTable);
     }
 
     public void addMinMaxColumns(CarbonTable carbonTable) {
@@ -343,8 +341,7 @@ public class SegmentPropertiesAndSchemaHolder {
           (SegmentPropertiesAndSchemaHolder.SegmentPropertiesWrapper) obj;
       return carbonTable.getAbsoluteTableIdentifier()
           .equals(other.carbonTable.getAbsoluteTableIdentifier()) && checkColumnSchemaEquality(
-          columnsInTable, other.columnsInTable) && Arrays
-          .equals(columnCardinality, other.columnCardinality);
+          columnsInTable, other.columnsInTable);
     }
 
     private boolean checkColumnSchemaEquality(List<ColumnSchema> obj1, List<ColumnSchema> obj2) {
@@ -379,8 +376,8 @@ public class SegmentPropertiesAndSchemaHolder {
         allColumnsHashCode = allColumnsHashCode + columnSchema.strictHashCode();
         builder.append(columnSchema.getColumnUniqueId()).append(",");
       }
-      return carbonTable.getAbsoluteTableIdentifier().hashCode() + allColumnsHashCode + Arrays
-          .hashCode(columnCardinality) + builder.toString().hashCode();
+      return carbonTable.getAbsoluteTableIdentifier().hashCode() + allColumnsHashCode +
+          builder.toString().hashCode();
     }
 
     public AbsoluteTableIdentifier getTableIdentifier() {
@@ -395,12 +392,8 @@ public class SegmentPropertiesAndSchemaHolder {
       return columnsInTable;
     }
 
-    public int[] getColumnCardinality() {
-      return columnCardinality;
-    }
-
     public CarbonRowSchema[] getTaskSummarySchemaForBlock(boolean storeBlockletCount,
-        boolean filePathToBeStored) throws MemoryException {
+        boolean filePathToBeStored) {
       if (null == taskSummarySchemaForBlock && filePathToBeStored) {
         synchronized (taskSchemaLock) {
           if (null == taskSummarySchemaForBlock) {
@@ -427,7 +420,7 @@ public class SegmentPropertiesAndSchemaHolder {
     }
 
     public CarbonRowSchema[] getTaskSummarySchemaForBlocklet(boolean storeBlockletCount,
-        boolean filePathToBeStored) throws MemoryException {
+        boolean filePathToBeStored) {
       if (null == taskSummarySchemaForBlocklet && filePathToBeStored) {
         synchronized (taskSchemaLock) {
           if (null == taskSummarySchemaForBlocklet) {

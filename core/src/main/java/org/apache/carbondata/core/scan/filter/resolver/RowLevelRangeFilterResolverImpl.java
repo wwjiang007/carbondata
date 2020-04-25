@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.SortedMap;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
@@ -29,7 +28,6 @@ import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionary
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
 import org.apache.carbondata.core.scan.expression.ColumnExpression;
@@ -76,15 +74,15 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
    */
   public byte[][] getFilterRangeValues(SegmentProperties segmentProperties) {
 
-    if (dimColEvaluatorInfoList.size() > 0 && null != dimColEvaluatorInfoList.get(0)
-        .getFilterValues() && !dimColEvaluatorInfoList.get(0).getDimension()
-        .hasEncoding(Encoding.DICTIONARY)) {
+    if (dimColEvaluatorInfoList.size() > 0 &&
+        null != dimColEvaluatorInfoList.get(0).getFilterValues() &&
+        dimColEvaluatorInfoList.get(0).getDimension().getDataType() != DataTypes.DATE) {
       List<byte[]> noDictFilterValuesList =
           dimColEvaluatorInfoList.get(0).getFilterValues().getNoDictionaryFilterValuesList();
       return noDictFilterValuesList.toArray((new byte[noDictFilterValuesList.size()][]));
-    } else if (dimColEvaluatorInfoList.size() > 0 && null != dimColEvaluatorInfoList.get(0)
-        .getFilterValues() && dimColEvaluatorInfoList.get(0).getDimension()
-        .hasEncoding(Encoding.DIRECT_DICTIONARY)) {
+    } else if (dimColEvaluatorInfoList.size() > 0 &&
+        null != dimColEvaluatorInfoList.get(0).getFilterValues() &&
+        dimColEvaluatorInfoList.get(0).getDimension().getDataType() == DataTypes.DATE) {
       CarbonDimension dimensionFromCurrentBlock = segmentProperties
           .getDimensionFromCurrentBlock(this.dimColEvaluatorInfoList.get(0).getDimension());
       if (null != dimensionFromCurrentBlock) {
@@ -93,9 +91,9 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
       } else {
         return FilterUtil.getKeyArray(this.dimColEvaluatorInfoList.get(0).getFilterValues(), false);
       }
-    } else if (dimColEvaluatorInfoList.size() > 0 && null != dimColEvaluatorInfoList.get(0)
-        .getFilterValues() && dimColEvaluatorInfoList.get(0).getDimension()
-        .hasEncoding(Encoding.DICTIONARY)) {
+    } else if (dimColEvaluatorInfoList.size() > 0 &&
+        null != dimColEvaluatorInfoList.get(0).getFilterValues() &&
+        dimColEvaluatorInfoList.get(0).getDimension().getDataType() == DataTypes.DATE) {
       CarbonDimension dimensionFromCurrentBlock = segmentProperties
           .getDimensionFromCurrentBlock(this.dimColEvaluatorInfoList.get(0).getDimension());
       if (null != dimensionFromCurrentBlock) {
@@ -116,53 +114,6 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
       return measureFilterValuesList.toArray((new Object[measureFilterValuesList.size()]));
     }
     return null;
-  }
-
-  /**
-   * method will get the start key based on the filter surrogates
-   *
-   * @return start IndexKey
-   */
-  public void getStartKey(SegmentProperties segmentProperties, long[] startKey,
-      SortedMap<Integer, byte[]> noDictStartKeys, List<long[]> startKeyList) {
-    switch (exp.getFilterExpressionType()) {
-      case GREATERTHAN:
-      case GREATERTHAN_EQUALTO:
-        if (dimColEvaluatorInfoList.size() > 0) {
-          FilterUtil
-              .getStartKey(dimColEvaluatorInfoList.get(0).getDimensionResolvedFilterInstance(),
-                  segmentProperties, startKey, startKeyList);
-          FilterUtil.getStartKeyForNoDictionaryDimension(dimColEvaluatorInfoList.get(0),
-              segmentProperties, noDictStartKeys);
-        }
-        break;
-      default:
-        //do nothing
-    }
-  }
-
-  /**
-   * method will get the start key based on the filter surrogates
-   *
-   * @return end IndexKey
-   */
-  @Override
-  public void getEndKey(SegmentProperties segmentProperties, long[] endKeys,
-      SortedMap<Integer, byte[]> noDicEndKeys, List<long[]> endKeyList) {
-    switch (exp.getFilterExpressionType()) {
-      case LESSTHAN:
-      case LESSTHAN_EQUALTO:
-        if (dimColEvaluatorInfoList.size() > 0) {
-          FilterUtil.getEndKey(dimColEvaluatorInfoList.get(0).getDimensionResolvedFilterInstance(),
-              endKeys, segmentProperties, endKeyList);
-          FilterUtil
-              .getEndKeyForNoDictionaryDimension(dimColEvaluatorInfoList.get(0), segmentProperties,
-                  noDicEndKeys);
-        }
-        break;
-      default:
-        //do nothing
-    }
   }
 
   private List<byte[]> getNoDictionaryRangeValues() {
@@ -239,7 +190,7 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
    * Method which will resolve the filter expression by converting the filter
    * member to its assigned dictionary values.
    */
-  public void resolve(AbsoluteTableIdentifier absoluteTableIdentifier)
+  public void resolve()
       throws FilterUnsupportedException {
     DimColumnResolvedFilterInfo dimColumnEvaluatorInfo = null;
     MeasureColumnResolvedFilterInfo msrColumnEvalutorInfo = null;
@@ -255,18 +206,11 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
           dimColumnEvaluatorInfo.setRowIndex(index++);
           dimColumnEvaluatorInfo.setDimension(columnExpression.getDimension());
           dimColumnEvaluatorInfo.setDimensionExistsInCurrentSilce(false);
-          if (columnExpression.getDimension().hasEncoding(Encoding.DIRECT_DICTIONARY)) {
+          if (columnExpression.getDimension().getDataType() == DataTypes.DATE) {
             if (!isIncludeFilter) {
               filterInfo.setExcludeFilterList(getDirectSurrogateValues(columnExpression));
             } else {
               filterInfo.setFilterList(getDirectSurrogateValues(columnExpression));
-            }
-          } else if (columnExpression.getDimension().hasEncoding(Encoding.DICTIONARY)
-              && !columnExpression.getDimension().hasEncoding(Encoding.DIRECT_DICTIONARY)) {
-            if (!isIncludeFilter) {
-              filterInfo.setExcludeFilterList(getSurrogateValues());
-            } else {
-              filterInfo.setFilterList(getSurrogateValues());
             }
           } else {
             filterInfo.setFilterListForNoDictionaryCols(getNoDictionaryRangeValues());

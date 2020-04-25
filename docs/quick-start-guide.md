@@ -39,6 +39,7 @@ This tutorial provides a quick introduction to using CarbonData. To follow along
 CarbonData can be integrated with Spark,Presto and Hive execution engines. The below documentation guides on Installing and Configuring with these execution engines.
 
 #### Spark
+[Installing and Configuring CarbonData to run locally with Spark SQL CLI (version: 2.3+)](#installing-and-configuring-carbondata-to-run-locally-with-spark-sql)
 
 [Installing and Configuring CarbonData to run locally with Spark Shell](#installing-and-configuring-carbondata-to-run-locally-with-spark-shell)
 
@@ -65,12 +66,64 @@ CarbonData can be integrated with Spark,Presto and Hive execution engines. The b
 #### Alluxio
 [CarbonData supports read and write with Alluxio](./alluxio-guide.md)
 
+## Installing and Configuring CarbonData to run locally with Spark SQL CLI (version: 2.3+)
+
+In Spark SQL CLI, it use CarbonExtensions to customize the SparkSession with CarbonData's parser, analyzer, optimizer and physical planning strategy rules in Spark.
+To enable CarbonExtensions, we need to add the following configuration.
+
+|Key|Value|
+|---|---|
+|spark.sql.extensions|org.apache.spark.sql.CarbonExtensions| 
+
+Start Spark SQL CLI by running the following command in the Spark directory:
+
+```
+./bin/spark-sql --conf spark.sql.extensions=org.apache.spark.sql.CarbonExtensions --jars <carbondata assembly jar path>
+```
+###### Creating a Table
+
+```
+CREATE TABLE IF NOT EXISTS test_table (
+  id string,
+  name string,
+  city string,
+  age Int)
+STORED AS carbondata;
+```
+**NOTE**: CarbonExtensions only support "STORED AS carbondata" and "USING carbondata"
+
+###### Loading Data to a Table
+
+```
+LOAD DATA INPATH '/path/to/sample.csv' INTO TABLE test_table;
+```
+
+```
+insert into table test_table select '1', 'name1', 'city1', 1;
+```
+
+**NOTE**: Please provide the real file path of `sample.csv` for the above script. 
+If you get "tablestatus.lock" issue, please refer to [FAQ](faq.md)
+
+###### Query Data from a Table
+
+```
+SELECT * FROM test_table;
+```
+
+```
+SELECT city, avg(age), sum(age)
+FROM test_table
+GROUP BY city;
+```
+
 ## Installing and Configuring CarbonData to run locally with Spark Shell
 
 Apache Spark Shell provides a simple way to learn the API, as well as a powerful tool to analyze data interactively. Please visit [Apache Spark Documentation](http://spark.apache.org/docs/latest/) for more details on Spark shell.
 
 #### Basics
 
+###### Option 1: Using CarbonSession
 Start Spark shell by running the following command in the Spark directory:
 
 ```
@@ -99,6 +152,27 @@ val carbon = SparkSession.builder().config(sc.getConf).getOrCreateCarbonSession(
    `SparkSession.builder().config(sc.getConf).getOrCreateCarbonSession("<carbon_store_path>", "<local metastore path>")`.
  - Data storage location can be specified by `<carbon_store_path>`, like `/carbon/data/store`, `hdfs://localhost:9000/carbon/data/store` or `s3a://carbon/data/store`.
 
+###### Option 2: Using SparkSession with CarbonExtensions
+
+Start Spark shell by running the following command in the Spark directory:
+
+```
+./bin/spark-shell --conf spark.sql.extensions=org.apache.spark.sql.CarbonExtensions --jars <carbondata assembly jar path>
+```
+**NOTE** 
+ - In this flow, we can use the built-in SparkSession `spark` instead of `carbon`.
+   We also can create a new SparkSession instead of the built-in SparkSession `spark` if need. 
+   It need to add "org.apache.spark.sql.CarbonExtensions" into spark configuration "spark.sql.extensions". 
+   ```
+   SparkSession newSpark = SparkSession
+     .builder()
+     .config(sc.getConf)
+     .enableHiveSupport
+     .config("spark.sql.extensions","org.apache.spark.sql.CarbonExtensions")
+     .getOrCreate()
+   ```
+ - Data storage location can be specified by "spark.sql.warehouse.dir".
+
 #### Executing Queries
 
 ###### Creating a Table
@@ -114,6 +188,17 @@ carbon.sql(
               | STORED AS carbondata
            """.stripMargin)
 ```
+**NOTE**: 
+The following table list all supported syntax:
+
+|create table |SparkSession with CarbonExtensions | CarbonSession|
+|---|---|---|
+| STORED AS carbondata|yes|yes|
+| USING carbondata|yes|yes|
+| STORED BY 'carbondata'|no|yes|
+| STORED BY 'org.apache.carbondata.format'|no|yes|
+
+We suggest to use CarbonExtensions instead of CarbonSession.
 
 ###### Loading Data to a Table
 
@@ -320,146 +405,14 @@ Example
 either with [Spark](#installing-and-configuring-carbondata-to-run-locally-with-spark-shell) or [SDK](./sdk-guide.md) or [C++ SDK](./csdk-guide.md).
 Once the table is created,it can be queried from Presto.**
 
+Please refer the presto guide linked below.
 
-### Installing Presto
+prestodb guide  - [prestodb](./prestodb-guide.md)
 
-1. Download the 0.210 version of Presto using:
-`wget https://repo1.maven.org/maven2/com/facebook/presto/presto-server/0.210/presto-server-0.210.tar.gz`
+prestosql guide - [prestosql](./prestosql-guide.md)
 
-2. Extract Presto tar file: `tar zxvf presto-server-0.210.tar.gz`.
-
-3. Download the Presto CLI for the coordinator and name it presto.
-
-```
-wget https://repo1.maven.org/maven2/com/facebook/presto/presto-cli/0.210/presto-cli-0.210-executable.jar
-
-mv presto-cli-0.210-executable.jar presto
-
-chmod +x presto
-```
-
-### Create Configuration Files
-
-1. Create `etc` folder in presto-server-0.210 directory.
-2. Create `config.properties`, `jvm.config`, `log.properties`, and `node.properties` files.
-3. Install uuid to generate a node.id.
-
-  ```
-  sudo apt-get install uuid
-
-  uuid
-  ```
-
-
-##### Contents of your node.properties file
-
-```
-node.environment=production
-node.id=<generated uuid>
-node.data-dir=/home/ubuntu/data
-```
-
-##### Contents of your jvm.config file
-
-```
--server
--Xmx16G
--XX:+UseG1GC
--XX:G1HeapRegionSize=32M
--XX:+UseGCOverheadLimit
--XX:+ExplicitGCInvokesConcurrent
--XX:+HeapDumpOnOutOfMemoryError
--XX:OnOutOfMemoryError=kill -9 %p
-```
-
-##### Contents of your log.properties file
-
-```
-com.facebook.presto=INFO
-```
-
- The default minimum level is `INFO`. There are four levels: `DEBUG`, `INFO`, `WARN` and `ERROR`.
-
-### Coordinator Configurations
-
-##### Contents of your config.properties
-
-```
-coordinator=true
-node-scheduler.include-coordinator=false
-http-server.http.port=8086
-query.max-memory=5GB
-query.max-total-memory-per-node=5GB
-query.max-memory-per-node=3GB
-memory.heap-headroom-per-node=1GB
-discovery-server.enabled=true
-discovery.uri=http://localhost:8086
-task.max-worker-threads=4
-optimizer.dictionary-aggregation=true
-optimizer.optimize-hash-generation = false
-```
-The options `node-scheduler.include-coordinator=false` and `coordinator=true` indicate that the node is the coordinator and tells the coordinator not to do any of the computation work itself and to use the workers.
-
-**Note**: It is recommended to set `query.max-memory-per-node` to half of the JVM config max memory, though the workload is highly concurrent, lower value for `query.max-memory-per-node` is to be used.
-
-Also relation between below two configuration-properties should be like:
-If, `query.max-memory-per-node=30GB`
-Then, `query.max-memory=<30GB * number of nodes>`.
-
-### Worker Configurations
-
-##### Contents of your config.properties
-
-```
-coordinator=false
-http-server.http.port=8086
-query.max-memory=5GB
-query.max-memory-per-node=2GB
-discovery.uri=<coordinator_ip>:8086
-```
-
-**Note**: `jvm.config` and `node.properties` files are same for all the nodes (worker + coordinator). All the nodes should have different `node.id`.(generated by uuid command).
-
-### Catalog Configurations
-
-1. Create a folder named `catalog` in etc directory of presto on all the nodes of the cluster including the coordinator.
-
-##### Configuring Carbondata in Presto
-1. Create a file named `carbondata.properties` in the `catalog` folder and set the required properties on all the nodes.
-
-### Add Plugins
-
-1. Create a directory named `carbondata` in plugin directory of presto.
-2. Copy `carbondata` jars to `plugin/carbondata` directory on all nodes.
-
-### Start Presto Server on all nodes
-
-```
-./presto-server-0.210/bin/launcher start
-```
-To run it as a background process.
-
-```
-./presto-server-0.210/bin/launcher run
-```
-To run it in foreground.
-
-### Start Presto CLI
-
-```
-./presto
-```
-To connect to carbondata catalog use the following command:
-
-```
-./presto --server <coordinator_ip>:8086 --catalog carbondata --schema <schema_name>
-```
-Execute the following command to ensure the workers are connected.
-
-```
-select * from system.runtime.nodes;
-```
-Now you can use the Presto CLI on the coordinator to query data sources in the catalog using the Presto workers.
+Once installed the presto with carbonData as per above guide,
+you can use the Presto CLI on the coordinator to query data sources in the catalog using the Presto workers.
 
 List the schemas(databases) available
 

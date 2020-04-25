@@ -24,19 +24,19 @@ import java.util.{Locale, Properties}
 import scala.collection.JavaConversions._
 import scala.util.{Failure, Success, Try}
 
-import com.facebook.presto.jdbc.{PrestoConnection, PrestoStatement}
+import io.prestosql.jdbc.{PrestoConnection, PrestoStatement}
 import org.apache.spark.sql.carbondata.execution.datasources.CarbonFileIndexReplaceRule
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.sql.execution.command.LoadDataCommand
-import org.apache.spark.sql.hive.CarbonSessionCatalog
 import org.apache.spark.sql.test.{ResourceRegisterAndCopier, TestQueryExecutor}
-import org.apache.spark.sql.{DataFrame, Row, SQLContext}
+import org.apache.spark.sql.{CarbonToSparkAdapter, DataFrame, Row, SQLContext}
 import org.scalatest.Suite
 
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.commons.lang.StringUtils
+
 
 class QueryTest extends PlanTest with Suite {
 
@@ -88,14 +88,13 @@ class QueryTest extends PlanTest with Suite {
 
   protected def checkAnswer(carbon: String, hive: String, uniqueIdentifier: String): Unit = {
     val path = TestQueryExecutor.hiveresultpath + "/" + uniqueIdentifier
-    if (FileFactory.isFileExist(path, FileFactory.getFileType(path))) {
-      val objinp = new ObjectInputStream(FileFactory
-        .getDataInputStream(path, FileFactory.getFileType(path)))
+    if (FileFactory.isFileExist(path)) {
+      val objinp = new ObjectInputStream(FileFactory.getDataInputStream(path))
       val rows = objinp.readObject().asInstanceOf[Array[Row]]
       objinp.close()
       QueryTest.checkAnswer(sql(carbon), rows) match {
         case Some(errorMessage) => {
-          FileFactory.deleteFile(path, FileFactory.getFileType(path))
+          FileFactory.deleteFile(path)
           writeAndCheckAnswer(carbon, hive, path)
         }
         case None =>
@@ -107,8 +106,7 @@ class QueryTest extends PlanTest with Suite {
 
   private def writeAndCheckAnswer(carbon: String, hive: String, path: String): Unit = {
     val rows = sql(hive).collect()
-    val obj = new ObjectOutputStream(FileFactory.getDataOutputStream(path, FileFactory
-      .getFileType(path)))
+    val obj = new ObjectOutputStream(FileFactory.getDataOutputStream(path))
     obj.writeObject(rows)
     obj.close()
     checkAnswer(sql(carbon), rows)
@@ -143,8 +141,7 @@ class QueryTest extends PlanTest with Suite {
 
   val resourcesPath = TestQueryExecutor.resourcesPath
 
-  val hiveClient = sqlContext.sparkSession.sessionState.catalog.asInstanceOf[CarbonSessionCatalog]
-    .getClient();
+  val hiveClient = CarbonToSparkAdapter.getHiveExternalCatalog(sqlContext.sparkSession).client
 }
 
 object QueryTest {
@@ -261,7 +258,7 @@ object QueryTest {
      * @return
      */
     private def createJdbcConnection(dbName: String, url: String) = {
-      val JDBC_DRIVER = "com.facebook.presto.jdbc.PrestoDriver"
+      val JDBC_DRIVER = "io.prestosql.jdbc.PrestoDriver"
       var DB_URL : String = null
       if (StringUtils.isEmpty(dbName)) {
         DB_URL = "jdbc:presto://"+ url + "/carbondata/default"

@@ -25,9 +25,8 @@ import java.util.List;
 
 import org.apache.carbondata.core.datastore.ColumnType;
 import org.apache.carbondata.core.datastore.row.ComplexColumnInfo;
-import org.apache.carbondata.core.devapi.DictionaryGenerationException;
 import org.apache.carbondata.core.keygenerator.KeyGenException;
-import org.apache.carbondata.core.keygenerator.KeyGenerator;
+import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.DataTypeUtil;
 import org.apache.carbondata.processing.loading.complexobjects.ArrayObject;
 import org.apache.carbondata.processing.loading.converter.BadRecordLogHolder;
@@ -63,9 +62,9 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
   private int outputArrayIndex;
 
   /**
-   * Dictionary column
+   * True if this is for dictionary column
    */
-  private boolean isDictionaryColumn;
+  private boolean isDictionary;
 
   /**
    * current data counter
@@ -100,14 +99,14 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
    * @param name
    * @param parentName
    * @param columnId
-   * @param isDictionaryColumn
+   * @param isDictionary
    */
   public ArrayDataType(String name, String parentName, String columnId,
-      Boolean isDictionaryColumn) {
+      Boolean isDictionary) {
     this.name = name;
     this.parentName = parentName;
     this.columnId = columnId;
-    this.isDictionaryColumn = isDictionaryColumn;
+    this.isDictionary = isDictionary;
   }
 
   /*
@@ -159,14 +158,6 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
   }
 
   /*
-   * return surrogate index
-   */
-  @Override
-  public int getSurrogateIndex() {
-    return 0;
-  }
-
-  /*
    * set surrogate index
    */
   @Override
@@ -176,46 +167,37 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
 
   @Override
   public boolean getIsColumnDictionary() {
-    return isDictionaryColumn;
+    return isDictionary;
   }
 
   @Override
   public void writeByteArray(ArrayObject input, DataOutputStream dataOutputStream,
-      BadRecordLogHolder logHolder) throws IOException, DictionaryGenerationException {
+      BadRecordLogHolder logHolder, Boolean isWithoutConverter) throws IOException {
     if (input == null) {
       dataOutputStream.writeInt(1);
-      children.writeByteArray(null, dataOutputStream, logHolder);
+      children.writeByteArray(null, dataOutputStream, logHolder, isWithoutConverter);
     } else {
       Object[] data = input.getData();
       dataOutputStream.writeInt(data.length);
       for (Object eachInput : data) {
-        children.writeByteArray(eachInput, dataOutputStream, logHolder);
+        children.writeByteArray(eachInput, dataOutputStream, logHolder, isWithoutConverter);
       }
     }
   }
 
   @Override
-  public void fillCardinality(List<Integer> dimCardWithComplex) {
-    if (this.getIsColumnDictionary()) {
-      dimCardWithComplex.add(0);
-      children.fillCardinality(dimCardWithComplex);
-    }
-  }
-
-  @Override
-  public void parseComplexValue(ByteBuffer byteArrayInput, DataOutputStream dataOutputStream,
-      KeyGenerator[] generator)
+  public void parseComplexValue(ByteBuffer byteArrayInput, DataOutputStream dataOutputStream)
       throws IOException, KeyGenException {
     int dataLength = byteArrayInput.getInt();
 
     dataOutputStream.writeInt(dataLength);
     if (children instanceof PrimitiveDataType) {
       if (children.getIsColumnDictionary()) {
-        dataOutputStream.writeInt(generator[children.getSurrogateIndex()].getKeySizeInBytes());
+        dataOutputStream.writeInt(ByteUtil.dateBytesSize());
       }
     }
     for (int i = 0; i < dataLength; i++) {
-      children.parseComplexValue(byteArrayInput, dataOutputStream, generator);
+      children.parseComplexValue(byteArrayInput, dataOutputStream);
     }
   }
 
@@ -283,34 +265,6 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
   @Override
   public int getDataCounter() {
     return this.dataCounter;
-  }
-
-  /*
-   * fill agg key blocks
-   */
-  @Override
-  public void fillAggKeyBlock(List<Boolean> aggKeyBlockWithComplex, boolean[] aggKeyBlock) {
-    aggKeyBlockWithComplex.add(false);
-    children.fillAggKeyBlock(aggKeyBlockWithComplex, aggKeyBlock);
-  }
-
-  /*
-   * fill key size
-   */
-  @Override
-  public void fillBlockKeySize(List<Integer> blockKeySizeWithComplex, int[] primitiveBlockKeySize) {
-    blockKeySizeWithComplex.add(8);
-    children.fillBlockKeySize(blockKeySizeWithComplex, primitiveBlockKeySize);
-  }
-
-  /*
-   * fill cardinality
-   */
-  @Override
-  public void fillCardinalityAfterDataLoad(List<Integer> dimCardWithComplex,
-      int[] maxSurrogateKeyArray) {
-    dimCardWithComplex.add(0);
-    children.fillCardinalityAfterDataLoad(dimCardWithComplex, maxSurrogateKeyArray);
   }
 
   @Override

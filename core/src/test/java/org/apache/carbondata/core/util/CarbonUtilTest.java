@@ -30,15 +30,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.carbondata.core.datamap.Segment;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.datastore.chunk.impl.FixedLengthDimensionColumnPage;
 import org.apache.carbondata.core.datastore.filesystem.LocalCarbonFile;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.metadata.ColumnarFormatVersion;
-import org.apache.carbondata.core.metadata.ValueEncoderMeta;
 import org.apache.carbondata.core.metadata.blocklet.DataFileFooter;
-import org.apache.carbondata.core.metadata.blocklet.datachunk.DataChunk;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
@@ -289,8 +287,8 @@ public class CarbonUtilTest {
   }
 
   @Test public void testToUnescapeChar() {
-    String[] input = { "\\001", "\\t", "\\r", "\\b", "\\n", "\\f" };
-    String[] output = { "\001", "\t", "\r", "\b", "\n", "\f" };
+    String[] input = { "\\001", "\\t", "\\r", "\\b", "\\n", "\\f", "\\r\\n", "\\\\" };
+    String[] output = { "\001", "\t", "\r", "\b", "\n", "\f", "\r\n", "\\" };
     for (int i = 0; i < input.length; i++) {
       assertEquals(CarbonUtil.unescapeChar(input[i]), output[i]);
     }
@@ -493,58 +491,6 @@ public class CarbonUtilTest {
     assertTrue(!DataTypes.DATE.isComplexType());
   }
 
-  @Test public void testToGetDictionaryEncodingArray() {
-    ColumnSchema column1Schema = new ColumnSchema();
-    ColumnSchema column2Schema = new ColumnSchema();
-    column1Schema.setColumnName("Column1");
-    List<Encoding> encoding = new ArrayList<>();
-    encoding.add(Encoding.DICTIONARY);
-    column1Schema.setEncodingList(encoding);
-    ProjectionDimension
-        column1 = new ProjectionDimension(new CarbonDimension(column1Schema, 1, 1, 1));
-
-    column2Schema.setColumnName("Column2");
-    List<Encoding> encoding2 = new ArrayList<>();
-    encoding2.add(Encoding.DELTA);
-    column2Schema.setEncodingList(encoding2);
-    ProjectionDimension
-        column2 = new ProjectionDimension(new CarbonDimension(column2Schema, 1, 1, 1));
-
-    ProjectionDimension[] queryDimensions = { column1, column2 };
-
-    boolean[] dictionaryEncoding = CarbonUtil.getDictionaryEncodingArray(queryDimensions);
-    boolean[] expectedDictionaryEncoding = { true, false };
-    for (int i = 0; i < dictionaryEncoding.length; i++) {
-      assertEquals(dictionaryEncoding[i], expectedDictionaryEncoding[i]);
-    }
-  }
-
-  @Test public void testToGetDirectDictionaryEncodingArray() {
-    ColumnSchema column1Schema = new ColumnSchema();
-    ColumnSchema column2Schema = new ColumnSchema();
-    column1Schema.setColumnName("Column1");
-    List<Encoding> encoding = new ArrayList<>();
-    encoding.add(Encoding.DIRECT_DICTIONARY);
-    column1Schema.setEncodingList(encoding);
-    ProjectionDimension
-        column1 = new ProjectionDimension(new CarbonDimension(column1Schema, 1, 1, 1));
-
-    column2Schema.setColumnName("Column2");
-    List<Encoding> encoding2 = new ArrayList<>();
-    encoding2.add(Encoding.DELTA);
-    column2Schema.setEncodingList(encoding2);
-    ProjectionDimension
-        column2 = new ProjectionDimension(new CarbonDimension(column2Schema, 1, 1, 1));
-
-    ProjectionDimension[] queryDimensions = { column1, column2 };
-
-    boolean[] dictionaryEncoding = CarbonUtil.getDirectDictionaryEncodingArray(queryDimensions);
-    boolean[] expectedDictionaryEncoding = { true, false };
-    for (int i = 0; i < dictionaryEncoding.length; i++) {
-      assertEquals(dictionaryEncoding[i], expectedDictionaryEncoding[i]);
-    }
-  }
-
   @Test public void testToGetComplexDataTypeArray() {
     ColumnSchema column1Schema = new ColumnSchema();
     ColumnSchema column2Schema = new ColumnSchema();
@@ -568,25 +514,25 @@ public class CarbonUtilTest {
   }
 
   @Test public void testToReadMetadataFile() throws IOException {
-    new MockUp<DataFileFooterConverter>() {
+    new MockUp<DataFileFooterConverterV3>() {
       @SuppressWarnings("unused") @Mock
       public DataFileFooter readDataFileFooter(TableBlockInfo info) {
         DataFileFooter fileFooter = new DataFileFooter();
-        fileFooter.setVersionId(ColumnarFormatVersion.V1);
+        fileFooter.setVersionId(ColumnarFormatVersion.V3);
         return fileFooter;
       }
     };
     TableBlockInfo info =
-        new TableBlockInfo("file:/", 1, "0", new String[0], 1, ColumnarFormatVersion.V1, null);
+        new TableBlockInfo("file:/", 1, "0", new String[0], 1, ColumnarFormatVersion.V3, null);
 
-    assertEquals(CarbonUtil.readMetadataFile(info).getVersionId().number(), 1);
+    assertEquals(CarbonUtil.readMetadataFile(info).getVersionId().number(), 3);
   }
 
   @Test(expected = IOException.class)
   public void testToReadMetadataFileWithException()
       throws Exception {
     TableBlockInfo info =
-        new TableBlockInfo("file:/", 1, "0", new String[0], 1, ColumnarFormatVersion.V1, null);
+        new TableBlockInfo("file:/", 1, "0", new String[0], 1, ColumnarFormatVersion.V3, null);
     CarbonUtil.readMetadataFile(info);
   }
 
@@ -600,26 +546,6 @@ public class CarbonUtilTest {
     carbonDimension.add(new CarbonDimension(column2Schema, 2, 1, 1));
     assertEquals(CarbonUtil.findDimension(carbonDimension, "Column1"),
         new CarbonDimension(column1Schema, 1, 1, 1));
-  }
-
-  @Test public void testToGetFormattedCardinality() {
-    ColumnSchema column1Schema = new ColumnSchema();
-    ColumnSchema column2Schema = new ColumnSchema();
-    List<Encoding> encoding = new ArrayList<>();
-    encoding.add(Encoding.DICTIONARY);
-    List<Encoding> encoding2 = new ArrayList<>();
-    encoding2.add(Encoding.DIRECT_DICTIONARY);
-    column1Schema.setEncodingList(encoding);
-    column2Schema.setEncodingList(encoding2);
-    List<ColumnSchema> columnSchemas = new ArrayList<>();
-    columnSchemas.add(column1Schema);
-    columnSchemas.add(column2Schema);
-    int[] columnCardinality = { 1, 5 };
-    int[] result = CarbonUtil.getFormattedCardinality(columnCardinality, columnSchemas);
-    int[] expectedResult = { 1, 5 };
-    for (int i = 0; i < result.length; i++) {
-      assertEquals(result[i], expectedResult[i]);
-    }
   }
 
   @Test public void testToGetColumnSchemaList() {
@@ -656,7 +582,7 @@ public class CarbonUtilTest {
   public void testToReadHeaderWithFileNotFoundException() throws IOException {
     new MockUp<FileFactory>() {
       @SuppressWarnings("unused") @Mock
-      public DataInputStream getDataInputStream(String path, FileFactory.FileType fileType)
+      public DataInputStream getDataInputStream(String path)
           throws FileNotFoundException {
         throw new FileNotFoundException();
       }
@@ -669,7 +595,7 @@ public class CarbonUtilTest {
   public void testToReadHeaderWithIOException() throws IOException {
     new MockUp<FileFactory>() {
       @SuppressWarnings("unused") @Mock
-      public DataInputStream getDataInputStream(String path, FileFactory.FileType fileType)
+      public DataInputStream getDataInputStream(String path)
           throws IOException {
         throw new IOException();
       }
@@ -704,27 +630,6 @@ public class CarbonUtilTest {
     assertEquals(a, 257);
   }
 
-  @Test public void testToGetValueCompressionModel() {
-    List<DataChunk> dataChunkList = new ArrayList<>();
-    DataChunk dataChunk = new DataChunk();
-
-    List<Encoding> encodingList = new ArrayList<>();
-    encodingList.add(Encoding.DELTA);
-    dataChunk.setEncodingList(encodingList);
-
-    List<ValueEncoderMeta> valueEncoderMetas = new ArrayList<>();
-    ValueEncoderMeta valueEncoderMeta = new ValueEncoderMeta();
-    valueEncoderMeta.setMaxValue(5.0);
-    valueEncoderMeta.setMinValue(1.0);
-    valueEncoderMeta.setUniqueValue(2.0);
-    valueEncoderMeta.setType('n');
-    valueEncoderMeta.setDataTypeSelected((byte) 'v');
-    valueEncoderMetas.add(valueEncoderMeta);
-    dataChunk.setValueEncoderMeta(valueEncoderMetas);
-    dataChunkList.add(dataChunk);
-    assertEquals(1, dataChunkList.get(0).getValueEncoderMeta().size());
-  }
-
   @Test public void testToGetDictionaryChunkSize() {
     new MockUp<CarbonProperties>() {
       @SuppressWarnings("unused") @Mock public CarbonProperties getInstance()
@@ -755,8 +660,10 @@ public class CarbonUtilTest {
     ColumnSchema column2Schema = new ColumnSchema();
     ColumnSchema column3Schema = new ColumnSchema();
     column1Schema.setColumnName("Column1");
+    column1Schema.setDataType(DataTypes.DATE);
     column1Schema.setEncodingList(Arrays.asList(Encoding.DELTA, Encoding.DICTIONARY));
     column2Schema.setColumnName("Column2");
+    column2Schema.setDataType(DataTypes.DATE);
     column2Schema.setEncodingList(Arrays.asList(Encoding.DELTA, Encoding.DICTIONARY));
     column3Schema.setColumnName("Column3");
     column3Schema.setEncodingList(Arrays.asList(Encoding.DELTA, Encoding.INVERTED_INDEX));

@@ -78,17 +78,17 @@ public class ExtendedBlockletWrapper implements Writable, Serializable {
     // executor to driver, in case of any failure data will send through network
     if (bytes.length > serializeAllowedSize && isWriteToFile) {
       final String fileName = UUID.randomUUID().toString();
-      String folderPath = CarbonUtil.getIndexServerTempPath(tablePath, queryId);
+      String folderPath = CarbonUtil.getIndexServerTempPath()
+              + CarbonCommonConstants.FILE_SEPARATOR + queryId;
       try {
         final CarbonFile carbonFile = FileFactory.getCarbonFile(folderPath);
         boolean isFolderExists = true;
-        if (!carbonFile.isFileExist(folderPath)) {
+        if (!carbonFile.isFileExist()) {
           LOGGER.warn("Folder:" + folderPath + "doesn't exists, data will be send through netwrok");
           isFolderExists = false;
         }
         if (isFolderExists) {
           stream = FileFactory.getDataOutputStream(folderPath + "/" + fileName,
-              FileFactory.getFileType(folderPath),
                   BUFFER_SIZE, BLOCK_SIZE, (short) 1);
           writeBlockletToStream(stream, bytes, uniqueLocations, extendedBlockletList);
           this.dataSize = stream.size();
@@ -125,7 +125,8 @@ public class ExtendedBlockletWrapper implements Writable, Serializable {
         extendedBlocklet.setFilePath(extendedBlocklet.getFilePath().replace(tablePath, ""));
         extendedBlocklet.serializeData(stream, uniqueLocations, isCountJob);
       }
-      return new SnappyCompressor().compressByte(bos.toByteArray());
+      byte[] input = bos.toByteArray();
+      return new SnappyCompressor().compressByte(input, input.length);
     } catch (IOException e) {
       throw new RuntimeException(e);
     } finally {
@@ -179,10 +180,11 @@ public class ExtendedBlockletWrapper implements Writable, Serializable {
       if (isWrittenToFile) {
         DataInputStream stream = null;
         try {
-          final String folderPath = CarbonUtil.getIndexServerTempPath(tablePath, queryId);
+          final String folderPath = CarbonUtil.getIndexServerTempPath()
+                  + CarbonCommonConstants.FILE_SEPARATOR + queryId;
           String fileName = new String(bytes, CarbonCommonConstants.DEFAULT_CHARSET);
           stream = FileFactory
-              .getDataInputStream(folderPath + "/" + fileName, FileFactory.getFileType(folderPath));
+              .getDataInputStream(folderPath + "/" + fileName);
           data = new byte[dataSize];
           stream.readFully(data);
         } finally {

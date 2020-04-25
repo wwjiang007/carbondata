@@ -31,12 +31,12 @@ import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.metadata.SegmentFileStore;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.scan.result.iterator.RawResultIterator;
 import org.apache.carbondata.core.scan.wrappers.ByteArrayWrapper;
+import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeUtil;
@@ -276,7 +276,7 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
     Object[] preparedRow = new Object[dimensions.size() + measureCount];
     for (int i = 0; i < dimensions.size(); i++) {
       CarbonDimension dims = dimensions.get(i);
-      if (dims.hasEncoding(Encoding.DICTIONARY)) {
+      if (dims.getDataType() == DataTypes.DATE) {
         // dictionary
         preparedRow[i] = row[i];
       } else {
@@ -310,14 +310,12 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
    */
   private Object[] prepareRowObjectForSorting(Object[] row) {
     ByteArrayWrapper wrapper = (ByteArrayWrapper) row[0];
-    // ByteBuffer[] noDictionaryBuffer = new ByteBuffer[noDictionaryCount];
     Object[] preparedRow = new Object[dimensions.size() + measureCount];
-    // convert the dictionary from MDKey to surrogate key
     byte[] dictionaryKey = wrapper.getDictionaryKey();
-    long[] keyArray = segmentProperties.getDimensionKeyGenerator().getKeyArray(dictionaryKey);
+    int[] keyArray = ByteUtil.convertBytesToIntArray(dictionaryKey);
     Object[] dictionaryValues = new Object[dimensionColumnCount + measureCount];
     for (int i = 0; i < keyArray.length; i++) {
-      dictionaryValues[i] = Long.valueOf(keyArray[i]).intValue();
+      dictionaryValues[i] = keyArray[i];
     }
     int noDictionaryIndex = 0;
     int dictionaryIndex = 0;
@@ -325,7 +323,7 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
 
     for (int i = 0; i < dimensions.size(); i++) {
       CarbonDimension dims = dimensions.get(i);
-      if (dims.hasEncoding(Encoding.DICTIONARY) && !dims.isComplex()) {
+      if (dims.getDataType() == DataTypes.DATE && !dims.isComplex()) {
         // dictionary
         preparedRow[i] = dictionaryValues[dictionaryIndex++];
       } else if (!dims.isComplex()) {
@@ -430,7 +428,7 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
   /**
    * create an instance of sort data rows
    */
-  private void initSortDataRows() throws Exception {
+  private void initSortDataRows() {
     measureCount = carbonTable.getVisibleMeasures().size();
     dimensions = new ArrayList<>(2);
     dimensions.addAll(segmentProperties.getDimensions());
@@ -443,7 +441,7 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
       if (dimension.isSortColumn()) {
         sortColumnMapping[i] = true;
       }
-      if (CarbonUtil.hasEncoding(dimension.getEncoder(), Encoding.DICTIONARY)) {
+      if (dimension.getDataType() == DataTypes.DATE) {
         i++;
         continue;
       }
@@ -457,16 +455,14 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
     dimensionColumnCount = dimensions.size();
     sortParameters = createSortParameters();
     intermediateFileMerger = new SortIntermediateFileMerger(sortParameters);
+    // Delete if any older file exists in sort temp folder
+    CarbonDataProcessorUtil.deleteSortLocationIfExists(sortParameters.getTempFileLocation());
+    // create new sort temp directory
+    CarbonDataProcessorUtil.createLocations(sortParameters.getTempFileLocation());
     // TODO: Now it is only supported onheap merge, but we can have unsafe merge
     // as well by using UnsafeSortDataRows.
     this.sortDataRows = new SortDataRows(sortParameters, intermediateFileMerger);
-    try {
-      this.sortDataRows.initialize();
-    } catch (CarbonSortKeyAndGroupByException e) {
-      LOGGER.error(e.getMessage(), e);
-      throw new Exception(
-          "Error initializing sort data rows object during compaction: " + e.getMessage(), e);
-    }
+    this.sortDataRows.initialize();
   }
 
   /**
@@ -515,6 +511,7 @@ public class CompactionResultSortProcessor extends AbstractResultProcessor {
         .getCarbonFactDataHandlerModel(carbonLoadModel, carbonTable, segmentProperties, tableName,
             tempStoreLocation, carbonStoreLocation);
     carbonFactDataHandlerModel.setSegmentId(carbonLoadModel.getSegmentId());
+    carbonFactDataHandlerModel.setBucketId(carbonLoadModel.getBucketId());
     setDataFileAttributesInModel(carbonLoadModel, compactionType, carbonFactDataHandlerModel);
     this.noDicAndComplexColumns = carbonFactDataHandlerModel.getNoDictAndComplexColumns();
     dataHandler = CarbonFactHandlerFactory.createCarbonFactHandler(carbonFactDataHandlerModel);

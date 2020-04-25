@@ -17,29 +17,20 @@
 
 package org.apache.carbondata.core.scan.filter;
 
-import java.io.IOException;
 import java.util.BitSet;
-import java.util.List;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
-import org.apache.carbondata.core.datastore.DataRefNode;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
-import org.apache.carbondata.core.metadata.schema.PartitionInfo;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.scan.expression.BinaryExpression;
-import org.apache.carbondata.core.scan.expression.ColumnExpression;
 import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.LiteralExpression;
 import org.apache.carbondata.core.scan.expression.conditional.BinaryConditionalExpression;
 import org.apache.carbondata.core.scan.expression.conditional.ConditionalExpression;
-import org.apache.carbondata.core.scan.expression.conditional.EqualToExpression;
 import org.apache.carbondata.core.scan.expression.conditional.GreaterThanEqualToExpression;
-import org.apache.carbondata.core.scan.expression.conditional.GreaterThanExpression;
 import org.apache.carbondata.core.scan.expression.conditional.InExpression;
-import org.apache.carbondata.core.scan.expression.conditional.LessThanEqualToExpression;
 import org.apache.carbondata.core.scan.expression.conditional.LessThanExpression;
-import org.apache.carbondata.core.scan.expression.conditional.ListExpression;
 import org.apache.carbondata.core.scan.expression.conditional.StartsWithExpression;
 import org.apache.carbondata.core.scan.expression.exception.FilterUnsupportedException;
 import org.apache.carbondata.core.scan.expression.logical.AndExpression;
@@ -48,14 +39,6 @@ import org.apache.carbondata.core.scan.expression.logical.TrueExpression;
 import org.apache.carbondata.core.scan.filter.executer.FilterExecuter;
 import org.apache.carbondata.core.scan.filter.executer.ImplicitColumnFilterExecutor;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
-import org.apache.carbondata.core.scan.filter.partition.AndFilterImpl;
-import org.apache.carbondata.core.scan.filter.partition.EqualToFilterImpl;
-import org.apache.carbondata.core.scan.filter.partition.InFilterImpl;
-import org.apache.carbondata.core.scan.filter.partition.KeepAllPartitionFilterImpl;
-import org.apache.carbondata.core.scan.filter.partition.OrFilterImpl;
-import org.apache.carbondata.core.scan.filter.partition.PartitionFilterIntf;
-import org.apache.carbondata.core.scan.filter.partition.PruneAllPartitionFilterImpl;
-import org.apache.carbondata.core.scan.filter.partition.RangeFilterImpl;
 import org.apache.carbondata.core.scan.filter.resolver.ConditionalFilterResolverImpl;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.carbondata.core.scan.filter.resolver.LogicalFilterResolverImpl;
@@ -63,8 +46,6 @@ import org.apache.carbondata.core.scan.filter.resolver.RowLevelFilterResolverImp
 import org.apache.carbondata.core.scan.filter.resolver.RowLevelRangeFilterResolverImpl;
 import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.FalseConditionalResolverImpl;
 import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.TrueConditionalResolverImpl;
-import org.apache.carbondata.core.scan.partition.PartitionUtil;
-import org.apache.carbondata.core.scan.partition.Partitioner;
 
 import org.apache.log4j.Logger;
 
@@ -82,146 +63,11 @@ public class FilterExpressionProcessor implements FilterProcessor {
    * @return a filter resolver tree
    */
   public FilterResolverIntf getFilterResolver(Expression expressionTree,
-      AbsoluteTableIdentifier tableIdentifier)
-      throws FilterUnsupportedException, IOException {
+      AbsoluteTableIdentifier tableIdentifier) throws FilterUnsupportedException {
     if (null != expressionTree && null != tableIdentifier) {
       return getFilterResolvertree(expressionTree, tableIdentifier);
     }
     return null;
-  }
-
-  /**
-   * Get the map of required partitions
-   * The value of "1" in BitSet represent the required partition
-   * @param expressionTree
-   * @param partitionInfo
-   * @return
-   */
-  @Override
-  public BitSet getFilteredPartitions(Expression expressionTree,
-      PartitionInfo partitionInfo) {
-    Partitioner partitioner = PartitionUtil.getPartitioner(partitionInfo);
-    return createPartitionFilterTree(expressionTree, partitionInfo).applyFilter(partitioner);
-  }
-
-  /**
-   * create partition filter by basing on pushed-down filter
-   * @param expressionTree
-   * @param partitionInfo
-   * @return
-   */
-  private PartitionFilterIntf createPartitionFilterTree(Expression expressionTree,
-      PartitionInfo partitionInfo) {
-    ExpressionType filterExpressionType = expressionTree.getFilterExpressionType();
-    String partitionColumnName = partitionInfo.getColumnSchemaList().get(0).getColumnName();
-    BinaryExpression currentExpression = null;
-    ColumnExpression left = null;
-    switch (filterExpressionType) {
-      case OR:
-        currentExpression = (BinaryExpression) expressionTree;
-        return new OrFilterImpl(
-            createPartitionFilterTree(currentExpression.getLeft(), partitionInfo),
-            createPartitionFilterTree(currentExpression.getRight(), partitionInfo));
-      case RANGE:
-      case AND:
-        currentExpression = (BinaryExpression) expressionTree;
-        return new AndFilterImpl(
-            createPartitionFilterTree(currentExpression.getLeft(), partitionInfo),
-            createPartitionFilterTree(currentExpression.getRight(), partitionInfo));
-      case EQUALS:
-        EqualToExpression equalTo = (EqualToExpression) expressionTree;
-        if (equalTo.getLeft() instanceof ColumnExpression &&
-            equalTo.getRight() instanceof LiteralExpression) {
-          left = (ColumnExpression) equalTo.getLeft();
-          if (partitionColumnName.equals(left.getCarbonColumn().getColName())) {
-            return new EqualToFilterImpl(equalTo, partitionInfo);
-          }
-        }
-        return new KeepAllPartitionFilterImpl();
-      case IN:
-        InExpression in = (InExpression) expressionTree;
-        if (in.getLeft() instanceof ColumnExpression &&
-            in.getRight() instanceof ListExpression) {
-          left = (ColumnExpression) in.getLeft();
-          if (partitionColumnName.equals(left.getCarbonColumn().getColName())) {
-            return new InFilterImpl(in, partitionInfo);
-          }
-        }
-        return new KeepAllPartitionFilterImpl();
-      case FALSE:
-        return new PruneAllPartitionFilterImpl();
-      case TRUE:
-        return new KeepAllPartitionFilterImpl();
-      case GREATERTHAN:
-        GreaterThanExpression greaterThan = (GreaterThanExpression) expressionTree;
-        if (greaterThan.getLeft() instanceof ColumnExpression &&
-            greaterThan.getRight() instanceof LiteralExpression) {
-          left = (ColumnExpression) greaterThan.getLeft();
-          if (partitionColumnName.equals(left.getCarbonColumn().getColName())) {
-            return new RangeFilterImpl((LiteralExpression) greaterThan.getRight(), true, false,
-                partitionInfo);
-          }
-        }
-        return new KeepAllPartitionFilterImpl();
-      case GREATERTHAN_EQUALTO:
-        GreaterThanEqualToExpression greaterThanEqualTo =
-            (GreaterThanEqualToExpression) expressionTree;
-        if (greaterThanEqualTo.getLeft() instanceof ColumnExpression &&
-            greaterThanEqualTo.getRight() instanceof LiteralExpression) {
-          left = (ColumnExpression) greaterThanEqualTo.getLeft();
-          if (partitionColumnName.equals(left.getCarbonColumn().getColName())) {
-            return new RangeFilterImpl((LiteralExpression) greaterThanEqualTo.getRight(), true,
-                true, partitionInfo);
-          }
-        }
-        return new KeepAllPartitionFilterImpl();
-      case LESSTHAN:
-        LessThanExpression lessThan = (LessThanExpression) expressionTree;
-        if (lessThan.getLeft() instanceof ColumnExpression &&
-            lessThan.getRight() instanceof LiteralExpression) {
-          left = (ColumnExpression) lessThan.getLeft();
-          if (partitionColumnName.equals(left.getCarbonColumn().getColName())) {
-            return new RangeFilterImpl((LiteralExpression) lessThan.getRight(), false, false,
-                partitionInfo);
-          }
-        }
-        return new KeepAllPartitionFilterImpl();
-      case LESSTHAN_EQUALTO:
-        LessThanEqualToExpression lessThanEqualTo = (LessThanEqualToExpression) expressionTree;
-        if (lessThanEqualTo.getLeft() instanceof ColumnExpression &&
-            lessThanEqualTo.getRight() instanceof LiteralExpression) {
-          left = (ColumnExpression) lessThanEqualTo.getLeft();
-          if (partitionColumnName.equals(left.getCarbonColumn().getColName())) {
-            return new RangeFilterImpl((LiteralExpression) lessThanEqualTo.getRight(), false, true,
-                partitionInfo);
-          }
-        }
-        return new KeepAllPartitionFilterImpl();
-      case NOT_IN:
-      case NOT_EQUALS:
-      default:
-        return new KeepAllPartitionFilterImpl();
-    }
-  }
-
-  /**
-   * Selects the blocks based on col max and min value.
-   *
-   * @param listOfDataBlocksToScan
-   * @param dataRefNode
-   */
-  private void addBlockBasedOnMinMaxValue(FilterExecuter filterExecuter,
-      List<DataRefNode> listOfDataBlocksToScan, DataRefNode dataRefNode, boolean[] isMinMaxSet) {
-    if (null == dataRefNode.getColumnsMinValue() || null == dataRefNode.getColumnsMaxValue()) {
-      listOfDataBlocksToScan.add(dataRefNode);
-      return;
-    }
-    BitSet bitSet = filterExecuter
-        .isScanRequired(dataRefNode.getColumnsMaxValue(), dataRefNode.getColumnsMinValue(),
-            isMinMaxSet);
-    if (!bitSet.isEmpty()) {
-      listOfDataBlocksToScan.add(dataRefNode);
-    }
   }
 
   /**
@@ -233,8 +79,7 @@ public class FilterExpressionProcessor implements FilterProcessor {
    * @return FilterResolverIntf type.
    */
   private FilterResolverIntf getFilterResolvertree(Expression expressionTree,
-      AbsoluteTableIdentifier tableIdentifier)
-      throws FilterUnsupportedException, IOException {
+      AbsoluteTableIdentifier tableIdentifier) throws FilterUnsupportedException {
     FilterResolverIntf filterEvaluatorTree =
         createFilterResolverTree(expressionTree, tableIdentifier);
     traverseAndResolveTree(filterEvaluatorTree, tableIdentifier);
@@ -252,12 +97,12 @@ public class FilterExpressionProcessor implements FilterProcessor {
    */
   private void traverseAndResolveTree(FilterResolverIntf filterResolverTree,
       AbsoluteTableIdentifier tableIdentifier)
-      throws FilterUnsupportedException, IOException {
+      throws FilterUnsupportedException {
     if (null == filterResolverTree) {
       return;
     }
     traverseAndResolveTree(filterResolverTree.getLeft(), tableIdentifier);
-    filterResolverTree.resolve(tableIdentifier);
+    filterResolverTree.resolve();
     traverseAndResolveTree(filterResolverTree.getRight(), tableIdentifier);
   }
 
@@ -378,30 +223,24 @@ public class FilterExpressionProcessor implements FilterProcessor {
             return new ConditionalFilterResolverImpl(expression, isExpressionResolve, true,
                 currentCondExpression.getColumnList().get(0).getCarbonColumn().isMeasure());
           }
-          // getting new dim index.
-          if (!currentCondExpression.getColumnList().get(0).getCarbonColumn()
-              .hasEncoding(Encoding.DICTIONARY) || currentCondExpression.getColumnList().get(0)
-              .getCarbonColumn().hasEncoding(Encoding.DIRECT_DICTIONARY) || currentCondExpression
-              .isAlreadyResolved()) {
-            // In case of Range Column Dictionary Include we do not need to resolve the range
-            // expression as it is already resolved and has the surrogates in the filter value
-            if (FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getLeft())
-                && FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getRight()) || (
-                FilterUtil.checkIfRightExpressionRequireEvaluation(currentCondExpression.getRight())
-                    || FilterUtil
-                    .checkIfLeftExpressionRequireEvaluation(currentCondExpression.getLeft()))) {
-              return new RowLevelFilterResolverImpl(expression, isExpressionResolve, true,
-                  tableIdentifier);
-            }
-            if (currentCondExpression.getFilterExpressionType() == ExpressionType.GREATERTHAN
-                || currentCondExpression.getFilterExpressionType() == ExpressionType.LESSTHAN
-                || currentCondExpression.getFilterExpressionType()
-                == ExpressionType.GREATERTHAN_EQUALTO
-                || currentCondExpression.getFilterExpressionType()
-                == ExpressionType.LESSTHAN_EQUALTO) {
-              return new RowLevelRangeFilterResolverImpl(expression, isExpressionResolve, true,
-                  tableIdentifier);
-            }
+          // In case of Range Column Dictionary Include we do not need to resolve the range
+          // expression as it is already resolved and has the surrogates in the filter value
+          if (FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getLeft())
+              && FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getRight()) || (
+              FilterUtil.checkIfRightExpressionRequireEvaluation(currentCondExpression.getRight())
+                  || FilterUtil
+                  .checkIfLeftExpressionRequireEvaluation(currentCondExpression.getLeft()))) {
+            return new RowLevelFilterResolverImpl(expression, isExpressionResolve, true,
+                tableIdentifier);
+          }
+          if (currentCondExpression.getFilterExpressionType() == ExpressionType.GREATERTHAN
+              || currentCondExpression.getFilterExpressionType() == ExpressionType.LESSTHAN
+              || currentCondExpression.getFilterExpressionType()
+              == ExpressionType.GREATERTHAN_EQUALTO
+              || currentCondExpression.getFilterExpressionType()
+              == ExpressionType.LESSTHAN_EQUALTO) {
+            return new RowLevelRangeFilterResolverImpl(expression, isExpressionResolve, true,
+                tableIdentifier);
           }
           return new ConditionalFilterResolverImpl(expression, isExpressionResolve, true,
               currentCondExpression.getColumnList().get(0).getCarbonColumn().isMeasure());
@@ -435,28 +274,23 @@ public class FilterExpressionProcessor implements FilterProcessor {
             return new ConditionalFilterResolverImpl(expression, isExpressionResolve, false, true);
           }
 
-          if (!currentCondExpression.getColumnList().get(0).getCarbonColumn()
-              .hasEncoding(Encoding.DICTIONARY) || currentCondExpression.getColumnList().get(0)
-              .getCarbonColumn().hasEncoding(Encoding.DIRECT_DICTIONARY)) {
-            if (FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getLeft())
-                && FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getRight()) || (
-                FilterUtil.checkIfRightExpressionRequireEvaluation(currentCondExpression.getRight())
-                    || FilterUtil
-                    .checkIfLeftExpressionRequireEvaluation(currentCondExpression.getLeft()))) {
-              return new RowLevelFilterResolverImpl(expression, isExpressionResolve, false,
-                  tableIdentifier);
-            }
-            if (expressionTree.getFilterExpressionType() == ExpressionType.GREATERTHAN
-                || expressionTree.getFilterExpressionType() == ExpressionType.LESSTHAN
-                || expressionTree.getFilterExpressionType() == ExpressionType.GREATERTHAN_EQUALTO
-                || expressionTree.getFilterExpressionType() == ExpressionType.LESSTHAN_EQUALTO) {
-
-              return new RowLevelRangeFilterResolverImpl(expression, isExpressionResolve, false,
-                  tableIdentifier);
-            }
-
-            return new ConditionalFilterResolverImpl(expression, isExpressionResolve, false, false);
+          if (FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getLeft())
+              && FilterUtil.checkIfExpressionContainsColumn(currentCondExpression.getRight()) || (
+              FilterUtil.checkIfRightExpressionRequireEvaluation(currentCondExpression.getRight())
+                  || FilterUtil
+                  .checkIfLeftExpressionRequireEvaluation(currentCondExpression.getLeft()))) {
+            return new RowLevelFilterResolverImpl(expression, isExpressionResolve, false,
+                tableIdentifier);
           }
+          if (expressionTree.getFilterExpressionType() == ExpressionType.GREATERTHAN
+              || expressionTree.getFilterExpressionType() == ExpressionType.LESSTHAN
+              || expressionTree.getFilterExpressionType() == ExpressionType.GREATERTHAN_EQUALTO
+              || expressionTree.getFilterExpressionType() == ExpressionType.LESSTHAN_EQUALTO) {
+
+            return new RowLevelRangeFilterResolverImpl(expression, isExpressionResolve, false,
+                tableIdentifier);
+          }
+
           return new ConditionalFilterResolverImpl(expression, isExpressionResolve, false, false);
         }
         break;
@@ -467,10 +301,7 @@ public class FilterExpressionProcessor implements FilterProcessor {
           column = condExpression.getColumnList().get(0).getCarbonColumn();
           if (condExpression.isSingleColumn() && !column.isComplex()) {
             condExpression = (ConditionalExpression) expression;
-            if ((condExpression.getColumnList().get(0).getCarbonColumn()
-                .hasEncoding(Encoding.DICTIONARY) && !condExpression.getColumnList().get(0)
-                .getCarbonColumn().hasEncoding(Encoding.DIRECT_DICTIONARY))
-                || (condExpression.getColumnList().get(0).getCarbonColumn().isMeasure())) {
+            if (condExpression.getColumnList().get(0).getCarbonColumn().isMeasure()) {
               return new ConditionalFilterResolverImpl(expression, true, true,
                   condExpression.getColumnList().get(0).getCarbonColumn().isMeasure());
             }

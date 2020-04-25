@@ -49,7 +49,8 @@ public class CarbonFooterReaderV3 {
   public FileFooter3 readFooterVersion3() throws IOException {
     ThriftReader thriftReader = openThriftReader(filePath);
     thriftReader.open();
-    //Set the offset from where it should read
+
+    // Set the offset from where it should read
     thriftReader.setReadOffset(footerOffset);
     FileFooter3 footer = (FileFooter3) thriftReader.read();
     thriftReader.close();

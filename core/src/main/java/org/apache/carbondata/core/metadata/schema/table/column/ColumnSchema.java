@@ -17,8 +17,12 @@
 
 package org.apache.carbondata.core.metadata.schema.table.column;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInput;
+import java.io.DataInputStream;
 import java.io.DataOutput;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -37,7 +41,7 @@ import org.apache.carbondata.core.preagg.TimeSeriesUDF;
 /**
  * Store the information about the column meta data present the table
  */
-public class ColumnSchema implements Serializable, Writable {
+public class ColumnSchema implements Serializable, Writable, Cloneable {
 
   /**
    * serialization version
@@ -116,6 +120,8 @@ public class ColumnSchema implements Serializable, Writable {
   private boolean invisible = false;
 
   private boolean isSortColumn = false;
+
+  private boolean indexColumn = false;
 
   /**
    * aggregate function used in pre aggregate table
@@ -529,6 +535,7 @@ public class ColumnSchema implements Serializable, Writable {
       }
     }
     out.writeBoolean(isLocalDictColumn);
+    out.writeBoolean(indexColumn);
   }
 
   @Override
@@ -578,6 +585,7 @@ public class ColumnSchema implements Serializable, Writable {
       }
     }
     this.isLocalDictColumn = in.readBoolean();
+    this.indexColumn = in.readBoolean();
   }
 
   /**
@@ -587,5 +595,26 @@ public class ColumnSchema implements Serializable, Writable {
   public boolean isComplexColumn() {
     return this.getColumnName()
         .contains(".val") || this.getColumnName().contains(".");
+  }
+
+  public boolean isIndexColumn() {
+    return indexColumn;
+  }
+
+  public void setIndexColumn(boolean indexColumn) {
+    this.indexColumn = indexColumn;
+  }
+
+  public ColumnSchema clone() {
+    try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(bos)) {
+      this.write(dos);
+      DataInputStream dis = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
+      ColumnSchema columnSchema = (ColumnSchema) super.clone();
+      columnSchema.readFields(dis);
+      return columnSchema;
+    } catch (IOException | CloneNotSupportedException e) {
+      throw new RuntimeException("Error occur while cloning ColumnSchema", e);
+    }
   }
 }

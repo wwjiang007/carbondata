@@ -21,9 +21,6 @@ import java.io.IOException;
 import java.util.List;
 
 import org.apache.carbondata.core.constants.CarbonV3DataFormatConstants;
-import org.apache.carbondata.core.constants.CarbonVersionConstants;
-import org.apache.carbondata.core.datamap.dev.BlockletSerializer;
-import org.apache.carbondata.core.datamap.dev.fgdatamap.FineGrainBlocklet;
 import org.apache.carbondata.core.datastore.DataRefNode;
 import org.apache.carbondata.core.datastore.FileReader;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
@@ -32,6 +29,8 @@ import org.apache.carbondata.core.datastore.chunk.impl.MeasureRawColumnChunk;
 import org.apache.carbondata.core.datastore.chunk.reader.CarbonDataReaderFactory;
 import org.apache.carbondata.core.datastore.chunk.reader.DimensionColumnChunkReader;
 import org.apache.carbondata.core.datastore.chunk.reader.MeasureColumnChunkReader;
+import org.apache.carbondata.core.index.dev.BlockletSerializer;
+import org.apache.carbondata.core.index.dev.fgindex.FineGrainBlocklet;
 import org.apache.carbondata.core.indexstore.BlockletDetailInfo;
 import org.apache.carbondata.core.metadata.ColumnarFormatVersion;
 import org.apache.carbondata.core.metadata.blocklet.index.BlockletIndex;
@@ -46,11 +45,9 @@ public class BlockletDataRefNode implements DataRefNode {
 
   private int index;
 
-  private int[] dimensionLens;
-
   private BlockletSerializer blockletSerializer;
 
-  BlockletDataRefNode(List<TableBlockInfo> blockInfos, int index, int[] dimensionLens) {
+  BlockletDataRefNode(List<TableBlockInfo> blockInfos, int index) {
     this.blockInfos = blockInfos;
     // Update row count and page count to blocklet info
     for (TableBlockInfo blockInfo : blockInfos) {
@@ -59,27 +56,15 @@ public class BlockletDataRefNode implements DataRefNode {
       detailInfo.getBlockletInfo().setNumberOfPages(detailInfo.getPagesCount());
       detailInfo.setBlockletId(blockInfo.getDetailInfo().getBlockletId());
       int[] pageRowCount = new int[detailInfo.getPagesCount()];
-      int numberOfPagesCompletelyFilled = detailInfo.getRowCount();
+      int numberOfPagesCompletelyFilled = detailInfo.getRowCount() /
+          CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
+
       // no. of rows to a page is 120000 in V2 and 32000 in V3, same is handled to get the number
       // of pages filled
-      int lastPageRowCount;
-      int fullyFilledRowsCount;
-      if (blockInfo.getVersion() == ColumnarFormatVersion.V2
-          || blockInfo.getVersion() == ColumnarFormatVersion.V1) {
-        numberOfPagesCompletelyFilled /=
-            CarbonVersionConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT_V2;
-        lastPageRowCount = detailInfo.getRowCount()
-            % CarbonVersionConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT_V2;
-        fullyFilledRowsCount =
-            CarbonVersionConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT_V2;
-      } else {
-        numberOfPagesCompletelyFilled /=
-            CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
-        lastPageRowCount = detailInfo.getRowCount()
-            % CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
-        fullyFilledRowsCount =
-            CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
-      }
+      int lastPageRowCount = detailInfo.getRowCount()
+          % CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
+      int fullyFilledRowsCount =
+          CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
       for (int i = 0; i < numberOfPagesCompletelyFilled; i++) {
         pageRowCount[i] = fullyFilledRowsCount;
       }
@@ -93,14 +78,13 @@ public class BlockletDataRefNode implements DataRefNode {
       }
     }
     this.index = index;
-    this.dimensionLens = dimensionLens;
     this.blockletSerializer = new BlockletSerializer();
   }
 
   @Override
   public DataRefNode getNextDataRefNode() {
     if (index + 1 < blockInfos.size()) {
-      return new BlockletDataRefNode(blockInfos, index + 1, dimensionLens);
+      return new BlockletDataRefNode(blockInfos, index + 1);
     }
     return null;
   }
@@ -108,11 +92,6 @@ public class BlockletDataRefNode implements DataRefNode {
   @Override
   public int numRows() {
     return blockInfos.get(index).getDetailInfo().getRowCount();
-  }
-
-  @Override
-  public long nodeIndex() {
-    return index;
   }
 
   @Override
@@ -173,7 +152,6 @@ public class BlockletDataRefNode implements DataRefNode {
     MeasureColumnChunkReader measureColumnChunkReader = getMeasureColumnChunkReader(fileReader);
     MeasureRawColumnChunk[] measureRawColumnChunks =
         measureColumnChunkReader.readRawMeasureChunks(fileReader, columnIndexRange);
-    updateMeasureRawColumnChunkMinMaxValues(measureRawColumnChunks);
     return measureRawColumnChunks;
   }
 
@@ -183,37 +161,7 @@ public class BlockletDataRefNode implements DataRefNode {
     MeasureColumnChunkReader measureColumnChunkReader = getMeasureColumnChunkReader(fileReader);
     MeasureRawColumnChunk measureRawColumnChunk =
         measureColumnChunkReader.readRawMeasureChunk(fileReader, columnIndex);
-    updateMeasureRawColumnChunkMinMaxValues(measureRawColumnChunk);
     return measureRawColumnChunk;
-  }
-
-  /**
-   * This method is written specifically for old store wherein the measure min and max values
-   * are written opposite (i.e min in place of max and amx in place of min). Due to this computing
-   * f measure filter with current code is impacted. In order to sync with current min and
-   * max values only in case old store and measures is reversed
-   *
-   * @param measureRawColumnChunk
-   */
-  private void updateMeasureRawColumnChunkMinMaxValues(
-      MeasureRawColumnChunk measureRawColumnChunk) {
-    if (blockInfos.get(index).isDataBlockFromOldStore()) {
-      byte[][] maxValues = measureRawColumnChunk.getMaxValues();
-      byte[][] minValues = measureRawColumnChunk.getMinValues();
-      measureRawColumnChunk.setMaxValues(minValues);
-      measureRawColumnChunk.setMinValues(maxValues);
-    }
-  }
-
-  private void updateMeasureRawColumnChunkMinMaxValues(
-      MeasureRawColumnChunk[] measureRawColumnChunks) {
-    if (blockInfos.get(index).isDataBlockFromOldStore()) {
-      for (int i = 0; i < measureRawColumnChunks.length; i++) {
-        if (null != measureRawColumnChunks[i]) {
-          updateMeasureRawColumnChunkMinMaxValues(measureRawColumnChunks[i]);
-        }
-      }
-    }
   }
 
   private DimensionColumnChunkReader getDimensionColumnChunkReader(FileReader fileReader) {
@@ -221,11 +169,11 @@ public class BlockletDataRefNode implements DataRefNode {
         ColumnarFormatVersion.valueOf(blockInfos.get(index).getDetailInfo().getVersionNumber());
     if (fileReader.isReadPageByPage()) {
       return CarbonDataReaderFactory.getInstance().getDimensionColumnChunkReader(version,
-          blockInfos.get(index).getDetailInfo().getBlockletInfo(), dimensionLens,
+          blockInfos.get(index).getDetailInfo().getBlockletInfo(),
           blockInfos.get(index).getFilePath(), true);
     } else {
       return CarbonDataReaderFactory.getInstance().getDimensionColumnChunkReader(version,
-          blockInfos.get(index).getDetailInfo().getBlockletInfo(), dimensionLens,
+          blockInfos.get(index).getDetailInfo().getBlockletInfo(),
           blockInfos.get(index).getFilePath(), false);
     }
   }
@@ -251,10 +199,10 @@ public class BlockletDataRefNode implements DataRefNode {
 
   @Override
   public BitSetGroup getIndexedData() {
-    String dataMapWriterPath = blockInfos.get(index).getDataMapWriterPath();
-    if (dataMapWriterPath != null) {
+    String indexWriterPath = blockInfos.get(index).getIndexWriterPath();
+    if (indexWriterPath != null) {
       try {
-        FineGrainBlocklet blocklet = blockletSerializer.deserializeBlocklet(dataMapWriterPath);
+        FineGrainBlocklet blocklet = blockletSerializer.deserializeBlocklet(indexWriterPath);
         return blocklet.getBitSetGroup(numberOfPages());
       } catch (IOException e) {
         return null;

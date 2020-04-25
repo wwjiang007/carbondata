@@ -23,14 +23,15 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.carbondata.core.datastore.TableSpec;
-import org.apache.carbondata.core.dictionary.service.DictionaryServiceProvider;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.datatype.DataType;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
+import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.schema.BucketingInfo;
 import org.apache.carbondata.core.metadata.schema.SortColumnRangeInfo;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
-import org.apache.carbondata.processing.loading.converter.DictionaryCardinalityFinder;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
+import org.apache.carbondata.core.util.OutputFilesInfoHolder;
 
 public class CarbonDataLoadConfiguration {
 
@@ -46,39 +47,11 @@ public class CarbonDataLoadConfiguration {
 
   private BucketingInfo bucketingInfo;
 
+  private String bucketHashMethod;
+
   private String segmentPath;
 
   private Map<String, Object> dataLoadProperties = new HashMap<>();
-
-  /**
-   *  Use one pass to generate dictionary
-   */
-  private boolean useOnePass;
-
-  /**
-   * dictionary server host
-   */
-  private String dictionaryServerHost;
-
-  /**
-   * dictionary sever port
-   */
-  private int dictionaryServerPort;
-
-  /**
-   * dictionary server secret key
-   */
-  private String dictionaryServerSecretKey;
-
-  /**
-   * Dictionary Service Provider.
-   */
-  private DictionaryServiceProvider dictionaryServiceProvider;
-
-  /**
-   * Secure Mode or not.
-   */
-  private Boolean dictionaryEncryptServerSecure;
 
   private boolean preFetch;
 
@@ -96,8 +69,6 @@ public class CarbonDataLoadConfiguration {
    * schema updated time stamp to be used for restructure scenarios
    */
   private long schemaUpdatedTimeStamp;
-
-  private DictionaryCardinalityFinder cardinalityFinder;
 
   private int numberOfSortColumns;
 
@@ -120,8 +91,6 @@ public class CarbonDataLoadConfiguration {
    */
   private String dataWritePath;
 
-  private String parentTablePath;
-
   /**
    * name of compressor to be used to compress column page
    */
@@ -129,15 +98,26 @@ public class CarbonDataLoadConfiguration {
 
   private int numberOfLoadingCores;
 
+  private OutputFilesInfoHolder outputFilesInfoHolder;
+
+  /**
+   * Whether index columns are present. This flag should be set only when all the schema
+   * columns are already converted. Now, just need to generate and convert index columns present in
+   * data fields.
+   */
+  private boolean isIndexColumnsPresent;
+
+  private boolean skipParsers = false;
+
+  public boolean isSkipParsers() {
+    return skipParsers;
+  }
+
+  public void setSkipParsers(boolean skipParsers) {
+    this.skipParsers = skipParsers;
+  }
+
   public CarbonDataLoadConfiguration() {
-  }
-
-  public String getParentTablePath() {
-    return parentTablePath;
-  }
-
-  public void setParentTablePath(String parentTablePath) {
-    this.parentTablePath = parentTablePath;
   }
 
   public void setDataFields(DataField[] dataFields) {
@@ -149,12 +129,12 @@ public class CarbonDataLoadConfiguration {
       if (column.isDimension()) {
         dimensionCount++;
         if (column.isComplex()) {
-          if (!dataField.hasDictionaryEncoding()) {
+          if (!dataField.isDateDataType()) {
             complexNonDictionaryColumnCount++;
           } else {
             complexDictionaryColumnCount++;
           }
-        } else if (!dataField.hasDictionaryEncoding()) {
+        } else if (!dataField.isDateDataType()) {
           noDictionaryCount++;
         }
       }
@@ -253,54 +233,6 @@ public class CarbonDataLoadConfiguration {
     this.bucketingInfo = bucketingInfo;
   }
 
-  public boolean getUseOnePass() {
-    return useOnePass;
-  }
-
-  public void setUseOnePass(boolean useOnePass) {
-    this.useOnePass = useOnePass;
-  }
-
-  public String getDictionaryServerHost() {
-    return dictionaryServerHost;
-  }
-
-  public void setDictionaryServerHost(String dictionaryServerHost) {
-    this.dictionaryServerHost = dictionaryServerHost;
-  }
-
-  public int getDictionaryServerPort() {
-    return dictionaryServerPort;
-  }
-
-  public void setDictionaryServerPort(int dictionaryServerPort) {
-    this.dictionaryServerPort = dictionaryServerPort;
-  }
-
-  public String getDictionaryServerSecretKey() {
-    return dictionaryServerSecretKey;
-  }
-
-  public void setDictionaryServerSecretKey(String dictionaryServerSecretKey) {
-    this.dictionaryServerSecretKey = dictionaryServerSecretKey;
-  }
-
-  public DictionaryServiceProvider getDictionaryServiceProvider() {
-    return dictionaryServiceProvider;
-  }
-
-  public void setDictionaryServiceProvider(DictionaryServiceProvider dictionaryServiceProvider) {
-    this.dictionaryServiceProvider = dictionaryServiceProvider;
-  }
-
-  public Boolean getDictionaryEncryptServerSecure() {
-    return dictionaryEncryptServerSecure;
-  }
-
-  public void setDictionaryEncryptServerSecure(Boolean dictionaryEncryptServerSecure) {
-    this.dictionaryEncryptServerSecure = dictionaryEncryptServerSecure;
-  }
-
   public boolean isPreFetch() {
     return preFetch;
   }
@@ -317,15 +249,19 @@ public class CarbonDataLoadConfiguration {
     this.schemaUpdatedTimeStamp = schemaUpdatedTimeStamp;
   }
 
-  public DictionaryCardinalityFinder getCardinalityFinder() {
-    return cardinalityFinder;
-  }
-
-  public void setCardinalityFinder(DictionaryCardinalityFinder cardinalityFinder) {
-    this.cardinalityFinder = cardinalityFinder;
-  }
-
   public DataType[] getMeasureDataType() {
+    // data field might be rearranged in case of partition.
+    // so refer internal order not the data field order.
+    List<CarbonMeasure> visibleMeasures = tableSpec.getCarbonTable().getVisibleMeasures();
+    DataType[] type = new DataType[visibleMeasures.size()];
+    for (int i = 0; i < type.length; i++) {
+      type[i] = visibleMeasures.get(i).getDataType();
+    }
+    return type;
+  }
+
+  public DataType[] getMeasureDataTypeAsDataFieldOrder() {
+    // same as data fields order
     List<Integer> measureIndexes = new ArrayList<>(dataFields.length);
     int measureCount = 0;
     for (int i = 0; i < dataFields.length; i++) {
@@ -334,7 +270,6 @@ public class CarbonDataLoadConfiguration {
         measureCount++;
       }
     }
-
     DataType[] type = new DataType[measureCount];
     for (int i = 0; i < type.length; i++) {
       type[i] = dataFields[measureIndexes.get(i)].getColumn().getDataType();
@@ -348,22 +283,16 @@ public class CarbonDataLoadConfiguration {
    * @return
    */
   public CarbonColumn[] getNoDictAndComplexDimensions() {
-    List<Integer> noDicOrCompIndexes = new ArrayList<>(dataFields.length);
-    int noDicCount = 0;
-    for (int i = 0; i < dataFields.length; i++) {
-      if (dataFields[i].getColumn().isDimension() && (
-          !(dataFields[i].getColumn().hasEncoding(Encoding.DICTIONARY)) || dataFields[i].getColumn()
-              .isComplex())) {
-        noDicOrCompIndexes.add(i);
-        noDicCount++;
+    // data field might be rearranged in case of partition.
+    // so refer internal order not the data field order.
+    List<CarbonDimension> visibleDimensions = tableSpec.getCarbonTable().getVisibleDimensions();
+    List<CarbonColumn> noDictionaryDimensions = new ArrayList<>();
+    for (int i = 0; i < visibleDimensions.size(); i++) {
+      if (visibleDimensions.get(i).getDataType() != DataTypes.DATE) {
+        noDictionaryDimensions.add(visibleDimensions.get(i));
       }
     }
-
-    CarbonColumn[] dims = new CarbonColumn[noDicCount];
-    for (int i = 0; i < dims.length; i++) {
-      dims[i] = dataFields[noDicOrCompIndexes.get(i)].getColumn();
-    }
-    return dims;
+    return noDictionaryDimensions.toArray(new CarbonColumn[0]);
   }
 
   /**
@@ -379,10 +308,6 @@ public class CarbonDataLoadConfiguration {
       }
     }
     return sortColumnMapping;
-  }
-
-  public int[] getCardinalityForComplexDimension() {
-    return getCardinalityFinder().getCardinality();
   }
 
   public TableSpec getTableSpec() {
@@ -451,5 +376,29 @@ public class CarbonDataLoadConfiguration {
 
   public void setSegmentPath(String segmentPath) {
     this.segmentPath = segmentPath;
+  }
+
+  public OutputFilesInfoHolder getOutputFilesInfoHolder() {
+    return outputFilesInfoHolder;
+  }
+
+  public void setOutputFilesInfoHolder(OutputFilesInfoHolder outputFilesInfoHolder) {
+    this.outputFilesInfoHolder = outputFilesInfoHolder;
+  }
+
+  public boolean isIndexColumnsPresent() {
+    return isIndexColumnsPresent;
+  }
+
+  public void setIndexColumnsPresent(boolean indexColumnsPresent) {
+    isIndexColumnsPresent = indexColumnsPresent;
+  }
+
+  public String getBucketHashMethod() {
+    return bucketHashMethod;
+  }
+
+  public void setBucketHashMethod(String bucketHashMethod) {
+    this.bucketHashMethod = bucketHashMethod;
   }
 }

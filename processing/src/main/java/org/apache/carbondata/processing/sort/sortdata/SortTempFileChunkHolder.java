@@ -158,7 +158,7 @@ public class SortTempFileChunkHolder implements Comparable<SortTempFileChunkHold
 
   private void initialise() throws CarbonSortKeyAndGroupByException {
     try {
-      stream = FileFactory.getDataInputStream(tempFile.getPath(), FileFactory.FileType.LOCAL,
+      stream = FileFactory.getDataInputStream(tempFile.getPath(),
           readBufferSize, compressorName);
       this.entryCount = stream.readInt();
       if (prefetch) {
@@ -345,7 +345,7 @@ public class SortTempFileChunkHolder implements Comparable<SortTempFileChunkHold
     }
 
     @Override
-    public Void call() throws Exception {
+    public Void call() {
       try {
         if (isBackUpFilling) {
           backupBuffer = prefetchRecordsFromFile(numberOfRecords);

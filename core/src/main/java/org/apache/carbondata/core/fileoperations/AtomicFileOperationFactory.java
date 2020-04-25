@@ -26,7 +26,7 @@ public class AtomicFileOperationFactory {
     if (fileType == FileFactory.FileType.S3 || fileType == FileFactory.FileType.ALLUXIO) {
       return new AtomicFileOperationS3Impl(filePath);
     } else {
-      return new AtomicFileOperationsImpl(filePath, fileType);
+      return new AtomicFileOperationsImpl(filePath);
     }
   }
 }

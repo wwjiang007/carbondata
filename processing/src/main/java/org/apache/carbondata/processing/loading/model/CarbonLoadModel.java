@@ -20,17 +20,15 @@ package org.apache.carbondata.processing.loading.model;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.Segment;
-import org.apache.carbondata.core.dictionary.service.DictionaryServiceProvider;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
-import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager;
 import org.apache.carbondata.core.statusmanager.SegmentUpdateStatusManager;
+import org.apache.carbondata.core.util.OutputFilesInfoHolder;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 
 public class CarbonLoadModel implements Serializable {
@@ -43,15 +41,9 @@ public class CarbonLoadModel implements Serializable {
 
   private String factFilePath;
 
-  private String colDictFilePath;
-
   private CarbonDataLoadSchema carbonDataLoadSchema;
 
-  private boolean aggLoadRequest;
-
   private String tablePath;
-
-  private String parentTablePath;
 
   /*
      This points if the carbonTable is a Non Transactional Table or not.
@@ -74,11 +66,6 @@ public class CarbonLoadModel implements Serializable {
   private String blocksID;
 
   /**
-   * Map from carbon dimension to pre defined dict file path
-   */
-  private HashMap<CarbonDimension, String> predefDictMap;
-
-  /**
    * task id, each spark task has a unique id
    */
   private String taskNo;
@@ -90,8 +77,6 @@ public class CarbonLoadModel implements Serializable {
    * load Id
    */
   private Segment segment;
-
-  private String allDictPath;
 
   /**
    * escape Char
@@ -108,7 +93,9 @@ public class CarbonLoadModel implements Serializable {
    */
   private String commentChar;
 
-  private String timestampformat;
+  private String lineSeparator;
+
+  private String timestampFormat;
 
   private String dateFormat;
 
@@ -147,35 +134,6 @@ public class CarbonLoadModel implements Serializable {
   private String skipEmptyLine;
 
   /**
-   * Use one pass to generate dictionary
-   */
-  private boolean useOnePass;
-
-  /**
-   * dictionary server host
-   */
-  private String dictionaryServerHost;
-
-  /**
-   * dictionary sever port
-   */
-  private int dictionaryServerPort;
-
-  /**
-   * dictionary server communication Secret Key.
-   */
-  private String dictionaryServerSecretKey;
-
-  /**
-   * dictionary service provider.
-   */
-  private DictionaryServiceProvider dictionaryServiceProvider;
-
-  /**
-   * Dictionary Secure or not.
-   */
-  private Boolean dictionaryEncryptServerSecure;
-  /**
    * Pre fetch data from csv reader
    */
   private boolean preFetch;
@@ -185,10 +143,6 @@ public class CarbonLoadModel implements Serializable {
    */
   private String sortScope;
 
-  /**
-   * Batch sort size in mb.
-   */
-  private String batchSortSizeInMb;
   /**
    * bad record location
    */
@@ -211,6 +165,18 @@ public class CarbonLoadModel implements Serializable {
    * pushed into.
    */
   private boolean isLoadWithoutConverterStep;
+
+  /**
+   * Whether index columns are present. This flag should be set only when all the schema
+   * columns are already converted. Now, just need to generate and convert index columns present in
+   * data fields.
+   */
+  private boolean isIndexColumnsPresent;
+
+  /**
+   * for insert into flow, schema is already re-arranged. No need to re-arrange the data
+   */
+  private boolean isLoadWithoutConverterWithoutReArrangeStep;
 
   /**
    * To identify the suitable input processor step for json file loading.
@@ -255,20 +221,29 @@ public class CarbonLoadModel implements Serializable {
    */
   private int scaleFactor;
 
+  /**
+   * bucket id
+   */
+  private int bucketId;
+
+  private OutputFilesInfoHolder outputFilesInfoHolder;
+
+  private boolean skipParsers = false;
+
+  public void setSkipParsers() {
+    skipParsers = true;
+  }
+
+  public boolean isSkipParsers() {
+    return skipParsers;
+  }
+
   public boolean isAggLoadRequest() {
     return isAggLoadRequest;
   }
 
   public void setAggLoadRequest(boolean aggLoadRequest) {
     isAggLoadRequest = aggLoadRequest;
-  }
-
-  public String getParentTablePath() {
-    return parentTablePath;
-  }
-
-  public void setParentTablePath(String parentTablePath) {
-    this.parentTablePath = parentTablePath;
   }
 
   /**
@@ -307,14 +282,6 @@ public class CarbonLoadModel implements Serializable {
     return complexDelimiters;
   }
 
-  public String getAllDictPath() {
-    return allDictPath;
-  }
-
-  public void setAllDictPath(String allDictPath) {
-    this.allDictPath = allDictPath;
-  }
-
   public String getCsvHeader() {
     return csvHeader;
   }
@@ -329,18 +296,6 @@ public class CarbonLoadModel implements Serializable {
 
   public void setCsvHeaderColumns(String[] csvHeaderColumns) {
     this.csvHeaderColumns = csvHeaderColumns;
-  }
-
-  public void initPredefDictMap() {
-    predefDictMap = new HashMap<>();
-  }
-
-  public String getPredefDictFilePath(CarbonDimension dimension) {
-    return predefDictMap.get(dimension);
-  }
-
-  public void setPredefDictMap(CarbonDimension dimension, String predefDictFilePath) {
-    this.predefDictMap.put(dimension, predefDictFilePath);
   }
 
   /**
@@ -399,30 +354,6 @@ public class CarbonLoadModel implements Serializable {
     this.factFilePath = factFilePath;
   }
 
-  /**
-   * @return external column dictionary file path
-   */
-  public String getColDictFilePath() {
-    return colDictFilePath;
-  }
-
-  /**
-   * set external column dictionary file path
-   *
-   * @param colDictFilePath
-   */
-  public void setColDictFilePath(String colDictFilePath) {
-    this.colDictFilePath = colDictFilePath;
-  }
-
-  public DictionaryServiceProvider getDictionaryServiceProvider() {
-    return dictionaryServiceProvider;
-  }
-
-  public void setDictionaryServiceProvider(DictionaryServiceProvider dictionaryServiceProvider) {
-    this.dictionaryServiceProvider = dictionaryServiceProvider;
-  }
-
   public String getSortColumnsBoundsStr() {
     return sortColumnsBoundsStr;
   }
@@ -439,6 +370,14 @@ public class CarbonLoadModel implements Serializable {
     this.loadMinSize = loadMinSize;
   }
 
+  public int getBucketId() {
+    return bucketId;
+  }
+
+  public void setBucketId(int bucketId) {
+    this.bucketId = bucketId;
+  }
+
   /**
    * Get copy with taskNo.
    * Broadcast value is shared in process, so we need to copy it to make sure the value in each
@@ -451,7 +390,6 @@ public class CarbonLoadModel implements Serializable {
     copy.tableName = tableName;
     copy.factFilePath = factFilePath;
     copy.databaseName = databaseName;
-    copy.aggLoadRequest = aggLoadRequest;
     copy.loadMetadataDetails = loadMetadataDetails;
     copy.csvHeader = csvHeader;
     copy.csvHeaderColumns = csvHeaderColumns;
@@ -467,36 +405,31 @@ public class CarbonLoadModel implements Serializable {
     copy.badRecordsAction = badRecordsAction;
     copy.escapeChar = escapeChar;
     copy.quoteChar = quoteChar;
+    copy.lineSeparator = lineSeparator;
     copy.commentChar = commentChar;
-    copy.timestampformat = timestampformat;
+    copy.timestampFormat = timestampFormat;
     copy.dateFormat = dateFormat;
     copy.defaultTimestampFormat = defaultTimestampFormat;
     copy.maxColumns = maxColumns;
     copy.tablePath = tablePath;
     copy.carbonTransactionalTable = carbonTransactionalTable;
-    copy.useOnePass = useOnePass;
-    copy.dictionaryServerHost = dictionaryServerHost;
-    copy.dictionaryServerPort = dictionaryServerPort;
-    copy.dictionaryServerSecretKey = dictionaryServerSecretKey;
-    copy.dictionaryServiceProvider = dictionaryServiceProvider;
-    copy.dictionaryEncryptServerSecure = dictionaryEncryptServerSecure;
     copy.preFetch = preFetch;
     copy.isEmptyDataBadRecord = isEmptyDataBadRecord;
     copy.skipEmptyLine = skipEmptyLine;
     copy.sortScope = sortScope;
-    copy.batchSortSizeInMb = batchSortSizeInMb;
     copy.isAggLoadRequest = isAggLoadRequest;
     copy.badRecordsLocation = badRecordsLocation;
     copy.isLoadWithoutConverterStep = isLoadWithoutConverterStep;
     copy.sortColumnsBoundsStr = sortColumnsBoundsStr;
     copy.loadMinSize = loadMinSize;
-    copy.parentTablePath = parentTablePath;
     copy.sdkWriterCores = sdkWriterCores;
     copy.columnCompressor = columnCompressor;
     copy.binaryDecoder = binaryDecoder;
     copy.rangePartitionColumn = rangePartitionColumn;
     copy.scaleFactor = scaleFactor;
     copy.totalSize = totalSize;
+    copy.outputFilesInfoHolder = outputFilesInfoHolder;
+    copy.isLoadWithoutConverterWithoutReArrangeStep = isLoadWithoutConverterWithoutReArrangeStep;
     return copy;
   }
 
@@ -512,7 +445,6 @@ public class CarbonLoadModel implements Serializable {
     copyObj.tableName = tableName;
     copyObj.factFilePath = null;
     copyObj.databaseName = databaseName;
-    copyObj.aggLoadRequest = aggLoadRequest;
     copyObj.loadMetadataDetails = loadMetadataDetails;
     copyObj.carbonDataLoadSchema = carbonDataLoadSchema;
     copyObj.csvHeader = header;
@@ -528,35 +460,31 @@ public class CarbonLoadModel implements Serializable {
     copyObj.badRecordsAction = badRecordsAction;
     copyObj.escapeChar = escapeChar;
     copyObj.quoteChar = quoteChar;
+    copyObj.lineSeparator = lineSeparator;
     copyObj.commentChar = commentChar;
-    copyObj.timestampformat = timestampformat;
+    copyObj.timestampFormat = timestampFormat;
     copyObj.dateFormat = dateFormat;
     copyObj.defaultTimestampFormat = defaultTimestampFormat;
     copyObj.maxColumns = maxColumns;
     copyObj.tablePath = tablePath;
     copyObj.carbonTransactionalTable = carbonTransactionalTable;
-    copyObj.useOnePass = useOnePass;
-    copyObj.dictionaryServerHost = dictionaryServerHost;
-    copyObj.dictionaryServerPort = dictionaryServerPort;
-    copyObj.dictionaryServerSecretKey = dictionaryServerSecretKey;
-    copyObj.dictionaryServiceProvider = dictionaryServiceProvider;
-    copyObj.dictionaryEncryptServerSecure = dictionaryEncryptServerSecure;
     copyObj.preFetch = preFetch;
     copyObj.isEmptyDataBadRecord = isEmptyDataBadRecord;
     copyObj.skipEmptyLine = skipEmptyLine;
     copyObj.sortScope = sortScope;
-    copyObj.batchSortSizeInMb = batchSortSizeInMb;
     copyObj.badRecordsLocation = badRecordsLocation;
     copyObj.isAggLoadRequest = isAggLoadRequest;
     copyObj.sortColumnsBoundsStr = sortColumnsBoundsStr;
     copyObj.loadMinSize = loadMinSize;
-    copyObj.parentTablePath = parentTablePath;
     copyObj.sdkWriterCores = sdkWriterCores;
     copyObj.columnCompressor = columnCompressor;
     copyObj.binaryDecoder = binaryDecoder;
     copyObj.rangePartitionColumn = rangePartitionColumn;
     copyObj.scaleFactor = scaleFactor;
     copyObj.totalSize = totalSize;
+    copyObj.outputFilesInfoHolder = outputFilesInfoHolder;
+    copyObj.isLoadWithoutConverterStep = isLoadWithoutConverterStep;
+    copyObj.isLoadWithoutConverterWithoutReArrangeStep = isLoadWithoutConverterWithoutReArrangeStep;
     return copyObj;
   }
 
@@ -651,13 +579,6 @@ public class CarbonLoadModel implements Serializable {
     this.factTimeStamp = factTimeStamp;
   }
 
-  public String[] getDelimiters() {
-    checkAndInitializeComplexDelimiterList();
-    String[] delimiters = new String[complexDelimiters.size()];
-    delimiters = complexDelimiters.toArray(delimiters);
-    return delimiters;
-  }
-
   private void checkAndInitializeComplexDelimiterList() {
     if (null == complexDelimiters) {
       complexDelimiters = new ArrayList<>();
@@ -732,6 +653,14 @@ public class CarbonLoadModel implements Serializable {
     this.quoteChar = quoteChar;
   }
 
+  public String getLineSeparator() {
+    return lineSeparator;
+  }
+
+  public void setLineSeparator(String lineSeparator) {
+    this.lineSeparator = lineSeparator;
+  }
+
   public String getCommentChar() {
     return commentChar;
   }
@@ -788,46 +717,6 @@ public class CarbonLoadModel implements Serializable {
     this.badRecordsAction = badRecordsAction;
   }
 
-  public boolean getUseOnePass() {
-    return useOnePass;
-  }
-
-  public void setUseOnePass(boolean useOnePass) {
-    this.useOnePass = useOnePass;
-  }
-
-  public int getDictionaryServerPort() {
-    return dictionaryServerPort;
-  }
-
-  public void setDictionaryServerPort(int dictionaryServerPort) {
-    this.dictionaryServerPort = dictionaryServerPort;
-  }
-
-  public String getDictionaryServerSecretKey() {
-    return dictionaryServerSecretKey;
-  }
-
-  public void setDictionaryServerSecretKey(String dictionaryServerSecretKey) {
-    this.dictionaryServerSecretKey = dictionaryServerSecretKey;
-  }
-
-  public Boolean getDictionaryEncryptServerSecure() {
-    return dictionaryEncryptServerSecure;
-  }
-
-  public void setDictionaryEncryptServerSecure(Boolean dictionaryEncryptServerSecure) {
-    this.dictionaryEncryptServerSecure = dictionaryEncryptServerSecure;
-  }
-
-  public String getDictionaryServerHost() {
-    return dictionaryServerHost;
-  }
-
-  public void setDictionaryServerHost(String dictionaryServerHost) {
-    this.dictionaryServerHost = dictionaryServerHost;
-  }
-
   public boolean isPreFetch() {
     return preFetch;
   }
@@ -860,14 +749,6 @@ public class CarbonLoadModel implements Serializable {
     this.sortScope = sortScope;
   }
 
-  public String getBatchSortSizeInMb() {
-    return batchSortSizeInMb;
-  }
-
-  public void setBatchSortSizeInMb(String batchSortSizeInMb) {
-    this.batchSortSizeInMb = batchSortSizeInMb;
-  }
-
   public String getGlobalSortPartitions() {
     return globalSortPartitions;
   }
@@ -884,12 +765,12 @@ public class CarbonLoadModel implements Serializable {
     this.badRecordsLocation = badRecordsLocation;
   }
 
-  public String getTimestampformat() {
-    return timestampformat;
+  public String getTimestampFormat() {
+    return timestampFormat;
   }
 
-  public void setTimestampformat(String timestampformat) {
-    this.timestampformat = timestampformat;
+  public void setTimestampFormat(String timestampFormat) {
+    this.timestampFormat = timestampFormat;
   }
 
   public String getSkipEmptyLine() {
@@ -998,5 +879,30 @@ public class CarbonLoadModel implements Serializable {
 
   public int getScaleFactor() {
     return scaleFactor;
+  }
+
+  public OutputFilesInfoHolder getOutputFilesInfoHolder() {
+    return outputFilesInfoHolder;
+  }
+
+  public void setOutputFilesInfoHolder(OutputFilesInfoHolder outputFilesInfoHolder) {
+    this.outputFilesInfoHolder = outputFilesInfoHolder;
+  }
+
+  public boolean isIndexColumnsPresent() {
+    return isIndexColumnsPresent;
+  }
+
+  public void setIndexColumnsPresent(boolean indexColumnsPresent) {
+    isIndexColumnsPresent = indexColumnsPresent;
+  }
+
+  public boolean isLoadWithoutConverterWithoutReArrangeStep() {
+    return isLoadWithoutConverterWithoutReArrangeStep;
+  }
+
+  public void setLoadWithoutConverterWithoutReArrangeStep(
+      boolean loadWithoutConverterWithoutReArrangeStep) {
+    isLoadWithoutConverterWithoutReArrangeStep = loadWithoutConverterWithoutReArrangeStep;
   }
 }

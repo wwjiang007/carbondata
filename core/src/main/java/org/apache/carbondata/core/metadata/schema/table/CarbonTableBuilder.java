@@ -17,7 +17,6 @@
 
 package org.apache.carbondata.core.metadata.schema.table;
 
-import java.util.ArrayList;
 import java.util.Objects;
 
 /**
@@ -67,12 +66,11 @@ public class CarbonTableBuilder {
 
     TableInfo tableInfo = new TableInfo();
     tableInfo.setDatabaseName(databaseName);
-    tableInfo.setTableUniqueName(databaseName + "_" + tableName);
+    tableInfo.setTableUniqueName(CarbonTable.buildUniqueName(databaseName, tableName));
     tableInfo.setFactTable(tableSchema);
     tableInfo.setTablePath(tablePath);
     tableInfo.setTransactionalTable(isTransactionalTable);
     tableInfo.setLastUpdatedTime(System.currentTimeMillis());
-    tableInfo.setDataMapSchemaList(new ArrayList<DataMapSchema>(0));
     return CarbonTable.buildFromTableInfo(tableInfo);
   }
 }

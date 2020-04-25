@@ -113,6 +113,10 @@ public class BlockletFilterScanner extends BlockletFullScanner {
         .get(QueryStatisticsConstants.TOTAL_PAGE_SCANNED);
     totalPagesScanned.addCountStatistic(QueryStatisticsConstants.TOTAL_PAGE_SCANNED,
         totalPagesScanned.getCount() + dataBlock.numberOfPages());
+    QueryStatistic totalBlockletStatistic = queryStatisticsModel.getStatisticsTypeAndObjMap()
+        .get(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM);
+    totalBlockletStatistic.addCountStatistic(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM,
+        totalBlockletStatistic.getCount() + 1);
     // apply min max
     if (isMinMaxEnabled) {
       if (null == dataBlock.getColumnsMaxValue()
@@ -168,11 +172,7 @@ public class BlockletFilterScanner extends BlockletFullScanner {
   private BlockletScannedResult executeFilter(RawBlockletColumnChunks rawBlockletColumnChunks)
       throws FilterUnsupportedException, IOException {
     long startTime = System.currentTimeMillis();
-    QueryStatistic totalBlockletStatistic = queryStatisticsModel.getStatisticsTypeAndObjMap()
-        .get(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM);
-    totalBlockletStatistic.addCountStatistic(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM,
-        totalBlockletStatistic.getCount() + 1);
-    // set the indexed data if it has any during fgdatamap pruning.
+    // set the indexed data if it has any during fgindex pruning.
     BitSetGroup fgBitSetGroup = rawBlockletColumnChunks.getDataBlock().getIndexedData();
     rawBlockletColumnChunks.setBitSetGroup(fgBitSetGroup);
     // apply filter on actual data, for each page
@@ -188,6 +188,11 @@ public class BlockletFilterScanner extends BlockletFullScanner {
       scanTime.addCountStatistic(QueryStatisticsConstants.SCAN_BLOCKlET_TIME,
           scanTime.getCount() + (System.currentTimeMillis() - startTime));
 
+      QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
+          .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
+      scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
+          scannedBlocklets.getCount() + 1);
+
       QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
           .get(QueryStatisticsConstants.PAGE_SCANNED);
       scannedPages.addCountStatistic(QueryStatisticsConstants.PAGE_SCANNED,
@@ -197,9 +202,8 @@ public class BlockletFilterScanner extends BlockletFullScanner {
 
     BlockletScannedResult scannedResult =
         new FilterQueryScannedResult(blockExecutionInfo, queryStatisticsModel);
-    scannedResult.setBlockletId(
-        blockExecutionInfo.getBlockIdString() + CarbonCommonConstants.FILE_SEPARATOR +
-            rawBlockletColumnChunks.getDataBlock().blockletIndex());
+    scannedResult.setBlockletId(blockExecutionInfo.getBlockIdString(),
+        String.valueOf(rawBlockletColumnChunks.getDataBlock().blockletIndex()));
     // valid scanned blocklet
     QueryStatistic validScannedBlockletStatistic = queryStatisticsModel.getStatisticsTypeAndObjMap()
         .get(QueryStatisticsConstants.VALID_SCAN_BLOCKLET_NUM);
@@ -211,6 +215,12 @@ public class BlockletFilterScanner extends BlockletFullScanner {
         .get(QueryStatisticsConstants.VALID_PAGE_SCANNED);
     validPages.addCountStatistic(QueryStatisticsConstants.VALID_PAGE_SCANNED,
         validPages.getCount() + bitSetGroup.getValidPages());
+
+    QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
+        .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
+    scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
+        scannedBlocklets.getCount() + 1);
+
     QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
         .get(QueryStatisticsConstants.PAGE_SCANNED);
     scannedPages.addCountStatistic(QueryStatisticsConstants.PAGE_SCANNED,
@@ -351,10 +361,6 @@ public class BlockletFilterScanner extends BlockletFullScanner {
       RawBlockletColumnChunks rawBlockletColumnChunks)
       throws FilterUnsupportedException, IOException {
     long startTime = System.currentTimeMillis();
-    QueryStatistic totalBlockletStatistic = queryStatisticsModel.getStatisticsTypeAndObjMap()
-        .get(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM);
-    totalBlockletStatistic.addCountStatistic(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM,
-        totalBlockletStatistic.getCount() + 1);
     // apply filter on actual data, for each page
     BitSet pages = this.filterExecuter.prunePages(rawBlockletColumnChunks);
     // if filter result is empty then return with empty result
@@ -366,6 +372,11 @@ public class BlockletFilterScanner extends BlockletFullScanner {
           .get(QueryStatisticsConstants.SCAN_BLOCKlET_TIME);
       scanTime.addCountStatistic(QueryStatisticsConstants.SCAN_BLOCKlET_TIME,
           scanTime.getCount() + (System.currentTimeMillis() - startTime));
+
+      QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
+          .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
+      scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
+          scannedBlocklets.getCount() + 1);
 
       QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
           .get(QueryStatisticsConstants.PAGE_SCANNED);
@@ -388,6 +399,12 @@ public class BlockletFilterScanner extends BlockletFullScanner {
         .get(QueryStatisticsConstants.VALID_PAGE_SCANNED);
     validPages.addCountStatistic(QueryStatisticsConstants.VALID_PAGE_SCANNED,
         validPages.getCount() + pages.cardinality());
+
+    QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
+        .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
+    scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
+        scannedBlocklets.getCount() + 1);
+
     QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
         .get(QueryStatisticsConstants.PAGE_SCANNED);
     scannedPages.addCountStatistic(QueryStatisticsConstants.PAGE_SCANNED,
@@ -434,9 +451,8 @@ public class BlockletFilterScanner extends BlockletFullScanner {
     scannedResult.setPageFilteredRowCount(numberOfRows);
     scannedResult.setPageIdFiltered(pageFilteredPages);
     scannedResult.setLazyBlockletLoader(lazyBlocklet);
-    scannedResult.setBlockletId(
-        blockExecutionInfo.getBlockIdString() + CarbonCommonConstants.FILE_SEPARATOR
-            + rawBlockletColumnChunks.getDataBlock().blockletIndex());
+    scannedResult.setBlockletId(blockExecutionInfo.getBlockIdString(),
+        String.valueOf(rawBlockletColumnChunks.getDataBlock().blockletIndex()));
     // adding statistics for carbon scan time
     QueryStatistic scanTime = queryStatisticsModel.getStatisticsTypeAndObjMap()
         .get(QueryStatisticsConstants.SCAN_BLOCKlET_TIME);

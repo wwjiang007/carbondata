@@ -28,7 +28,7 @@ public enum Encoding {
   RLE,
   INVERTED_INDEX,
   BIT_PACKED,
-  DIRECT_DICTIONARY,
+  DIRECT_DICTIONARY,  // currently, only DATE data type use this encoding
   IMPLICIT,
   DIRECT_COMPRESS,
   ADAPTIVE_INTEGRAL,
@@ -38,7 +38,8 @@ public enum Encoding {
   ADAPTIVE_FLOATING,
   BOOL_BYTE,
   ADAPTIVE_DELTA_FLOATING,
-  DIRECT_COMPRESS_VARCHAR;
+  DIRECT_COMPRESS_VARCHAR,
+  INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY;
 
   public static Encoding valueOf(int ordinal) {
     if (ordinal == DICTIONARY.ordinal()) {
@@ -73,6 +74,8 @@ public enum Encoding {
       return ADAPTIVE_DELTA_FLOATING;
     } else if (ordinal == DIRECT_COMPRESS_VARCHAR.ordinal()) {
       return DIRECT_COMPRESS_VARCHAR;
+    } else if (ordinal == INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY.ordinal()) {
+      return INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY;
     } else {
       throw new RuntimeException("create Encoding with invalid ordinal: " + ordinal);
     }

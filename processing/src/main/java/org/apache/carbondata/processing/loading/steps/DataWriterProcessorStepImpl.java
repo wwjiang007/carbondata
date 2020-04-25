@@ -39,7 +39,7 @@ import org.apache.carbondata.core.util.CarbonThreadFactory;
 import org.apache.carbondata.core.util.CarbonTimeStatisticsFactory;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
-import org.apache.carbondata.processing.datamap.DataMapWriterListener;
+import org.apache.carbondata.processing.index.IndexWriterListener;
 import org.apache.carbondata.processing.loading.AbstractDataLoadProcessorStep;
 import org.apache.carbondata.processing.loading.CarbonDataLoadConfiguration;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
@@ -62,7 +62,7 @@ public class DataWriterProcessorStepImpl extends AbstractDataLoadProcessorStep {
 
   private long readCounter;
 
-  private DataMapWriterListener listener;
+  private IndexWriterListener listener;
 
   private final Map<String, LocalDictionaryGenerator> localDictionaryGeneratorMap;
 
@@ -100,7 +100,7 @@ public class DataWriterProcessorStepImpl extends AbstractDataLoadProcessorStep {
 
   public CarbonFactDataHandlerModel getDataHandlerModel() {
     String[] storeLocation = getStoreLocation();
-    listener = getDataMapWriterListener(0);
+    listener = getIndexWriterListener(0);
     CarbonFactDataHandlerModel carbonFactDataHandlerModel = CarbonFactDataHandlerModel
         .createCarbonFactDataHandlerModel(configuration, storeLocation, 0, 0, listener);
     carbonFactDataHandlerModel.setColumnLocalDictGenMap(localDictionaryGeneratorMap);
@@ -139,6 +139,7 @@ public class DataWriterProcessorStepImpl extends AbstractDataLoadProcessorStep {
         throw new CarbonDataWriterException(e.getCause());
       }
     } catch (CarbonDataWriterException e) {
+      LOGGER.error(e);
       throw new CarbonDataLoadingException("Error while initializing writer: " + e.getMessage(), e);
     } catch (Exception e) {
       throw new CarbonDataLoadingException("There is an unexpected error: " + e.getMessage(), e);
@@ -173,7 +174,7 @@ public class DataWriterProcessorStepImpl extends AbstractDataLoadProcessorStep {
   private void processRange(Iterator<CarbonRowBatch> insideRangeIterator, int rangeId) {
     String[] storeLocation = getStoreLocation();
 
-    listener = getDataMapWriterListener(rangeId);
+    listener = getIndexWriterListener(rangeId);
     CarbonFactDataHandlerModel model = CarbonFactDataHandlerModel
         .createCarbonFactDataHandlerModel(configuration, storeLocation, rangeId, 0, listener);
     model.setColumnLocalDictGenMap(localDictionaryGeneratorMap);
@@ -241,10 +242,10 @@ public class DataWriterProcessorStepImpl extends AbstractDataLoadProcessorStep {
       super.close();
       if (listener != null) {
         try {
-          LOGGER.debug("closing all the DataMap writers registered to DataMap writer listener");
+          LOGGER.debug("closing all the Index writers registered to index writer listener");
           listener.finish();
         } catch (IOException e) {
-          LOGGER.error("error while closing the datamap writers", e);
+          LOGGER.error("error while closing the index writers", e);
           // ignoring the exception
         }
       }

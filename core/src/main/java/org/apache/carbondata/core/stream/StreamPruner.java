@@ -24,9 +24,9 @@ import java.util.BitSet;
 import java.util.List;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
-import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
@@ -64,15 +64,10 @@ public class StreamPruner {
       // prepare cardinality of all dimensions
       List<ColumnSchema> listOfColumns =
           carbonTable.getTableInfo().getFactTable().getListOfColumns();
-      int[] columnCardinality = new int[listOfColumns.size()];
-      for (int index = 0; index < columnCardinality.length; index++) {
-        columnCardinality[index] = Integer.MAX_VALUE;
-      }
       // initial filter executor
-      SegmentProperties segmentProperties =
-          new SegmentProperties(listOfColumns, columnCardinality);
+      SegmentProperties segmentProperties = new SegmentProperties(listOfColumns);
       filterExecuter = FilterUtil.getFilterExecuterTree(
-          filterExp, segmentProperties, null, minMaxCacheColumns);
+          filterExp, segmentProperties, null, minMaxCacheColumns, false);
     }
   }
 
@@ -117,8 +112,7 @@ public class StreamPruner {
       String segmentDir = CarbonTablePath.getSegmentPath(
           carbonTable.getAbsoluteTableIdentifier().getTablePath(), segment.getSegmentNo());
       String indexFile = CarbonTablePath.getCarbonStreamIndexFilePath(segmentDir);
-      FileFactory.FileType fileType = FileFactory.getFileType(indexFile);
-      if (FileFactory.isFileExist(indexFile, fileType)) {
+      if (FileFactory.isFileExist(indexFile)) {
         CarbonIndexFileReader indexReader = new CarbonIndexFileReader();
         indexReader.openThriftReader(indexFile);
         try {

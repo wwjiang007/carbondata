@@ -18,7 +18,6 @@
 package org.apache.carbondata.core.datastore.block;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -26,12 +25,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.keygenerator.KeyGenerator;
-import org.apache.carbondata.core.keygenerator.columnar.ColumnarSplitter;
-import org.apache.carbondata.core.keygenerator.columnar.impl.MultiDimKeyVarLengthVariableSplitGenerator;
-import org.apache.carbondata.core.keygenerator.mdkey.MultiDimKeyVarLengthGenerator;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
@@ -40,7 +38,7 @@ import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.util.CarbonUtil;
 
-import org.apache.commons.lang3.ArrayUtils;
+import org.apache.log4j.Logger;
 
 /**
  * This class contains all the details about the restructuring information of
@@ -49,19 +47,23 @@ import org.apache.commons.lang3.ArrayUtils;
  */
 public class SegmentProperties {
 
-  /**
-   * key generator of the block which was used to generate the mdkey for
-   * normal dimension. this will be required to
-   */
-  private KeyGenerator dimensionKeyGenerator;
+  private static final Logger LOG =
+        LogServiceFactory.getLogService(SegmentProperties.class.getName());
 
-  /**
-   * key generator which was used to generate the mdkey for dimensions in SORT_COLUMNS
-   * if SORT_COLUMNS contains all dimensions, it is same with dimensionKeyGenerator
-   * otherwise, it is different with dimensionKeyGenerator, the number of its dimensions is less
-   * than dimensionKeyGenerator.
-   */
-  private KeyGenerator sortColumnsGenerator;
+  // When calcuting the fingerpinter of all columns. In order to
+  // identify dimension columns with other column. The fingerprinter
+  // of dimensions will leftshift 1 bit
+  private static final int DIMENSIONS_FINGER_PRINTER_SHIFT = 1;
+
+  // When calcuting the fingerpinter of all columns. In order to
+  // identify measure columns with other column. The fingerprinter
+  // of measures will leftshift 2 bit
+  private static final int MEASURES_FINGER_PRINTER_SHIFT = 2;
+
+  // When calcuting the fingerpinter of all columns. In order to
+  // identify complex columns with other column. The fingerprinter
+  // of complex columns will leftshift 3 bit
+  private static final int COMPLEX_FINGER_PRINTER_SHIFT = 3;
 
   /**
    * list of dimension present in the block
@@ -77,21 +79,6 @@ public class SegmentProperties {
    * list of measure present in the block
    */
   private List<CarbonMeasure> measures;
-
-  /**
-   * cardinality of dimension columns participated in key generator
-   */
-  private int[] dimColumnsCardinality;
-
-  /**
-   * partition index of each dictionary column
-   */
-  private int[] dimensionPartitions;
-
-  /**
-   * cardinality of complex dimension
-   */
-  private int[] complexDimColumnCardinality;
 
   /**
    * mapping of dimension ordinal in schema to column chunk index in the data file
@@ -110,29 +97,6 @@ public class SegmentProperties {
   private Map<Integer, Integer> measuresOrdinalToChunkMapping;
 
   /**
-   * size of the each dimension column value in a block this can be used when
-   * we need to do copy a cell value to create a tuple.for no dictionary
-   * column this value will be -1. for dictionary column we size of the value
-   * will be fixed.
-   */
-  private int[] eachDimColumnValueSize;
-
-  /**
-   * size of the each dimension column value in a block this can be used when
-   * we need to do copy a cell value to create a tuple.for no dictionary
-   * column this value will be -1. for dictionary column we size of the value
-   * will be fixed.
-   */
-  private int[] eachComplexDimColumnValueSize;
-
-  /**
-   * this will be used to split the fixed length key
-   * this will all the information about how key was created
-   * and how to split the key based on group
-   */
-  private ColumnarSplitter fixedLengthKeySplitter;
-
-  /**
    * to store the number of no dictionary dimension
    * this will be used during query execution for creating
    * start and end key. Purpose of storing this value here is
@@ -140,18 +104,39 @@ public class SegmentProperties {
    */
   private int numberOfNoDictionaryDimension;
 
-  private int numberOfSortColumns = 0;
+  private int numberOfSortColumns;
 
-  private int numberOfNoDictSortColumns = 0;
+  private int numberOfDictDimensions;
+
+  private int numberOfColumnsAfterFlatten;
 
   private int lastDimensionColOrdinal;
 
-  public SegmentProperties(List<ColumnSchema> columnsInTable, int[] columnCardinality) {
+  /**
+   * The fingerprinter is the xor result of all the columns in table.
+   * Besides, in the case of two segmentproperties have same columns
+   * but different sortcolumn, n like there is a column exists in both
+   * segmentproperties, but is dimension in one segmentproperties,
+   * but is a measure in the other. In order to identify the difference
+   * of these two segmentproperties. The xor result of all dimension
+   * will leftshift 1 bit, the xor results of all measures will leftshift
+   * 2bit, and the xor results of all complex columns will leftshift 3 bits
+   * Sum up, the Formula of generate fingerprinter is
+   *
+   * fingerprinter = (dimensionfingerprinter >> 1)
+   * ^ (measurefingerprinter >> 1) ^ (complexfingerprinter >> 1)
+   * dimensionsfingerprinter = dimension1 ^ dimension2 ^ ...
+   * measuresfingerprinter = measure1 ^ measure2 ^ measure3 ...
+   * complexfingerprinter = complex1 ^ complex2 ^ complex3 ...
+   */
+  private long fingerprinter = Long.MAX_VALUE;
+
+  public SegmentProperties(List<ColumnSchema> columnsInTable) {
     dimensions = new ArrayList<CarbonDimension>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     complexDimensions =
         new ArrayList<CarbonDimension>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     measures = new ArrayList<CarbonMeasure>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
-    fillDimensionAndMeasureDetails(columnsInTable, columnCardinality);
+    fillDimensionAndMeasureDetails(columnsInTable);
     dimensionOrdinalToChunkMapping =
         new HashMap<Integer, Integer>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     blockTodimensionOrdinalMapping =
@@ -160,7 +145,6 @@ public class SegmentProperties {
         new HashMap<Integer, Integer>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     fillOrdinalToBlockMappingForDimension();
     fillOrdinalToChunkIndexMappingForMeasureColumns();
-    fillKeyGeneratorDetails();
   }
 
   /**
@@ -188,9 +172,6 @@ public class SegmentProperties {
     fillBlockToDimensionOrdinalMapping();
   }
 
-  /**
-   *
-   */
   private void fillBlockToDimensionOrdinalMapping() {
     Set<Entry<Integer, Integer>> blocks = dimensionOrdinalToChunkMapping.entrySet();
     Iterator<Entry<Integer, Integer>> blockItr = blocks.iterator();
@@ -203,6 +184,31 @@ public class SegmentProperties {
       }
       dimensionOrdinals.add(block.getKey());
     }
+  }
+
+  /**
+   * compare the segmentproperties based on fingerprinter
+   */
+  @Override
+  public boolean equals(Object obj) {
+    if (!(obj instanceof SegmentProperties)) {
+      return false;
+    }
+    // If these two segmentproperties have different number of columns
+    // Return false directly
+    SegmentProperties segmentProperties = (SegmentProperties) obj;
+    if (this.getNumberOfColumns() != segmentProperties.getNumberOfColumns()) {
+      return false;
+    }
+    // Compare the fingerprinter
+    return getFingerprinter() != Long.MIN_VALUE &&
+            segmentProperties.getFingerprinter() != Long.MIN_VALUE &&
+            (getFingerprinter() == segmentProperties.getFingerprinter());
+  }
+
+  @Override
+  public int hashCode() {
+    return super.hashCode();
   }
 
   /**
@@ -242,13 +248,53 @@ public class SegmentProperties {
   }
 
   /**
+   * fingerprinter = (dimensionfingerprinter >> 1)
+   *   ^ (measurefingerprinter >> 1) ^ (complexfingerprinter >> 1)
+   * dimensionsfingerprinter = dimension1 ^ dimension2 ^ ...
+   * measuresfingerprinter = measure1 ^ measure2 ^ measure3 ...
+   * complexfingerprinter = complex1 ^ complex2 ^ complex3 ...
+   */
+  protected long getFingerprinter() {
+    if (this.fingerprinter == Long.MAX_VALUE) {
+      long dimensionsFingerPrinter = getFingerprinter(this.dimensions.stream()
+              .map(t -> t.getColumnSchema()).collect(Collectors.toList()));
+      long measuresFingerPrinter = getFingerprinter(this.measures.stream()
+              .map(t -> t.getColumnSchema()).collect(Collectors.toList()));
+      long complexFingerPrinter = getFingerprinter(this.complexDimensions.stream()
+              .map(t -> t.getColumnSchema()).collect(Collectors.toList()));
+      this.fingerprinter = (dimensionsFingerPrinter >> DIMENSIONS_FINGER_PRINTER_SHIFT)
+              ^ (measuresFingerPrinter >> MEASURES_FINGER_PRINTER_SHIFT)
+              ^ (complexFingerPrinter >> COMPLEX_FINGER_PRINTER_SHIFT);
+    }
+    return this.fingerprinter;
+  }
+
+  private long getFingerprinter(List<ColumnSchema> columns) {
+    int counter = 0;
+    ColumnSchema columnSchema = null;
+    long fingerprint = Long.MAX_VALUE;
+    while (counter < columns.size()) {
+      columnSchema = columns.get(counter);
+      UUID columnUUID = null;
+      try {
+        columnUUID = UUID.fromString(columnSchema.getColumnUniqueId());
+      } catch (Exception e) {
+        LOG.error("Invalid UUID string: " + columnSchema.getColumnUniqueId());
+        return Long.MIN_VALUE;
+      }
+      long columnUUIDToBits = columnUUID.getMostSignificantBits();
+      fingerprint = fingerprint ^ columnUUIDToBits;
+      counter++;
+    }
+    return fingerprint;
+  }
+
+  /**
    * below method will fill dimension and measure detail of the block.
    *
    * @param columnsInTable
-   * @param columnCardinality
    */
-  private void fillDimensionAndMeasureDetails(List<ColumnSchema> columnsInTable,
-      int[] columnCardinality) {
+  private void fillDimensionAndMeasureDetails(List<ColumnSchema> columnsInTable) {
     ColumnSchema columnSchema = null;
     // ordinal will be required to read the data from file block
     int dimensionOrdinal = 0;
@@ -257,31 +303,20 @@ public class SegmentProperties {
     // cardinality array
     // which is stored in segment info contains -1 if that particular column
     // is n
-    int tableOrdinal = -1;
-    // creating a list as we do not know how many dimension not participated
-    // in the mdkey
-    List<Integer> cardinalityIndexForNormalDimensionColumn =
-        new ArrayList<Integer>(columnsInTable.size());
-    // creating a list as we do not know how many dimension not participated
-    // in the mdkey
-    List<Integer> cardinalityIndexForComplexDimensionColumn =
-        new ArrayList<Integer>(columnsInTable.size());
     boolean isComplexDimensionStarted = false;
     CarbonDimension carbonDimension = null;
-    // to store the position of dimension in surrogate key array which is
-    // participating in mdkey
     int keyOrdinal = 0;
     int counter = 0;
     int complexTypeOrdinal = -1;
     while (counter < columnsInTable.size()) {
       columnSchema = columnsInTable.get(counter);
       if (columnSchema.isDimensionColumn()) {
-        tableOrdinal++;
         // not adding the cardinality of the non dictionary
         // column as it was not the part of mdkey
         if (CarbonUtil.hasEncoding(columnSchema.getEncodingList(), Encoding.DICTIONARY)
             && !isComplexDimensionStarted && columnSchema.getNumberOfChild() == 0) {
-          cardinalityIndexForNormalDimensionColumn.add(tableOrdinal);
+          this.numberOfDictDimensions++;
+          this.numberOfColumnsAfterFlatten++;
           if (columnSchema.isSortColumn()) {
             this.numberOfSortColumns++;
           }
@@ -293,53 +328,35 @@ public class SegmentProperties {
         // as complex type will be stored at last so once complex type started all the dimension
         // will be added to complex type
         else if (isComplexDimensionStarted || columnSchema.getDataType().isComplexType()) {
-          cardinalityIndexForComplexDimensionColumn.add(tableOrdinal);
           carbonDimension =
               new CarbonDimension(columnSchema, dimensionOrdinal++, -1, ++complexTypeOrdinal);
           carbonDimension.initializeChildDimensionsList(columnSchema.getNumberOfChild());
           complexDimensions.add(carbonDimension);
           isComplexDimensionStarted = true;
-          int previousOrdinal = dimensionOrdinal;
           dimensionOrdinal =
               readAllComplexTypeChildren(dimensionOrdinal, columnSchema.getNumberOfChild(),
                   columnsInTable, carbonDimension, complexTypeOrdinal);
-          int numberOfChildrenDimensionAdded = dimensionOrdinal - previousOrdinal;
-          for (int i = 0; i < numberOfChildrenDimensionAdded; i++) {
-            cardinalityIndexForComplexDimensionColumn.add(++tableOrdinal);
-          }
           counter = dimensionOrdinal;
           complexTypeOrdinal = assignComplexOrdinal(carbonDimension, complexTypeOrdinal);
+          this.numberOfColumnsAfterFlatten += getNumColumnsAfterFlatten(carbonDimension);
           continue;
         } else {
           // for no dictionary dimension
           carbonDimension = new CarbonDimension(columnSchema, dimensionOrdinal++, -1, -1);
+          numberOfColumnsAfterFlatten++;
           numberOfNoDictionaryDimension++;
           if (columnSchema.isSortColumn()) {
             this.numberOfSortColumns++;
-            this.numberOfNoDictSortColumns++;
           }
         }
         dimensions.add(carbonDimension);
       } else {
+        numberOfColumnsAfterFlatten++;
         measures.add(new CarbonMeasure(columnSchema, ++measureOrdinal));
       }
       counter++;
     }
     lastDimensionColOrdinal = dimensionOrdinal;
-    dimColumnsCardinality = new int[cardinalityIndexForNormalDimensionColumn.size()];
-    complexDimColumnCardinality = new int[cardinalityIndexForComplexDimensionColumn.size()];
-    int index = 0;
-    // filling the cardinality of the dimension column to create the key
-    // generator
-    for (Integer cardinalityArrayIndex : cardinalityIndexForNormalDimensionColumn) {
-      dimColumnsCardinality[index++] = columnCardinality[cardinalityArrayIndex];
-    }
-    index = 0;
-    // filling the cardinality of the complex dimension column to create the
-    // key generator
-    for (Integer cardinalityArrayIndex : cardinalityIndexForComplexDimensionColumn) {
-      complexDimColumnCardinality[index++] = columnCardinality[cardinalityArrayIndex];
-    }
   }
 
   /**
@@ -394,130 +411,6 @@ public class SegmentProperties {
   }
 
   /**
-   * Below method will fill the key generator detail of both the type of key
-   * generator. This will be required for during both query execution and data
-   * loading.
-   */
-  private void fillKeyGeneratorDetails() {
-    // create a dimension partitioner list
-    // this list will contain information about how dimension value are
-    // stored
-    // it is stored in group or individually
-    List<Integer> dimensionPartitionList =
-        new ArrayList<Integer>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
-    List<Boolean> isDictionaryColumn =
-        new ArrayList<Boolean>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
-    int counter = 0;
-    while (counter < dimensions.size()) {
-      CarbonDimension carbonDimension = dimensions.get(counter);
-      // if dimension is not a part of mdkey then no need to add
-      if (!carbonDimension.getEncoder().contains(Encoding.DICTIONARY)) {
-        isDictionaryColumn.add(false);
-        counter++;
-        continue;
-      }
-      dimensionPartitionList.add(1);
-      isDictionaryColumn.add(true);
-      counter++;
-    }
-    // get the partitioner
-    dimensionPartitions = ArrayUtils
-        .toPrimitive(dimensionPartitionList.toArray(new Integer[dimensionPartitionList.size()]));
-    // get the bit length of each column
-    int[] bitLength = CarbonUtil.getDimensionBitLength(dimColumnsCardinality, dimensionPartitions);
-    // create a key generator
-    this.dimensionKeyGenerator = new MultiDimKeyVarLengthGenerator(bitLength);
-    if (this.getNumberOfDictSortColumns() == bitLength.length) {
-      this.sortColumnsGenerator = this.dimensionKeyGenerator;
-    } else {
-      int numberOfDictSortColumns = this.getNumberOfDictSortColumns();
-      int [] sortColumnBitLength = new int[numberOfDictSortColumns];
-      System.arraycopy(bitLength, 0, sortColumnBitLength, 0, numberOfDictSortColumns);
-      this.sortColumnsGenerator = new MultiDimKeyVarLengthGenerator(sortColumnBitLength);
-    }
-    this.fixedLengthKeySplitter =
-        new MultiDimKeyVarLengthVariableSplitGenerator(bitLength, dimensionPartitions);
-    // get the size of each value in file block
-    int[] dictionaryDimColumnValueSize = fixedLengthKeySplitter.getBlockKeySize();
-    int index = -1;
-    this.eachDimColumnValueSize = new int[isDictionaryColumn.size()];
-    for (int i = 0; i < eachDimColumnValueSize.length; i++) {
-      if (!isDictionaryColumn.get(i)) {
-        eachDimColumnValueSize[i] = -1;
-        continue;
-      }
-      eachDimColumnValueSize[i] = dictionaryDimColumnValueSize[++index];
-    }
-    if (complexDimensions.size() > 0) {
-      int[] complexDimensionPartition = new int[complexDimColumnCardinality.length];
-      // as complex dimension will be stored in column format add one
-      Arrays.fill(complexDimensionPartition, 1);
-      bitLength =
-          CarbonUtil.getDimensionBitLength(complexDimColumnCardinality, complexDimensionPartition);
-      for (int i = 0; i < bitLength.length; i++) {
-        if (complexDimColumnCardinality[i] == 0) {
-          bitLength[i] = 64;
-        }
-      }
-      ColumnarSplitter keySplitter =
-          new MultiDimKeyVarLengthVariableSplitGenerator(bitLength, complexDimensionPartition);
-      eachComplexDimColumnValueSize = keySplitter.getBlockKeySize();
-    } else {
-      eachComplexDimColumnValueSize = new int[0];
-    }
-  }
-
-  /**
-   * Below method is to get the value of each dimension column. As this method
-   * will be used only once so we can merge both the dimension and complex
-   * dimension array. Complex dimension will be store at last so first copy
-   * the normal dimension the copy the complex dimension size. If we store
-   * this value as a class variable unnecessarily we will waste some space
-   *
-   * @return each dimension value size
-   */
-  public int[] getDimensionColumnsValueSize() {
-    int[] dimensionValueSize =
-        new int[eachDimColumnValueSize.length + eachComplexDimColumnValueSize.length];
-    System.arraycopy(
-        eachDimColumnValueSize, 0, dimensionValueSize, 0, eachDimColumnValueSize.length);
-    System.arraycopy(eachComplexDimColumnValueSize, 0, dimensionValueSize,
-        eachDimColumnValueSize.length, eachComplexDimColumnValueSize.length);
-    return dimensionValueSize;
-  }
-
-  public int[] getColumnsValueSize() {
-    int[] dimensionValueSize =
-        new int[eachDimColumnValueSize.length + eachComplexDimColumnValueSize.length + measures
-            .size()];
-    System
-        .arraycopy(eachDimColumnValueSize, 0, dimensionValueSize, 0, eachDimColumnValueSize.length);
-    System.arraycopy(eachComplexDimColumnValueSize, 0, dimensionValueSize,
-        eachDimColumnValueSize.length, eachComplexDimColumnValueSize.length);
-    int k = eachDimColumnValueSize.length + eachComplexDimColumnValueSize.length;
-    for (int i = 0; i < measures.size(); i++) {
-      DataType dataType = measures.get(i).getDataType();
-      if (DataTypes.isDecimal(dataType)) {
-        dimensionValueSize[k++] = -1;
-      } else {
-        dimensionValueSize[k++] = 8;
-      }
-    }
-    return dimensionValueSize;
-  }
-
-  /**
-   * @return the dimensionKeyGenerator
-   */
-  public KeyGenerator getDimensionKeyGenerator() {
-    return dimensionKeyGenerator;
-  }
-
-  public KeyGenerator getSortColumnsGenerator() {
-    return sortColumnsGenerator;
-  }
-
-  /**
    * @return the dimensions
    */
   public List<CarbonDimension> getDimensions() {
@@ -539,27 +432,6 @@ public class SegmentProperties {
   }
 
   /**
-   * @return the dimColumnsCardinality
-   */
-  public int[] getDimColumnsCardinality() {
-    return dimColumnsCardinality;
-  }
-
-  /**
-   * @return
-   */
-  public int[] getDimensionPartitions() {
-    return dimensionPartitions;
-  }
-
-  /**
-   * @return the complexDimColumnCardinality
-   */
-  public int[] getComplexDimColumnCardinality() {
-    return complexDimColumnCardinality;
-  }
-
-  /**
    * @return the dimensionOrdinalToChunkMapping
    */
   public Map<Integer, Integer> getDimensionOrdinalToChunkMapping() {
@@ -574,39 +446,10 @@ public class SegmentProperties {
   }
 
   /**
-   * @return the eachDimColumnValueSize
-   */
-  public int[] getEachDimColumnValueSize() {
-    return eachDimColumnValueSize;
-  }
-
-  /**
-   * @return the eachComplexDimColumnValueSize
-   */
-  public int[] getEachComplexDimColumnValueSize() {
-    return eachComplexDimColumnValueSize;
-  }
-
-  /**
-   * @return the fixedLengthKeySplitter
-   */
-  public ColumnarSplitter getFixedLengthKeySplitter() {
-    return fixedLengthKeySplitter;
-  }
-
-  /**
    * @return the numberOfNoDictionaryDimension
    */
   public int getNumberOfNoDictionaryDimension() {
     return numberOfNoDictionaryDimension;
-  }
-
-  /**
-   * @param blockIndex
-   * @return It returns all dimension present in given block index
-   */
-  public Set<Integer> getDimensionOrdinalForBlock(int blockIndex) {
-    return blockTodimensionOrdinalMapping.get(blockIndex);
   }
 
   /**
@@ -640,15 +483,91 @@ public class SegmentProperties {
     return numberOfSortColumns;
   }
 
-  public int getNumberOfNoDictSortColumns() {
-    return numberOfNoDictSortColumns;
-  }
-
-  public int getNumberOfDictSortColumns() {
-    return this.numberOfSortColumns - this.numberOfNoDictSortColumns;
-  }
-
   public int getLastDimensionColOrdinal() {
     return lastDimensionColOrdinal;
+  }
+
+  public int getNumberOfColumns() {
+    return numberOfColumnsAfterFlatten;
+  }
+
+  public int getNumberOfDictDimensions() {
+    return numberOfDictDimensions;
+  }
+
+  public int getNumberOfPrimitiveDimensions() {
+    return numberOfDictDimensions + numberOfNoDictionaryDimension;
+  }
+
+  public int getNumberOfComplexDimensions() {
+    return complexDimensions.size();
+  }
+
+  public int getNumberOfMeasures() {
+    return measures.size();
+  }
+
+  /**
+   * Return column value length in byte for all dimension columns in the table
+   * for dimension it is -1 (for DATE it is 4),
+   */
+  public int[] createDimColumnValueLength() {
+    int[] length = new int[dimensions.size()];
+    int index = 0;
+    for (CarbonDimension dimension : dimensions) {
+      DataType dataType = dimension.getDataType();
+      if (dataType == DataTypes.DATE) {
+        length[index] = 4;
+      } else {
+        length[index] = -1;
+      }
+      index++;
+    }
+    return length;
+  }
+
+  /**
+   * Return column value length in byte for all columns in the table
+   * for dimension and complex column it is -1 (for DATE it is 4),
+   * for measure is 8 (for decimal is -1)
+   */
+  public int[] createColumnValueLength() {
+    int[] length = new int[numberOfColumnsAfterFlatten];
+    int index = 0;
+    for (CarbonDimension dimension : dimensions) {
+      DataType dataType = dimension.getDataType();
+      if (dataType == DataTypes.DATE) {
+        length[index] = 4;
+      } else {
+        length[index] = -1;
+      }
+      index++;
+    }
+    for (CarbonDimension complexDimension : complexDimensions) {
+      int depth = getNumColumnsAfterFlatten(complexDimension);
+      for (int i = 0; i < depth; i++) {
+        length[index++] = -1;
+      }
+    }
+    for (CarbonMeasure measure : measures) {
+      DataType dataType = measure.getDataType();
+      if (DataTypes.isDecimal(dataType)) {
+        length[index++] = -1;
+      } else {
+        length[index++] = 8;
+      }
+    }
+    return length;
+  }
+
+  private int getNumColumnsAfterFlatten(CarbonDimension dimension) {
+    int count = 1;
+    if (dimension.isComplex()) {
+      List<CarbonDimension> children = dimension.getListOfChildDimensions();
+      for (CarbonDimension child : children) {
+        count += getNumColumnsAfterFlatten(child);
+      }
+    }
+    return count;
   }
 }

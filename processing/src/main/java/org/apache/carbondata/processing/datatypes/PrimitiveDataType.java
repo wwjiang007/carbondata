@@ -21,30 +21,14 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.apache.carbondata.common.logging.LogServiceFactory;
-import org.apache.carbondata.core.cache.Cache;
-import org.apache.carbondata.core.cache.CacheProvider;
-import org.apache.carbondata.core.cache.CacheType;
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.cache.dictionary.DictionaryColumnUniqueIdentifier;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.ColumnType;
 import org.apache.carbondata.core.datastore.row.ComplexColumnInfo;
 import org.apache.carbondata.core.devapi.BiDictionary;
-import org.apache.carbondata.core.devapi.DictionaryGenerationException;
-import org.apache.carbondata.core.dictionary.client.DictionaryClient;
-import org.apache.carbondata.core.dictionary.generator.key.DictionaryMessage;
-import org.apache.carbondata.core.dictionary.generator.key.DictionaryMessageType;
-import org.apache.carbondata.core.keygenerator.KeyGenException;
-import org.apache.carbondata.core.keygenerator.KeyGenerator;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
-import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
@@ -54,21 +38,17 @@ import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeUtil;
 import org.apache.carbondata.processing.loading.converter.BadRecordLogHolder;
-import org.apache.carbondata.processing.loading.dictionary.DictionaryServerClientDictionary;
+import org.apache.carbondata.processing.loading.converter.impl.binary.BinaryDecoder;
 import org.apache.carbondata.processing.loading.dictionary.DirectDictionary;
-import org.apache.carbondata.processing.loading.dictionary.PreCreatedDictionary;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
 import org.apache.carbondata.processing.util.CarbonDataProcessorUtil;
-
-import org.apache.log4j.Logger;
 
 /**
  * Primitive DataType stateless object used in data loading
  */
 public class PrimitiveDataType implements GenericDataType<Object> {
 
-  private static final Logger LOGGER =
-      LogServiceFactory.getLogService(PrimitiveDataType.class.getName());
+  private static final long serialVersionUID = -1518322888733363638L;
 
   /**
    * surrogate index
@@ -105,7 +85,7 @@ public class PrimitiveDataType implements GenericDataType<Object> {
    */
   private int dataCounter;
 
-  private BiDictionary<Integer, Object> dictionaryGenerator;
+  private transient BiDictionary<Integer, Object> dictionaryGenerator;
 
   private CarbonDimension carbonDimension;
 
@@ -116,6 +96,8 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   private boolean isDirectDictionary;
 
   private DataType dataType;
+
+  private transient BinaryDecoder binaryDecoder;
 
   private PrimitiveDataType(int outputArrayIndex, int dataCounter) {
     this.outputArrayIndex = outputArrayIndex;
@@ -146,60 +128,25 @@ public class PrimitiveDataType implements GenericDataType<Object> {
    * @param parentName
    * @param columnId
    * @param carbonDimension
-   * @param absoluteTableIdentifier
-   * @param client
-   * @param useOnePass
-   * @param localCache
    * @param nullFormat
    */
   public PrimitiveDataType(CarbonColumn carbonColumn, String parentName, String columnId,
-      CarbonDimension carbonDimension, AbsoluteTableIdentifier absoluteTableIdentifier,
-      DictionaryClient client, Boolean useOnePass, Map<Object, Integer> localCache,
-      String nullFormat) {
+      CarbonDimension carbonDimension, String nullFormat, BinaryDecoder binaryDecoder) {
     this.name = carbonColumn.getColName();
     this.parentName = parentName;
     this.columnId = columnId;
     this.carbonDimension = carbonDimension;
     this.isDictionary = isDictionaryDimension(carbonDimension);
     this.nullFormat = nullFormat;
+    this.binaryDecoder = binaryDecoder;
     this.dataType = carbonColumn.getDataType();
 
-    DictionaryColumnUniqueIdentifier identifier =
-        new DictionaryColumnUniqueIdentifier(absoluteTableIdentifier,
-            carbonDimension.getColumnIdentifier(), carbonDimension.getDataType());
-    try {
-      if (carbonDimension.hasEncoding(Encoding.DIRECT_DICTIONARY)
-          || carbonColumn.getDataType() == DataTypes.DATE) {
-        dictionaryGenerator = new DirectDictionary(DirectDictionaryKeyGeneratorFactory
-            .getDirectDictionaryGenerator(carbonDimension.getDataType(),
-                getDateFormat(carbonDimension)));
-        isDirectDictionary = true;
-      } else if (carbonDimension.hasEncoding(Encoding.DICTIONARY)) {
-        CacheProvider cacheProvider = CacheProvider.getInstance();
-        Cache<DictionaryColumnUniqueIdentifier, Dictionary> cache =
-            cacheProvider.createCache(CacheType.REVERSE_DICTIONARY);
-        Dictionary dictionary = null;
-        if (useOnePass) {
-          if (CarbonUtil.isFileExistsForGivenColumn(identifier)) {
-            dictionary = cache.get(identifier);
-          }
-          DictionaryMessage dictionaryMessage = new DictionaryMessage();
-          dictionaryMessage.setColumnName(carbonDimension.getColName());
-          // for table initialization
-          dictionaryMessage
-              .setTableUniqueId(absoluteTableIdentifier.getCarbonTableIdentifier().getTableId());
-          dictionaryMessage.setData("0");
-          // for generate dictionary
-          dictionaryMessage.setType(DictionaryMessageType.DICT_GENERATION);
-          dictionaryGenerator = new DictionaryServerClientDictionary(dictionary, client,
-              dictionaryMessage, localCache);
-        } else {
-          dictionary = cache.get(identifier);
-          dictionaryGenerator = new PreCreatedDictionary(dictionary);
-        }
-      }
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+    if (carbonDimension.hasEncoding(Encoding.DIRECT_DICTIONARY)
+        || carbonColumn.getDataType() == DataTypes.DATE) {
+      dictionaryGenerator = new DirectDictionary(DirectDictionaryKeyGeneratorFactory
+          .getDirectDictionaryGenerator(carbonDimension.getDataType(),
+              getDateFormat(carbonDimension)));
+      isDirectDictionary = true;
     }
   }
 
@@ -271,21 +218,13 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   }
 
   /*
-   * get surrogate index
-   */
-  @Override
-  public int getSurrogateIndex() {
-    return index;
-  }
-
-  /*
    * set surrogate index
    */
   @Override
   public void setSurrogateIndex(int surrIndex) {
     if (this.carbonDimension != null && !this.carbonDimension.hasEncoding(Encoding.DICTIONARY)) {
       index = 0;
-    } else if (this.carbonDimension == null && isDictionary == false) {
+    } else if (this.carbonDimension == null && !isDictionary) {
       index = 0;
     } else {
       index = surrIndex;
@@ -299,153 +238,189 @@ public class PrimitiveDataType implements GenericDataType<Object> {
 
   @Override
   public void writeByteArray(Object input, DataOutputStream dataOutputStream,
-      BadRecordLogHolder logHolder) throws IOException, DictionaryGenerationException {
-    String parsedValue =
-        input == null ? null : DataTypeUtil.parseValue(input.toString(), carbonDimension);
-    String message = logHolder.getColumnMessageMap().get(carbonDimension.getColName());
-    if (this.isDictionary) {
-      Integer surrogateKey;
-      if (null == parsedValue) {
-        surrogateKey = CarbonCommonConstants.MEMBER_DEFAULT_VAL_SURROGATE_KEY;
-        if (null == message) {
-          message = CarbonDataProcessorUtil
-              .prepareFailureReason(carbonDimension.getColName(), carbonDimension.getDataType());
-          logHolder.getColumnMessageMap().put(carbonDimension.getColName(), message);
-          logHolder.setReason(message);
-        }
-      } else {
-        if (dictionaryGenerator instanceof DirectDictionary && input instanceof Long) {
-          surrogateKey = ((DirectDictionary) dictionaryGenerator).generateKey((long) input);
-        } else {
-          surrogateKey = dictionaryGenerator.getOrGenerateKey(parsedValue);
-        }
-        if (surrogateKey == CarbonCommonConstants.INVALID_SURROGATE_KEY) {
-          surrogateKey = CarbonCommonConstants.MEMBER_DEFAULT_VAL_SURROGATE_KEY;
-          message = CarbonDataProcessorUtil
-              .prepareFailureReason(carbonDimension.getColName(), carbonDimension.getDataType());
-          logHolder.getColumnMessageMap().put(carbonDimension.getColName(), message);
-          logHolder.setReason(message);
-        }
+      BadRecordLogHolder logHolder, Boolean isWithoutConverter) throws IOException {
+    String parsedValue = null;
+    // write null value
+    if (null == input ||
+        (this.carbonDimension.getDataType() == DataTypes.STRING && input.equals(nullFormat))) {
+      updateNullValue(dataOutputStream, logHolder);
+      return;
+    }
+    // write null value after converter
+    if (!isWithoutConverter) {
+      parsedValue = DataTypeUtil.parseValue(input.toString(), carbonDimension);
+      if (null == parsedValue || (this.carbonDimension.getDataType() == DataTypes.STRING
+          && parsedValue.equals(nullFormat))) {
+        updateNullValue(dataOutputStream, logHolder);
+        return;
       }
-      dataOutputStream.writeInt(surrogateKey);
-    } else {
-      // Transform into ByteArray for No Dictionary.
-      // TODO have to refactor and place all the cases present in NonDictionaryFieldConverterImpl
-      if (null == parsedValue && this.carbonDimension.getDataType() != DataTypes.STRING) {
-        updateNullValue(dataOutputStream, logHolder);
-      } else if (null == parsedValue || parsedValue.equals(nullFormat)) {
-        updateNullValue(dataOutputStream, logHolder);
-      } else {
-        String dateFormat = null;
-        if (this.carbonDimension.getDataType() == DataTypes.DATE) {
-          dateFormat = carbonDimension.getDateFormat();
-        } else if (this.carbonDimension.getDataType() == DataTypes.TIMESTAMP) {
-          dateFormat = carbonDimension.getTimestampFormat();
-        }
-        try {
-          if (!this.carbonDimension.getUseActualData()) {
-            byte[] value = null;
-            if (isDirectDictionary) {
-              int surrogateKey;
-              if (!(input instanceof Long) && !(input instanceof Integer)) {
-                SimpleDateFormat parser = new SimpleDateFormat(getDateFormat(carbonDimension));
-                parser.parse(parsedValue);
-              }
-              // If the input is a long value then this means that logical type was provided by
-              // the user using AvroCarbonWriter. In this case directly generate surrogate key
-              // using dictionaryGenerator.
-              if (dictionaryGenerator instanceof DirectDictionary && input instanceof Long) {
-                surrogateKey = ((DirectDictionary) dictionaryGenerator).generateKey((long) input);
-              } else if (dictionaryGenerator instanceof DirectDictionary
-                  && input instanceof Integer) {
-                // In case of file format, for complex type date or time type, input data comes as a
-                // Integer object, so just assign the surrogate key with the input object value
-                surrogateKey = (int) input;
-              } else {
-                surrogateKey = dictionaryGenerator.getOrGenerateKey(parsedValue);
-              }
-              if (surrogateKey == CarbonCommonConstants.INVALID_SURROGATE_KEY) {
-                value = new byte[0];
-              } else {
-                value = ByteUtil.toXorBytes(surrogateKey);
-              }
+    }
+    // Transform into ByteArray for No Dictionary.
+    try {
+      if (!this.carbonDimension.getUseActualData()) {
+        byte[] value;
+        if (isDirectDictionary) {
+          value = writeDirectDictionary(input, parsedValue, isWithoutConverter);
+        } else {
+          // If the input is a long value then this means that logical type was provided by
+          // the user using AvroCarbonWriter. In this case directly generate Bytes from value.
+          if (this.carbonDimension.getDataType().equals(DataTypes.DATE)
+              || this.carbonDimension.getDataType().equals(DataTypes.TIMESTAMP)
+              && input instanceof Long) {
+            if (dictionaryGenerator != null) {
+              value = ByteUtil.toXorBytes(((DirectDictionary) dictionaryGenerator)
+                  .generateKey((long) input));
             } else {
-              // If the input is a long value then this means that logical type was provided by
-              // the user using AvroCarbonWriter. In this case directly generate Bytes from value.
-              if (this.carbonDimension.getDataType().equals(DataTypes.DATE)
-                  || this.carbonDimension.getDataType().equals(DataTypes.TIMESTAMP)
-                  && input instanceof Long) {
-                if (dictionaryGenerator != null) {
-                  value = ByteUtil.toXorBytes(((DirectDictionary) dictionaryGenerator)
-                      .generateKey((long) input));
-                } else {
-                  value = ByteUtil.toXorBytes(Long.parseLong(parsedValue));
-                }
-              } else if (this.carbonDimension.getDataType().equals(DataTypes.BINARY)) {
-                value = DataTypeUtil.getBytesDataDataTypeForNoDictionaryColumn(input,
-                    this.carbonDimension.getDataType());
+              if (isWithoutConverter) {
+                value = ByteUtil.toXorBytes((Long)input);
               } else {
-                value = DataTypeUtil.getBytesBasedOnDataTypeForNoDictionaryColumn(parsedValue,
-                    this.carbonDimension.getDataType(), dateFormat);
-              }
-              if (this.carbonDimension.getDataType() == DataTypes.STRING
-                  && value.length > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
-                throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
-                    + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+                value = ByteUtil.toXorBytes(Long.parseLong(parsedValue));
               }
             }
-            updateValueToByteStream(dataOutputStream, value);
+          } else if (this.carbonDimension.getDataType().equals(DataTypes.BINARY)) {
+            // write binary data type
+            if (binaryDecoder == null) {
+              value = DataTypeUtil.getBytesDataDataTypeForNoDictionaryColumn(input,
+                  this.carbonDimension.getDataType());
+            } else {
+              if (isWithoutConverter) {
+                value = binaryDecoder.decode((String)input);
+              } else {
+                value = binaryDecoder.decode(parsedValue);
+              }
+            }
           } else {
-            Object value;
-            if (dictionaryGenerator instanceof DirectDictionary
-                && input instanceof Long) {
-              value = ByteUtil.toXorBytes(
-                  ((DirectDictionary) dictionaryGenerator).generateKey((long) input));
+            // write other data types
+            if (isWithoutConverter) {
+              value = DataTypeUtil.getBytesDataDataTypeForNoDictionaryColumn(input,
+                  this.carbonDimension.getDataType());
             } else {
-              value = DataTypeUtil.getDataDataTypeForNoDictionaryColumn(parsedValue,
-                  this.carbonDimension.getDataType(), dateFormat);
-            }
-            if (this.carbonDimension.getDataType() == DataTypes.STRING
-                && value.toString().length() > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
-              throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
-                  + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
-            }
-            if (parsedValue.length() > 0) {
-              updateValueToByteStream(dataOutputStream,
-                  parsedValue.getBytes(Charset.forName(CarbonCommonConstants.DEFAULT_CHARSET)));
-            } else {
-              updateNullValue(dataOutputStream, logHolder);
+              value = DataTypeUtil.getBytesBasedOnDataTypeForNoDictionaryColumn(parsedValue,
+                  this.carbonDimension.getDataType(), getDateOrTimeFormat());
             }
           }
-        } catch (NumberFormatException e) {
-          // Update logHolder for bad record and put null in dataOutputStream.
-          updateNullValue(dataOutputStream, logHolder);
-        } catch (CarbonDataLoadingException e) {
-          throw e;
-        } catch (ParseException ex) {
-          updateNullValue(dataOutputStream, logHolder);
-        } catch (Throwable ex) {
-          // TODO have to implemented the Bad Records LogHolder.
-          // Same like NonDictionaryFieldConverterImpl.
-          throw ex;
+          if (this.carbonDimension.getDataType() == DataTypes.STRING
+              && value.length > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
+            throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
+                + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+          }
         }
+        updateValueToByteStream(dataOutputStream, value);
+      } else {
+        byte[] value;
+        if (dictionaryGenerator instanceof DirectDictionary
+            && input instanceof Long) {
+          value = ByteUtil.toXorBytes(
+              ((DirectDictionary) dictionaryGenerator).generateKey((long) input));
+        } else {
+          if (isWithoutConverter) {
+            value = DataTypeUtil.getBytesDataDataTypeForNoDictionaryColumn(input,
+                this.carbonDimension.getDataType());
+          } else {
+            value = DataTypeUtil.getBytesBasedOnDataTypeForNoDictionaryColumn(parsedValue,
+                this.carbonDimension.getDataType(), getDateOrTimeFormat());
+          }
+        }
+        checkAndWriteByteArray(input, dataOutputStream, logHolder, isWithoutConverter, parsedValue,
+            value);
+      }
+    } catch (NumberFormatException e) {
+      // Update logHolder for bad record and put null in dataOutputStream.
+      updateNullValue(dataOutputStream, logHolder);
+    }
+  }
+
+  private void checkAndWriteByteArray(Object input, DataOutputStream dataOutputStream,
+      BadRecordLogHolder logHolder, Boolean isWithoutConverter, String parsedValue, byte[] value)
+      throws IOException {
+    if (isWithoutConverter) {
+      if (this.carbonDimension.getDataType() == DataTypes.STRING && input instanceof String
+          && ((String)input).length() > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
+        throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
+            + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+      }
+      updateValueToByteStream(dataOutputStream, value);
+    } else {
+      if (this.carbonDimension.getDataType() == DataTypes.STRING
+          && value.length > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
+        throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
+            + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+      }
+      if (parsedValue.length() > 0) {
+        updateValueToByteStream(dataOutputStream,
+            parsedValue.getBytes(Charset.forName(CarbonCommonConstants.DEFAULT_CHARSET)));
+      } else {
+        updateNullValue(dataOutputStream, logHolder);
       }
     }
   }
 
+  private String getDateOrTimeFormat() {
+    if (this.carbonDimension.getDataType() == DataTypes.DATE) {
+      return carbonDimension.getDateFormat();
+    } else if (this.carbonDimension.getDataType() == DataTypes.TIMESTAMP) {
+      return carbonDimension.getTimestampFormat();
+    } else {
+      return null;
+    }
+  }
+
+  private byte[] writeDirectDictionary(
+      Object input,
+      String parsedValue,
+      Boolean isWithoutConverter) {
+    byte[] value;
+    int surrogateKey;
+    // If the input is a long value then this means that logical type was provided by
+    // the user using AvroCarbonWriter. In this case directly generate surrogate key
+    // using dictionaryGenerator.
+    if (input instanceof Long) {
+      surrogateKey = ((DirectDictionary) dictionaryGenerator).generateKey((long) input);
+    } else if (input instanceof Integer) {
+      // In case of file format, for complex type date or time type, input data comes as a
+      // Integer object, so just assign the surrogate key with the input object value
+      surrogateKey = (int) input;
+    } else {
+      // in case of data frame insert, date can come as string value
+      if (isWithoutConverter) {
+        surrogateKey = dictionaryGenerator.getOrGenerateKey(input.toString());
+      } else {
+        surrogateKey = dictionaryGenerator.getOrGenerateKey(parsedValue);
+      }
+    }
+    if (surrogateKey == CarbonCommonConstants.INVALID_SURROGATE_KEY) {
+      value = new byte[0];
+    } else {
+      value = ByteUtil.toXorBytes(surrogateKey);
+    }
+    return value;
+  }
+
   private void updateValueToByteStream(DataOutputStream dataOutputStream, byte[] value)
       throws IOException {
-    dataOutputStream.writeShort(value.length);
+    if (DataTypeUtil.isByteArrayComplexChildColumn(dataType)) {
+      dataOutputStream.writeInt(value.length);
+    } else {
+      dataOutputStream.writeShort(value.length);
+    }
     dataOutputStream.write(value);
   }
 
   private void updateNullValue(DataOutputStream dataOutputStream, BadRecordLogHolder logHolder)
       throws IOException {
     if (this.carbonDimension.getDataType() == DataTypes.STRING) {
-      dataOutputStream.writeShort(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY.length);
+      if (DataTypeUtil.isByteArrayComplexChildColumn(dataType)) {
+        dataOutputStream.writeInt(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY.length);
+      } else {
+        dataOutputStream.writeShort(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY.length);
+      }
       dataOutputStream.write(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY);
     } else {
-      dataOutputStream.writeShort(CarbonCommonConstants.EMPTY_BYTE_ARRAY.length);
+      if (DataTypeUtil.isByteArrayComplexChildColumn(dataType)) {
+        dataOutputStream.writeInt(CarbonCommonConstants.EMPTY_BYTE_ARRAY.length);
+      } else {
+        dataOutputStream.writeShort(CarbonCommonConstants.EMPTY_BYTE_ARRAY.length);
+      }
       dataOutputStream.write(CarbonCommonConstants.EMPTY_BYTE_ARRAY);
     }
     String message = logHolder.getColumnMessageMap().get(carbonDimension.getColName());
@@ -453,31 +428,28 @@ public class PrimitiveDataType implements GenericDataType<Object> {
       message = CarbonDataProcessorUtil
           .prepareFailureReason(carbonDimension.getColName(), carbonDimension.getDataType());
       logHolder.getColumnMessageMap().put(carbonDimension.getColName(), message);
-      logHolder.setReason(message);
     }
+    logHolder.setReason(message);
   }
 
   @Override
-  public void fillCardinality(List<Integer> dimCardWithComplex) {
-    if (!this.carbonDimension.hasEncoding(Encoding.DICTIONARY)) {
-      return;
-    }
-    dimCardWithComplex.add(dictionaryGenerator.size());
-  }
-
-  @Override
-  public void parseComplexValue(ByteBuffer byteArrayInput, DataOutputStream dataOutputStream,
-      KeyGenerator[] generator)
-      throws IOException, KeyGenException {
+  public void parseComplexValue(ByteBuffer byteArrayInput, DataOutputStream dataOutputStream)
+      throws IOException {
     if (!this.isDictionary) {
-      int sizeOfData = byteArrayInput.getShort();
-      dataOutputStream.writeShort(sizeOfData);
+      int sizeOfData;
+      if (DataTypeUtil.isByteArrayComplexChildColumn(dataType)) {
+        sizeOfData = byteArrayInput.getInt();
+        dataOutputStream.writeInt(sizeOfData);
+      } else {
+        sizeOfData = byteArrayInput.getShort();
+        dataOutputStream.writeShort(sizeOfData);
+      }
       byte[] bb = new byte[sizeOfData];
       byteArrayInput.get(bb, 0, sizeOfData);
       dataOutputStream.write(bb);
     } else {
       int data = byteArrayInput.getInt();
-      byte[] v = generator[index].generateKey(new int[] { data });
+      byte[] v = ByteUtil.convertIntToBytes(data);
       dataOutputStream.write(v);
     }
   }
@@ -513,7 +485,13 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   public void getColumnarDataForComplexType(List<ArrayList<byte[]>> columnsArray,
       ByteBuffer inputArray) {
     if (!isDictionary) {
-      byte[] key = new byte[inputArray.getShort()];
+      int length;
+      if (DataTypeUtil.isByteArrayComplexChildColumn(dataType)) {
+        length = inputArray.getInt();
+      } else {
+        length = inputArray.getShort();
+      }
+      byte[] key = new byte[length];
       inputArray.get(key);
       columnsArray.get(outputArrayIndex).add(key);
     } else {
@@ -538,32 +516,6 @@ public class PrimitiveDataType implements GenericDataType<Object> {
    */
   public void setKeySize(int keySize) {
     this.keySize = keySize;
-  }
-
-  /*
-   * fill agg key block
-   */
-  @Override
-  public void fillAggKeyBlock(List<Boolean> aggKeyBlockWithComplex, boolean[] aggKeyBlock) {
-    aggKeyBlockWithComplex.add(aggKeyBlock[index]);
-  }
-
-  /*
-   * fill block key size
-   */
-  @Override
-  public void fillBlockKeySize(List<Integer> blockKeySizeWithComplex, int[] primitiveBlockKeySize) {
-    blockKeySizeWithComplex.add(primitiveBlockKeySize[index]);
-    this.keySize = primitiveBlockKeySize[index];
-  }
-
-  /*
-   * fill cardinality
-   */
-  @Override
-  public void fillCardinalityAfterDataLoad(List<Integer> dimCardWithComplex,
-      int[] maxSurrogateKeyArray) {
-    dimCardWithComplex.add(maxSurrogateKeyArray[index]);
   }
 
   @Override

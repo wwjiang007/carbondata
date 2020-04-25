@@ -20,15 +20,12 @@ package org.apache.carbondata.presto;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryGenerator;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.datatype.StructField;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.scan.executor.QueryExecutor;
 import org.apache.carbondata.core.scan.executor.QueryExecutorFactory;
 import org.apache.carbondata.core.scan.executor.exception.QueryExecutionException;
@@ -42,7 +39,6 @@ import org.apache.carbondata.core.stats.QueryStatistic;
 import org.apache.carbondata.core.stats.QueryStatisticsConstants;
 import org.apache.carbondata.core.stats.QueryStatisticsRecorder;
 import org.apache.carbondata.core.stats.TaskStatistics;
-import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.hadoop.AbstractRecordReader;
 import org.apache.carbondata.hadoop.CarbonInputSplit;
 import org.apache.carbondata.hadoop.CarbonMultiBlockSplit;
@@ -79,10 +75,10 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
 
   private long queryStartTime;
 
-  private CarbonDictionaryDecodeReadSupport readSupport;
+  private CarbonPrestoDecodeReadSupport readSupport;
 
   public PrestoCarbonVectorizedRecordReader(QueryExecutor queryExecutor, QueryModel queryModel,
-      AbstractDetailQueryResultIterator iterator, CarbonDictionaryDecodeReadSupport readSupport) {
+      AbstractDetailQueryResultIterator iterator, CarbonPrestoDecodeReadSupport readSupport) {
     this.queryModel = queryModel;
     this.iterator = iterator;
     this.queryExecutor = queryExecutor;
@@ -96,7 +92,7 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
    */
   @Override
   public void initialize(InputSplit inputSplit, TaskAttemptContext taskAttemptContext)
-      throws IOException, InterruptedException, UnsupportedOperationException {
+      throws IOException, UnsupportedOperationException {
     // The input split can contain single HDFS block or multiple blocks, so firstly get all the
     // blocks and then set them in the query model.
     List<CarbonInputSplit> splitList;
@@ -113,13 +109,9 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
     List<TableBlockInfo> tableBlockInfoList = CarbonInputSplit.createBlocks(splitList);
     queryModel.setTableBlockInfos(tableBlockInfoList);
     queryModel.setVectorReader(true);
-    try {
-      queryExecutor =
-          QueryExecutorFactory.getQueryExecutor(queryModel, taskAttemptContext.getConfiguration());
-      iterator = (AbstractDetailQueryResultIterator) queryExecutor.execute(queryModel);
-    } catch (QueryExecutionException e) {
-      throw new InterruptedException(e.getMessage());
-    }
+    queryExecutor =
+        QueryExecutorFactory.getQueryExecutor(queryModel, taskAttemptContext.getConfiguration());
+    iterator = (AbstractDetailQueryResultIterator) queryExecutor.execute(queryModel);
   }
 
   @Override
@@ -127,13 +119,6 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
     logStatistics(rowCount, queryModel.getStatisticsRecorder());
     if (columnarBatch != null) {
       columnarBatch = null;
-    }
-    // clear dictionary cache
-    Map<String, Dictionary> columnToDictionaryMapping = queryModel.getColumnToDictionaryMapping();
-    if (null != columnToDictionaryMapping) {
-      for (Map.Entry<String, Dictionary> entry : columnToDictionaryMapping.entrySet()) {
-        CarbonUtil.clearDictionaryCache(entry.getValue());
-      }
     }
     try {
       queryExecutor.finish();
@@ -145,7 +130,7 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
   }
 
   @Override
-  public boolean nextKeyValue() throws IOException, InterruptedException {
+  public boolean nextKeyValue() {
     resultBatch();
 
     if (returnColumnarBatch) return nextBatch();
@@ -158,7 +143,7 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
   }
 
   @Override
-  public Object getCurrentValue() throws IOException, InterruptedException {
+  public Object getCurrentValue() {
     if (returnColumnarBatch) {
       rowCount += columnarBatch.numValidRows();
       return columnarBatch;
@@ -168,12 +153,12 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
   }
 
   @Override
-  public Void getCurrentKey() throws IOException, InterruptedException {
+  public Void getCurrentKey() {
     return null;
   }
 
   @Override
-  public float getProgress() throws IOException, InterruptedException {
+  public float getProgress() {
     // TODO : Implement it based on total number of rows it is going to retrieve.
     return 0;
   }
@@ -190,18 +175,16 @@ class PrestoCarbonVectorizedRecordReader extends AbstractRecordReader<Object> {
     StructField[] fields = new StructField[queryDimension.size() + queryMeasures.size()];
     for (int i = 0; i < queryDimension.size(); i++) {
       ProjectionDimension dim = queryDimension.get(i);
-      if (dim.getDimension().hasEncoding(Encoding.DIRECT_DICTIONARY)) {
+      if (dim.getDimension().isComplex()) {
+        fields[dim.getOrdinal()] =
+            new StructField(dim.getColumnName(), dim.getDimension().getDataType());
+      } else if (dim.getDimension().getDataType() == DataTypes.DATE) {
         DirectDictionaryGenerator generator = DirectDictionaryKeyGeneratorFactory
             .getDirectDictionaryGenerator(dim.getDimension().getDataType());
         fields[dim.getOrdinal()] = new StructField(dim.getColumnName(), generator.getReturnType());
-      } else if (!dim.getDimension().hasEncoding(Encoding.DICTIONARY)) {
-        fields[dim.getOrdinal()] =
-            new StructField(dim.getColumnName(), dim.getDimension().getDataType());
-      } else if (dim.getDimension().isComplex()) {
-        fields[dim.getOrdinal()] =
-            new StructField(dim.getColumnName(), dim.getDimension().getDataType());
       } else {
-        fields[dim.getOrdinal()] = new StructField(dim.getColumnName(), DataTypes.INT);
+        fields[dim.getOrdinal()] =
+            new StructField(dim.getColumnName(), dim.getDimension().getDataType());
       }
     }
 

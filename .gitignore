@@ -17,3 +17,11 @@ store/CSDK/cmake-build-debug/*
 .classpath
 metastore_db/
 derby.log
+python/.idea/
+*/.cache-main
+*/.cache-tests
+*/*/.cache-main
+*/*/.cache-tests
+*/*/*/.cache-main
+*/*/*/.cache-tests
+python/pycarbon/.pylintrc

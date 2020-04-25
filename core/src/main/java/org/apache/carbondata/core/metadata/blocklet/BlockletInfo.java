@@ -17,21 +17,15 @@
 
 package org.apache.carbondata.core.metadata.blocklet;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.carbondata.core.metadata.blocklet.datachunk.DataChunk;
 import org.apache.carbondata.core.metadata.blocklet.index.BlockletIndex;
 
-import org.apache.commons.io.input.ClassLoaderObjectInputStream;
 import org.apache.hadoop.io.Writable;
 
 /**
@@ -48,16 +42,6 @@ public class BlockletInfo implements Serializable, Writable {
    * Number of rows in this blocklet
    */
   private int numberOfRows;
-
-  /**
-   * Information about dimension chunk of all dimensions in this blocklet
-   */
-  private List<DataChunk> dimensionColumnChunk;
-
-  /**
-   * Information about measure chunk of all measures in this blocklet
-   */
-  private List<DataChunk> measureColumnChunk;
 
   private List<Long> dimensionChunkOffsets;
 
@@ -104,34 +88,6 @@ public class BlockletInfo implements Serializable, Writable {
    */
   public void setNumberOfRows(int numberOfRows) {
     this.numberOfRows = numberOfRows;
-  }
-
-  /**
-   * @return the dimensionColumnChunk
-   */
-  public List<DataChunk> getDimensionColumnChunk() {
-    return dimensionColumnChunk;
-  }
-
-  /**
-   * @param dimensionColumnChunk the dimensionColumnChunk to set
-   */
-  public void setDimensionColumnChunk(List<DataChunk> dimensionColumnChunk) {
-    this.dimensionColumnChunk = dimensionColumnChunk;
-  }
-
-  /**
-   * @return the measureColumnChunk
-   */
-  public List<DataChunk> getMeasureColumnChunk() {
-    return measureColumnChunk;
-  }
-
-  /**
-   * @param measureColumnChunk the measureColumnChunk to set
-   */
-  public void setMeasureColumnChunk(List<DataChunk> measureColumnChunk) {
-    this.measureColumnChunk = measureColumnChunk;
   }
 
   /**
@@ -224,7 +180,6 @@ public class BlockletInfo implements Serializable, Writable {
     for (int i = 0; i < mSize; i++) {
       output.writeInt(measureChunksLength.get(i));
     }
-    writeChunkInfoForOlderVersions(output);
 
     boolean isSortedPresent = (isSorted != null);
     output.writeBoolean(isSortedPresent);
@@ -240,48 +195,6 @@ public class BlockletInfo implements Serializable, Writable {
       //for old store
       output.writeShort(0);
     }
-  }
-
-  /**
-   * Serialize datachunks as well for older versions like V1 and V2
-   */
-  private void writeChunkInfoForOlderVersions(DataOutput output) throws IOException {
-    int dimChunksSize = dimensionColumnChunk != null ? dimensionColumnChunk.size() : 0;
-    output.writeShort(dimChunksSize);
-    for (int i = 0; i < dimChunksSize; i++) {
-      byte[] bytes = serializeDataChunk(dimensionColumnChunk.get(i));
-      output.writeInt(bytes.length);
-      output.write(bytes);
-    }
-    int msrChunksSize = measureColumnChunk != null ? measureColumnChunk.size() : 0;
-    output.writeShort(msrChunksSize);
-    for (int i = 0; i < msrChunksSize; i++) {
-      byte[] bytes = serializeDataChunk(measureColumnChunk.get(i));
-      output.writeInt(bytes.length);
-      output.write(bytes);
-    }
-  }
-
-  private byte[] serializeDataChunk(DataChunk chunk) throws IOException {
-    ByteArrayOutputStream stream = new ByteArrayOutputStream();
-    ObjectOutputStream outputStream = new ObjectOutputStream(stream);
-    outputStream.writeObject(chunk);
-    outputStream.close();
-    return stream.toByteArray();
-  }
-
-  private DataChunk deserializeDataChunk(byte[] bytes) throws IOException {
-    ByteArrayInputStream stream = new ByteArrayInputStream(bytes);
-    ObjectInputStream inputStream =
-        new ClassLoaderObjectInputStream(Thread.currentThread().getContextClassLoader(), stream);
-    DataChunk dataChunk = null;
-    try {
-      dataChunk = (DataChunk) inputStream.readObject();
-    } catch (ClassNotFoundException e) {
-      throw new IOException(e);
-    }
-    inputStream.close();
-    return dataChunk;
   }
 
   @Override
@@ -307,7 +220,6 @@ public class BlockletInfo implements Serializable, Writable {
     for (int i = 0; i < measureChunkOffsetsSize; i++) {
       measureChunksLength.add(input.readInt());
     }
-    readChunkInfoForOlderVersions(input);
     final boolean isSortedPresent = input.readBoolean();
     if (isSortedPresent) {
       this.isSorted = input.readBoolean();
@@ -319,26 +231,6 @@ public class BlockletInfo implements Serializable, Writable {
       for (int i = 0; i < numberOfRowsPerPage.length; i++) {
         numberOfRowsPerPage[i] = input.readInt();
       }
-    }
-  }
-
-  /**
-   * Deserialize datachunks as well for older versions like V1 and V2
-   */
-  private void readChunkInfoForOlderVersions(DataInput input) throws IOException {
-    short dimChunksSize = input.readShort();
-    dimensionColumnChunk = new ArrayList<>(dimChunksSize);
-    for (int i = 0; i < dimChunksSize; i++) {
-      byte[] bytes = new byte[input.readInt()];
-      input.readFully(bytes);
-      dimensionColumnChunk.add(deserializeDataChunk(bytes));
-    }
-    short msrChunksSize = input.readShort();
-    measureColumnChunk = new ArrayList<>(msrChunksSize);
-    for (int i = 0; i < msrChunksSize; i++) {
-      byte[] bytes = new byte[input.readInt()];
-      input.readFully(bytes);
-      measureColumnChunk.add(deserializeDataChunk(bytes));
     }
   }
 

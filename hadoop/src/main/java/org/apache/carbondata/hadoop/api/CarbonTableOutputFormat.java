@@ -18,6 +18,7 @@
 package org.apache.carbondata.hadoop.api;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -26,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.carbondata.common.exceptions.DeprecatedFeatureException;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.constants.CarbonLoadOptionConstants;
@@ -38,6 +40,7 @@ import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonThreadFactory;
 import org.apache.carbondata.core.util.DataTypeUtil;
 import org.apache.carbondata.core.util.ObjectSerializationUtil;
+import org.apache.carbondata.core.util.OutputFilesInfoHolder;
 import org.apache.carbondata.core.util.ThreadLocalSessionInfo;
 import org.apache.carbondata.hadoop.internal.ObjectArrayWritable;
 import org.apache.carbondata.processing.loading.ComplexDelimitersEnum;
@@ -65,7 +68,7 @@ import org.apache.log4j.Logger;
 // TODO Move dictionary generater which is coded in spark to MR framework.
 public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, ObjectArrayWritable> {
 
-  private static final String LOAD_MODEL = "mapreduce.carbontable.load.model";
+  protected static final String LOAD_MODEL = "mapreduce.carbontable.load.model";
   private static final String DATABASE_NAME = "mapreduce.carbontable.databaseName";
   private static final String TABLE_NAME = "mapreduce.carbontable.tableName";
   private static final String TABLE = "mapreduce.carbontable.table";
@@ -86,18 +89,11 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       "mapreduce.carbontable.empty.data.bad.record";
   public static final String SKIP_EMPTY_LINE = "mapreduce.carbontable.skip.empty.line";
   public static final String SORT_SCOPE = "mapreduce.carbontable.load.sort.scope";
-  public static final String BATCH_SORT_SIZE_INMB =
-      "mapreduce.carbontable.batch.sort.size.inmb";
   public static final String GLOBAL_SORT_PARTITIONS =
       "mapreduce.carbontable.global.sort.partitions";
   public static final String BAD_RECORD_PATH = "mapreduce.carbontable.bad.record.path";
   public static final String DATE_FORMAT = "mapreduce.carbontable.date.format";
   public static final String TIMESTAMP_FORMAT = "mapreduce.carbontable.timestamp.format";
-  public static final String IS_ONE_PASS_LOAD = "mapreduce.carbontable.one.pass.load";
-  public static final String DICTIONARY_SERVER_HOST =
-      "mapreduce.carbontable.dict.server.host";
-  public static final String DICTIONARY_SERVER_PORT =
-      "mapreduce.carbontable.dict.server.port";
   /**
    * Set the update timestamp if user sets in case of update query. It needs to be updated
    * in load status update time
@@ -121,6 +117,12 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       LogServiceFactory.getLogService(CarbonTableOutputFormat.class.getName());
 
   private CarbonOutputCommitter committer;
+
+  /**
+   * Output format task id generator. It should generate a unique id for every task.
+   * It's may conflict when use System.nonaTime() as task id.
+   */
+  private static final AtomicLong DEFAULT_TASK_NO = new AtomicLong(0);
 
   public static void setDatabaseName(Configuration configuration, String databaseName) {
     if (null != databaseName) {
@@ -240,6 +242,7 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
   public RecordWriter<NullWritable, ObjectArrayWritable> getRecordWriter(
       final TaskAttemptContext taskAttemptContext) throws IOException {
     final CarbonLoadModel loadModel = getLoadModel(taskAttemptContext.getConfiguration());
+    loadModel.setOutputFilesInfoHolder(new OutputFilesInfoHolder());
     String appName =
         taskAttemptContext.getConfiguration().get(CarbonCommonConstants.CARBON_WRITTEN_BY_APPNAME);
     if (null != appName) {
@@ -255,7 +258,7 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
     }
     if (null == loadModel.getTaskNo() || loadModel.getTaskNo().isEmpty()) {
       loadModel.setTaskNo(taskAttemptContext.getConfiguration()
-          .get("carbon.outputformat.taskno", String.valueOf(System.nanoTime())));
+          .get("carbon.outputformat.taskno", String.valueOf(DEFAULT_TASK_NO.getAndIncrement())));
     }
     loadModel.setDataWritePath(
         taskAttemptContext.getConfiguration().get("carbon.outputformat.writepath"));
@@ -269,8 +272,8 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
     Future future = executorService.submit(new Thread() {
       @Override
       public void run() {
-        ThreadLocalSessionInfo.setConfigurationToCurrentThread(taskAttemptContext
-            .getConfiguration());
+        ThreadLocalSessionInfo.getOrCreateCarbonSessionInfo().getNonSerializableExtraInfo()
+            .put("carbonConf", taskAttemptContext.getConfiguration());
         try {
           dataLoadExecutor
               .execute(loadModel, tempStoreLocations, iterators);
@@ -314,7 +317,15 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
     model.setDatabaseName(CarbonTableOutputFormat.getDatabaseName(conf));
     model.setTableName(CarbonTableOutputFormat.getTableName(conf));
     model.setCarbonTransactionalTable(true);
+    model.setOutputFilesInfoHolder(new OutputFilesInfoHolder());
     CarbonTable carbonTable = getCarbonTable(conf);
+
+    // global dictionary is not supported since 2.0
+    if (carbonTable.getTableInfo().getFactTable().getTableProperties().containsKey(
+        CarbonCommonConstants.DICTIONARY_INCLUDE)) {
+      DeprecatedFeatureException.globalDictNotSupported();
+    }
+
     String columnCompressor = carbonTable.getTableInfo().getFactTable().getTableProperties().get(
         CarbonCommonConstants.COMPRESSOR);
     if (null == columnCompressor) {
@@ -371,7 +382,7 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
                 CarbonLoadOptionConstants.CARBON_OPTIONS_DATEFORMAT,
                 CarbonLoadOptionConstants.CARBON_OPTIONS_DATEFORMAT_DEFAULT)));
 
-    model.setTimestampformat(
+    model.setTimestampFormat(
         conf.get(
             TIMESTAMP_FORMAT,
             carbonProperty.getProperty(
@@ -385,15 +396,6 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
                 CarbonLoadOptionConstants.CARBON_OPTIONS_GLOBAL_SORT_PARTITIONS,
                 null)));
 
-    model.setBatchSortSizeInMb(
-        conf.get(
-            BATCH_SORT_SIZE_INMB,
-            carbonProperty.getProperty(
-                CarbonLoadOptionConstants.CARBON_OPTIONS_BATCH_SORT_SIZE_INMB,
-                carbonProperty.getProperty(
-                    CarbonCommonConstants.LOAD_BATCH_SORT_SIZE_INMB,
-                    CarbonCommonConstants.LOAD_BATCH_SORT_SIZE_INMB_DEFAULT))));
-
     String badRecordsPath = conf.get(BAD_RECORD_PATH);
     if (StringUtils.isEmpty(badRecordsPath)) {
       badRecordsPath =
@@ -406,12 +408,6 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
       }
     }
     model.setBadRecordsLocation(badRecordsPath);
-    model.setUseOnePass(
-        conf.getBoolean(IS_ONE_PASS_LOAD,
-            Boolean.parseBoolean(
-                carbonProperty.getProperty(
-                    CarbonLoadOptionConstants.CARBON_OPTIONS_SINGLE_PASS,
-                    CarbonLoadOptionConstants.CARBON_OPTIONS_SINGLE_PASS_DEFAULT))));
     return model;
   }
 
@@ -478,7 +474,7 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
           future.get();
         } catch (ExecutionException e) {
           LOG.error("Error while loading data", e);
-          throw new InterruptedException(e.getMessage());
+          throw new RuntimeException(e);
         } finally {
           executorService.shutdownNow();
           dataLoadExecutor.close();
@@ -486,7 +482,38 @@ public class CarbonTableOutputFormat extends FileOutputFormat<NullWritable, Obje
           // clean up the folders and files created locally for data load operation
           TableProcessingOperations.deleteLocalDataLoadFolderLocation(loadModel, false, false);
         }
+        OutputFilesInfoHolder outputFilesInfoHolder = loadModel.getOutputFilesInfoHolder();
+        if (null != outputFilesInfoHolder) {
+          taskAttemptContext.getConfiguration()
+              .set("carbon.number.of.output.files", outputFilesInfoHolder.getFileCount() + "");
+          if (outputFilesInfoHolder.getOutputFiles() != null) {
+            appendConfiguration(taskAttemptContext.getConfiguration(), "carbon.output.files.name",
+                outputFilesInfoHolder.getOutputFiles());
+          }
+          if (outputFilesInfoHolder.getPartitionPath() != null) {
+            appendConfiguration(taskAttemptContext.getConfiguration(),
+                "carbon.output.partitions.name", outputFilesInfoHolder.getPartitionPath());
+          }
+        }
         LOG.info("Closed writer task " + taskAttemptContext.getTaskAttemptID());
+      }
+    }
+
+    private void appendConfiguration(
+        Configuration conf, String key, List<String> value) throws InterruptedException {
+      String currentValue = conf.get(key);
+      try {
+        if (StringUtils.isEmpty(currentValue)) {
+          conf.set(key, ObjectSerializationUtil.convertObjectToString(value), "");
+        } else {
+          ArrayList<String> currentValueList =
+              (ArrayList<String>) ObjectSerializationUtil.convertStringToObject(currentValue);
+          currentValueList.addAll(value);
+          conf.set(key, ObjectSerializationUtil.convertObjectToString(currentValueList), "");
+        }
+      } catch (IOException e) {
+        LOG.error(e);
+        throw new InterruptedException(e.getMessage());
       }
     }
 

@@ -24,28 +24,33 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.apache.carbondata.common.exceptions.sql.MalformedDataMapCommandException;
+import org.apache.carbondata.common.exceptions.sql.MalformedIndexCommandException;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.constants.CarbonLoadOptionConstants;
 import org.apache.carbondata.core.constants.SortScopeOptions;
-import org.apache.carbondata.core.datamap.DataMapStoreManager;
-import org.apache.carbondata.core.datamap.TableDataMap;
-import org.apache.carbondata.core.datamap.dev.DataMapFactory;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.features.TableOperation;
+import org.apache.carbondata.core.index.IndexStoreManager;
+import org.apache.carbondata.core.index.TableIndex;
+import org.apache.carbondata.core.index.dev.IndexFactory;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.CarbonTableIdentifier;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
+import org.apache.carbondata.core.metadata.DatabaseLocationProvider;
+import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.schema.BucketingInfo;
 import org.apache.carbondata.core.metadata.schema.PartitionInfo;
 import org.apache.carbondata.core.metadata.schema.SchemaReader;
+import org.apache.carbondata.core.metadata.schema.index.IndexClassProvider;
+import org.apache.carbondata.core.metadata.schema.indextable.IndexMetadata;
+import org.apache.carbondata.core.metadata.schema.indextable.IndexTableInfo;
 import org.apache.carbondata.core.metadata.schema.partition.PartitionType;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
@@ -56,8 +61,10 @@ import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.filter.FilterExpressionProcessor;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.carbondata.core.util.CarbonProperties;
+import org.apache.carbondata.core.util.CarbonSessionInfo;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeUtil;
+import org.apache.carbondata.core.util.ThreadLocalSessionInfo;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 
 import static org.apache.carbondata.core.util.CarbonUtil.thriftColumnSchemaToWrapperColumnSchema;
@@ -76,7 +83,7 @@ public class CarbonTable implements Serializable, Writable {
   private static final long serialVersionUID = 8696507171227156445L;
 
   // The main object that contains all carbon table information, including
-  // schema, store path, table properties, datamap related info, etc.
+  // schema, store path, table properties, Index related info, etc.
   // All other fields in CarbonTable can be derived from TableInfo.
   private TableInfo tableInfo;
 
@@ -123,14 +130,13 @@ public class CarbonTable implements Serializable, Writable {
   // The last index of the dimension column in all columns
   private int dimensionOrdinalMax;
 
-  // True if this table has datamap
-  private boolean hasDataMapSchema;
-
   // True if local dictionary is enabled for this table
   private boolean isLocalDictionaryEnabled;
 
   // Cardinality threshold for local dictionary, below which dictionary will be generated
   private int localDictionaryThreshold;
+
+  private IndexMetadata indexMetadata;
 
   public CarbonTable() {
     this.visibleDimensions = new LinkedList<>();
@@ -141,36 +147,15 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * During creation of TableInfo from hivemetastore the DataMapSchemas and the columns
+   * During creation of TableInfo from hivemetastore the IndexSchemas and the columns
    * DataTypes are not converted to the appropriate child classes.
    * This method will cast the same to the appropriate classes
    */
   private static void updateTableInfo(TableInfo tableInfo) {
-    List<DataMapSchema> dataMapSchemas = new ArrayList<>();
-    for (DataMapSchema dataMapSchema : tableInfo.getDataMapSchemaList()) {
-      DataMapSchema newDataMapSchema = DataMapSchemaFactory.INSTANCE
-          .getDataMapSchema(dataMapSchema.getDataMapName(), dataMapSchema.getProviderName());
-      newDataMapSchema.setChildSchema(dataMapSchema.getChildSchema());
-      newDataMapSchema.setProperties(dataMapSchema.getProperties());
-      newDataMapSchema.setRelationIdentifier(dataMapSchema.getRelationIdentifier());
-      dataMapSchemas.add(newDataMapSchema);
-    }
-    tableInfo.setDataMapSchemaList(dataMapSchemas);
     for (ColumnSchema columnSchema : tableInfo.getFactTable().getListOfColumns()) {
       columnSchema.setDataType(DataTypeUtil
           .valueOf(columnSchema.getDataType(), columnSchema.getPrecision(),
               columnSchema.getScale()));
-    }
-    List<DataMapSchema> childSchema = tableInfo.getDataMapSchemaList();
-    for (DataMapSchema dataMapSchema : childSchema) {
-      if (dataMapSchema.childSchema != null
-          && dataMapSchema.childSchema.getListOfColumns().size() > 0) {
-        for (ColumnSchema columnSchema : dataMapSchema.childSchema.getListOfColumns()) {
-          columnSchema.setDataType(DataTypeUtil
-              .valueOf(columnSchema.getDataType(), columnSchema.getPrecision(),
-                  columnSchema.getScale()));
-        }
-      }
     }
     if (tableInfo.getFactTable().getBucketingInfo() != null) {
       for (ColumnSchema columnSchema : tableInfo.getFactTable().getBucketingInfo()
@@ -228,8 +213,8 @@ public class CarbonTable implements Serializable, Writable {
    * Return table unique name
    */
   public static String buildUniqueName(String databaseName, String tableName) {
-    return (databaseName + CarbonCommonConstants.UNDERSCORE + tableName).toLowerCase(
-        Locale.getDefault());
+    return (DatabaseLocationProvider.get().provide(databaseName) +
+        CarbonCommonConstants.UNDERSCORE + tableName).toLowerCase(Locale.getDefault());
   }
 
   /**
@@ -282,8 +267,6 @@ public class CarbonTable implements Serializable, Writable {
     if (tableInfo.getFactTable().getPartitionInfo() != null) {
       table.partition = tableInfo.getFactTable().getPartitionInfo();
     }
-    table.hasDataMapSchema =
-        null != tableInfo.getDataMapSchemaList() && tableInfo.getDataMapSchemaList().size() > 0;
     setLocalDictInfo(table, tableInfo);
   }
 
@@ -318,7 +301,11 @@ public class CarbonTable implements Serializable, Writable {
    */
   private void fillCreateOrderColumn() {
     List<CarbonColumn> columns = new ArrayList<CarbonColumn>();
-    columns.addAll(visibleDimensions);
+    for (CarbonDimension dimension : visibleDimensions) {
+      if (!dimension.getColumnSchema().isIndexColumn()) {
+        columns.add(dimension);
+      }
+    }
     columns.addAll(visibleMeasures);
     Collections.sort(columns, new Comparator<CarbonColumn>() {
 
@@ -348,9 +335,10 @@ public class CarbonTable implements Serializable, Writable {
       ColumnSchema columnSchema = listOfColumns.get(i);
       if (columnSchema.isDimensionColumn()) {
         if (columnSchema.getNumberOfChild() > 0) {
+          ++complexTypeOrdinal;
           CarbonDimension complexDimension =
-              new CarbonDimension(columnSchema, dimensionOrdinal++, columnSchema.getSchemaOrdinal(),
-                  -1, ++complexTypeOrdinal);
+              new CarbonDimension(columnSchema, dimensionOrdinal++, -1,
+                  columnSchema.getSchemaOrdinal());
           complexDimension.initializeChildDimensionsList(columnSchema.getNumberOfChild());
           allDimensions.add(complexDimension);
           dimensionOrdinal =
@@ -362,16 +350,16 @@ public class CarbonTable implements Serializable, Writable {
           if (!columnSchema.isInvisible() && columnSchema.isSortColumn()) {
             this.numberOfSortColumns++;
           }
-          if (!columnSchema.getEncodingList().contains(Encoding.DICTIONARY)) {
-            CarbonDimension dimension = new CarbonDimension(columnSchema, dimensionOrdinal++,
-                columnSchema.getSchemaOrdinal(), -1, -1);
+          if (columnSchema.getDataType() != DataTypes.DATE) {
+            CarbonDimension dimension = new CarbonDimension(columnSchema, dimensionOrdinal++, -1,
+                columnSchema.getSchemaOrdinal());
             if (!columnSchema.isInvisible() && columnSchema.isSortColumn()) {
               this.numberOfNoDictSortColumns++;
             }
             allDimensions.add(dimension);
-          } else if (columnSchema.getEncodingList().contains(Encoding.DICTIONARY)) {
+          } else if (columnSchema.getDataType() == DataTypes.DATE) {
             CarbonDimension dimension = new CarbonDimension(columnSchema, dimensionOrdinal++,
-                columnSchema.getSchemaOrdinal(), keyOrdinal++, -1);
+                keyOrdinal++, columnSchema.getSchemaOrdinal());
             allDimensions.add(dimension);
           }
         }
@@ -417,8 +405,8 @@ public class CarbonTable implements Serializable, Writable {
       if (columnSchema.isDimensionColumn()) {
         if (columnSchema.getNumberOfChild() > 0) {
           CarbonDimension complexDimension =
-              new CarbonDimension(columnSchema, dimensionOrdinal++, columnSchema.getSchemaOrdinal(),
-                  -1, -1);
+              new CarbonDimension(columnSchema, dimensionOrdinal++, -1,
+                  columnSchema.getSchemaOrdinal());
           complexDimension.initializeChildDimensionsList(columnSchema.getNumberOfChild());
           parentDimension.getListOfChildDimensions().add(complexDimension);
           dimensionOrdinal =
@@ -426,8 +414,8 @@ public class CarbonTable implements Serializable, Writable {
                   listOfColumns, complexDimension);
         } else {
           CarbonDimension carbonDimension =
-              new CarbonDimension(columnSchema, dimensionOrdinal++, columnSchema.getSchemaOrdinal(),
-                  -1, -1);
+              new CarbonDimension(columnSchema, dimensionOrdinal++, -1,
+                  columnSchema.getSchemaOrdinal());
           parentDimension.getListOfChildDimensions().add(carbonDimension);
         }
       }
@@ -514,6 +502,13 @@ public class CarbonTable implements Serializable, Writable {
    */
   public String getMetadataPath() {
     return CarbonTablePath.getMetadataPath(getTablePath());
+  }
+
+  /**
+   * Return the stage input path
+   */
+  public String getStagePath() {
+    return CarbonTablePath.getStageDir(getTablePath());
   }
 
   /**
@@ -702,11 +697,7 @@ public class CarbonTable implements Serializable, Writable {
    * @return absolute table identifier
    */
   public AbsoluteTableIdentifier getAbsoluteTableIdentifier() {
-    AbsoluteTableIdentifier absoluteTableIdentifier =
-        tableInfo.getOrCreateAbsoluteTableIdentifier();
-    absoluteTableIdentifier.setDictionaryPath(
-        tableInfo.getFactTable().getTableProperties().get(CarbonCommonConstants.DICTIONARY_PATH));
-    return absoluteTableIdentifier;
+    return tableInfo.getOrCreateAbsoluteTableIdentifier();
   }
 
   /**
@@ -726,6 +717,20 @@ public class CarbonTable implements Serializable, Writable {
           .get(CarbonCommonConstants.TABLE_BLOCKLET_SIZE));
     } catch (NumberFormatException e) {
       return Integer.parseInt(CarbonCommonConstants.TABLE_BLOCKLET_SIZE_DEFAULT);
+    }
+  }
+
+  public String getBucketHashMethod() {
+    String configuredMethod = tableInfo.getFactTable().getTableProperties()
+        .get(CarbonCommonConstants.BUCKET_HASH_METHOD);
+    if (configuredMethod == null) {
+      return CarbonCommonConstants.BUCKET_HASH_METHOD_DEFAULT;
+    } else {
+      if (CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE.equals(configuredMethod)) {
+        return CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE;
+      }
+      // by default we use spark_hash_expression hash method
+      return CarbonCommonConstants.BUCKET_HASH_METHOD_DEFAULT;
     }
   }
 
@@ -818,6 +823,18 @@ public class CarbonTable implements Serializable, Writable {
     return numberOfNoDictSortColumns;
   }
 
+  public static List<CarbonDimension> getNoDictSortColumns(List<CarbonDimension> dimensions) {
+    List<CarbonDimension> noDictSortColumns = new ArrayList<>(dimensions.size());
+    for (int i = 0; i < dimensions.size(); i++) {
+      CarbonDimension dimension = dimensions.get(i);
+      if (dimension.isSortColumn() &&
+          dimension.getDataType() != DataTypes.DATE) {
+        noDictSortColumns.add(dimension);
+      }
+    }
+    return noDictSortColumns;
+  }
+
   public CarbonColumn getRangeColumn() {
     String rangeColumn =
         tableInfo.getFactTable().getTableProperties().get(CarbonCommonConstants.RANGE_COLUMN);
@@ -849,48 +866,45 @@ public class CarbonTable implements Serializable, Writable {
     return streaming != null && streaming.equalsIgnoreCase("source");
   }
 
-  /**
-   * whether this table has aggregation DataMap or not
-   */
-  public boolean hasAggregationDataMap() {
-    List<DataMapSchema> dataMapSchemaList = tableInfo.getDataMapSchemaList();
-    if (dataMapSchemaList != null && !dataMapSchemaList.isEmpty()) {
-      for (DataMapSchema dataMapSchema : dataMapSchemaList) {
-        if (dataMapSchema instanceof AggregationDataMapSchema) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   public int getDimensionOrdinalMax() {
     return dimensionOrdinalMax;
   }
 
-  public boolean hasDataMapSchema() {
-    return hasDataMapSchema;
+  /**
+   * Return true if MV created on this table
+   */
+  public boolean hasMVCreated() throws IOException {
+    List<IndexSchema> schemas = IndexStoreManager.getInstance().getIndexSchemasOfTable(this);
+    return schemas.stream().anyMatch(schema ->
+        schema.getProviderName().equalsIgnoreCase(IndexClassProvider.MV.toString()));
   }
 
-  public DataMapSchema getDataMapSchema(String dataMapName) {
-    List<DataMapSchema> dataMaps = tableInfo.getDataMapSchemaList();
-    for (DataMapSchema dataMap : dataMaps) {
-      if (dataMap.getDataMapName().equalsIgnoreCase(dataMapName)) {
-        return dataMap;
-      }
-    }
-    return null;
+  /**
+   * Return true if this table is a MV table (child table of other table)
+   */
+  public boolean isMVTable() {
+    String parentTables = tableInfo.getFactTable().getTableProperties()
+        .get(CarbonCommonConstants.PARENT_TABLES);
+    return null != parentTables && !parentTables.isEmpty();
   }
 
-  public boolean isChildDataMap() {
-    return null != tableInfo.getParentRelationIdentifiers() && !tableInfo
-        .getParentRelationIdentifiers().isEmpty();
-  }
-
-  public boolean isChildTable() {
+  /**
+   * Return true if this table is a MV table (child table of other table)
+   */
+  public boolean isChildTableForMV() {
     return null != tableInfo.getFactTable().getTableProperties()
         .get(CarbonCommonConstants.PARENT_TABLES) && !tableInfo.getFactTable().getTableProperties()
         .get(CarbonCommonConstants.PARENT_TABLES).isEmpty();
+  }
+
+  /**
+   * Return true if this table is a MV table (child table of other table)
+   */
+  public boolean isMV() {
+    return tableInfo.getFactTable().getTableProperties()
+        .get(CarbonCommonConstants.MV_RELATED_TABLES) != null &&
+        !tableInfo.getFactTable().getTableProperties()
+        .get(CarbonCommonConstants.MV_RELATED_TABLES).isEmpty();
   }
 
   /**
@@ -938,8 +952,8 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * methods returns true if operation is allowed for the corresponding datamap or not
-   * if this operation makes datamap stale it is not allowed
+   * methods returns true if operation is allowed for the corresponding Index or not
+   * if this operation makes Index stale it is not allowed
    *
    * @param carbonTable carbontable to be operated
    * @param operation   which operation on the table,such as drop column,change datatype.
@@ -948,15 +962,15 @@ public class CarbonTable implements Serializable, Writable {
    */
   public boolean canAllow(CarbonTable carbonTable, TableOperation operation, Object... targets) {
     try {
-      List<TableDataMap> datamaps = DataMapStoreManager.getInstance().getAllDataMap(carbonTable);
-      if (!datamaps.isEmpty()) {
-        for (TableDataMap dataMap : datamaps) {
-          DataMapFactory factoryClass = DataMapStoreManager.getInstance()
-              .getDataMapFactoryClass(carbonTable, dataMap.getDataMapSchema());
+      List<TableIndex> indexes = IndexStoreManager.getInstance().getAllCGAndFGIndexes(carbonTable);
+      if (!indexes.isEmpty()) {
+        for (TableIndex index : indexes) {
+          IndexFactory factoryClass = IndexStoreManager.getInstance()
+              .getIndexFactoryClass(carbonTable, index.getIndexSchema());
           if (factoryClass.willBecomeStale(operation)) {
             return false;
           }
-          // check whether the operation is blocked for datamap
+          // check whether the operation is blocked for index
           if (factoryClass.isOperationBlocked(operation, targets)) {
             return false;
           }
@@ -972,21 +986,20 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * Get all index columns specified by dataMapSchema
+   * Get all index columns specified by IndexSchema
    */
-  public List<CarbonColumn> getIndexedColumns(DataMapSchema dataMapSchema)
-      throws MalformedDataMapCommandException {
-    String[] columns = dataMapSchema.getIndexColumns();
+  public List<CarbonColumn> getIndexedColumns(String[] columns)
+      throws MalformedIndexCommandException {
     List<CarbonColumn> indexColumn = new ArrayList<>(columns.length);
     for (String column : columns) {
       CarbonColumn carbonColumn = getColumnByName(column.trim().toLowerCase());
       if (carbonColumn == null) {
-        throw new MalformedDataMapCommandException(String
-            .format("column '%s' does not exist in table. Please check create DataMap statement.",
+        throw new MalformedIndexCommandException(String
+            .format("column '%s' does not exist in table. Please check create index statement.",
                 column));
       }
       if (carbonColumn.getColName().isEmpty()) {
-        throw new MalformedDataMapCommandException(
+        throw new MalformedIndexCommandException(
             CarbonCommonConstants.INDEX_COLUMNS + " contains invalid column name");
       }
       indexColumn.add(carbonColumn);
@@ -1141,6 +1154,10 @@ public class CarbonTable implements Serializable, Writable {
     }
   }
 
+  public String getGlobalSortPartitions() {
+    return tableInfo.getFactTable().getTableProperties().get("global_sort_partitions");
+  }
+
   @Override
   public void write(DataOutput out) throws IOException {
     tableInfo.write(out);
@@ -1152,4 +1169,144 @@ public class CarbonTable implements Serializable, Writable {
     tableInfo.readFields(in);
     updateTableByTableInfo(this, tableInfo);
   }
+
+  private void deserializeIndexMetadata() throws IOException {
+    if (indexMetadata == null) {
+      String indexMeta = tableInfo.getFactTable().getTableProperties().get(getTableId());
+      if (null != indexMeta) {
+        indexMetadata = IndexMetadata.deserialize(indexMeta);
+      }
+    }
+  }
+
+  public boolean isIndexTable() throws IOException {
+    deserializeIndexMetadata();
+    return indexMetadata != null && indexMetadata.isIndexTable();
+  }
+
+  public List<String> getIndexTableNames() throws IOException {
+    deserializeIndexMetadata();
+    if (null != indexMetadata) {
+      return indexMetadata.getIndexTables();
+    } else {
+      return new ArrayList<>();
+    }
+  }
+
+  public List<String> getIndexTableNames(String indexProvider) throws IOException {
+    deserializeIndexMetadata();
+    if (null != indexMetadata) {
+      return indexMetadata.getIndexTables(indexProvider);
+    } else {
+      return new ArrayList<>();
+    }
+  }
+
+  public String getIndexInfo() throws IOException {
+    return getIndexInfo(null);
+  }
+
+  public IndexMetadata getIndexMetadata() throws IOException {
+    deserializeIndexMetadata();
+    return indexMetadata;
+  }
+
+  public Map<String, Map<String, Map<String, String>>> getIndexesMap() throws IOException {
+    deserializeIndexMetadata();
+    if (null == indexMetadata) {
+      return new HashMap<>();
+    }
+    return indexMetadata.getIndexesMap();
+  }
+
+  public String getIndexInfo(String indexProvider) throws IOException {
+    deserializeIndexMetadata();
+    if (null != indexMetadata) {
+      if (null != indexProvider) {
+        if (null != indexMetadata.getIndexesMap().get(indexProvider)) {
+          IndexTableInfo[] indexTableInfos =
+              new IndexTableInfo[indexMetadata.getIndexesMap().get(indexProvider).entrySet()
+                  .size()];
+          int index = 0;
+          // In case of secondary index child table, return empty list of IndexTableInfo
+          if (!isIndexTable()) {
+            for (Map.Entry<String, Map<String, String>> entry : indexMetadata.getIndexesMap()
+                .get(indexProvider).entrySet()) {
+              indexTableInfos[index] =
+                  new IndexTableInfo(getDatabaseName(), entry.getKey(), entry.getValue());
+              index++;
+            }
+            return IndexTableInfo.toGson(indexTableInfos);
+          } else {
+            return IndexTableInfo.toGson(new IndexTableInfo[] {});
+          }
+        } else {
+          return IndexTableInfo.toGson(new IndexTableInfo[] {});
+        }
+      } else {
+        IndexTableInfo[] indexTableInfos =
+            new IndexTableInfo[indexMetadata.getIndexTables().size()];
+        int index = 0;
+        if (!isIndexTable()) {
+          for (Map.Entry<String, Map<String, Map<String, String>>> entry : indexMetadata
+              .getIndexesMap().entrySet()) {
+            for (Map.Entry<String, Map<String, String>> indexEntry : entry.getValue().entrySet()) {
+              indexTableInfos[index] =
+                  new IndexTableInfo(getDatabaseName(), indexEntry.getKey(), indexEntry.getValue());
+              index++;
+            }
+          }
+          return IndexTableInfo.toGson(indexTableInfos);
+        } else {
+          return IndexTableInfo.toGson(new IndexTableInfo[] {});
+        }
+      }
+    } else {
+      return null;
+    }
+  }
+
+  public String getParentTableName() {
+    String parentTableName = "";
+    try {
+      deserializeIndexMetadata();
+    } catch (IOException e) {
+      LOGGER.error("Error deserializing index metadata");
+    }
+    if (null != indexMetadata && null != indexMetadata.getParentTableName()) {
+      parentTableName = indexMetadata.getParentTableName();
+    }
+    return parentTableName;
+  }
+
+  /**
+   * It only gives the visible Indexes
+   */
+  public List<TableIndex> getAllVisibleIndexes() throws IOException {
+    CarbonSessionInfo sessionInfo = ThreadLocalSessionInfo.getCarbonSessionInfo();
+    List<TableIndex> allIndexes = IndexStoreManager.getInstance().getAllCGAndFGIndexes(this);
+    Iterator<TableIndex> indexIterator = allIndexes.iterator();
+    while (indexIterator.hasNext()) {
+      TableIndex index = indexIterator.next();
+      String dbName = this.getDatabaseName();
+      String tableName = this.getTableName();
+      String indexName = index.getIndexSchema().getIndexName();
+      // TODO: need support get the visible status of Index without sessionInfo in the future
+      if (sessionInfo != null) {
+        boolean isIndexVisible = sessionInfo.getSessionParams().getProperty(
+            String.format("%s%s.%s.%s", CarbonCommonConstants.CARBON_INDEX_VISIBLE,
+                dbName, tableName, indexName), "true").trim().equalsIgnoreCase("true");
+        if (!isIndexVisible) {
+          LOGGER.warn(String.format("Ignore invisible index %s on table %s.%s",
+              indexName, dbName, tableName));
+          indexIterator.remove();
+        }
+      } else {
+        String message = "Carbon session info is null";
+        LOGGER.info(message);
+      }
+    }
+    return allIndexes;
+  }
+
 }

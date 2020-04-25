@@ -29,10 +29,10 @@ import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile
 import org.apache.carbondata.core.datastore.impl.FileFactory
-import org.apache.carbondata.core.metadata.datatype.DataTypes
+import org.apache.carbondata.core.metadata.datatype.{DataTypes, Field}
 import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil}
 import org.apache.carbondata.presto.server.PrestoServer
-import org.apache.carbondata.sdk.file.{CarbonWriter, Field, Schema}
+import org.apache.carbondata.sdk.file.{CarbonWriter, Schema}
 
 
 class PrestoTestNonTransactionalTableFiles extends FunSuiteLike with BeforeAndAfterAll {
@@ -212,9 +212,7 @@ class PrestoTestNonTransactionalTableFiles extends FunSuiteLike with BeforeAndAf
   }
 
   def deleteFile(path: String, extension: String): Unit = {
-    val file: CarbonFile = FileFactory
-      .getCarbonFile(path, FileFactory.getFileType(path))
-
+    val file: CarbonFile = FileFactory.getCarbonFile(path)
     for (eachDir <- file.listFiles) {
       if (!eachDir.isDirectory) {
         if (eachDir.getName.endsWith(extension)) {

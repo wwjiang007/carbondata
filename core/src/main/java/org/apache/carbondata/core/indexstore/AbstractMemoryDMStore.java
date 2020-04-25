@@ -19,24 +19,24 @@ package org.apache.carbondata.core.indexstore;
 
 import java.io.Serializable;
 
-import org.apache.carbondata.core.indexstore.row.DataMapRow;
+import org.apache.carbondata.core.indexstore.row.IndexRow;
 import org.apache.carbondata.core.indexstore.schema.CarbonRowSchema;
-import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.util.ThreadLocalTaskInfo;
 
 /**
- * Store the data map row @{@link DataMapRow}
+ * Store the data map row @{@link IndexRow}
  */
 public abstract class AbstractMemoryDMStore implements Serializable {
 
   protected boolean isMemoryFreed;
 
+  protected boolean isSerialized;
+
   protected final String taskId = ThreadLocalTaskInfo.getCarbonTaskInfo().getTaskId();
 
-  public abstract void addIndexRow(CarbonRowSchema[] schema, DataMapRow indexRow)
-      throws MemoryException;
+  public abstract void addIndexRow(CarbonRowSchema[] schema, IndexRow indexRow);
 
-  public abstract DataMapRow getDataMapRow(CarbonRowSchema[] schema, int index);
+  public abstract IndexRow getIndexRow(CarbonRowSchema[] schema, int index);
 
   public abstract void freeMemory();
 
@@ -44,12 +44,21 @@ public abstract class AbstractMemoryDMStore implements Serializable {
 
   public abstract int getRowCount();
 
-  public void finishWriting() throws MemoryException {
+  public void finishWriting() {
     // do nothing in default implementation
   }
 
-  public UnsafeMemoryDMStore convertToUnsafeDMStore(CarbonRowSchema[] schema)
-      throws MemoryException {
+  public void serializeMemoryBlock() {
+  }
+
+  public void copyToMemoryBlock() {
+  }
+
+  public UnsafeMemoryDMStore convertToUnsafeDMStore(CarbonRowSchema[] schema) {
     throw new UnsupportedOperationException("Operation not allowed");
+  }
+
+  public boolean isSerialized() {
+    return isSerialized;
   }
 }

@@ -27,9 +27,9 @@ import java.util.Objects;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.annotations.InterfaceStability;
-import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.indexstore.blockletindex.SegmentIndexFileStore;
 import org.apache.carbondata.core.mutate.UpdateVO;
 import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
@@ -126,7 +126,7 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
   }
 
   @Override
-  public Map<String, String> getCommittedIndexFile(Segment segment) throws IOException {
+  public Map<String, String> getCommittedIndexFile(Segment segment) {
     Map<String, String> indexFileStore = new HashMap<>();
     Map<String, List<String>> snapShot = readCommittedIndexFileSnapShot.getSegmentIndexFileMap();
     String segName;
@@ -150,8 +150,7 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
   }
 
   @Override
-  public SegmentRefreshInfo getCommittedSegmentRefreshInfo(Segment segment, UpdateVO updateVo)
-      throws IOException {
+  public SegmentRefreshInfo getCommittedSegmentRefreshInfo(Segment segment, UpdateVO updateVo) {
     Map<String, SegmentRefreshInfo> snapShot =
         readCommittedIndexFileSnapShot.getSegmentTimestampUpdaterMap();
     String segName;
@@ -214,19 +213,19 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
         // Get Segment Name from the IndexFile.
         String indexFilePath =
             FileFactory.getUpdatedFilePath(carbonIndexFiles[i].getAbsolutePath());
-        String segId = getSegmentID(carbonIndexFiles[i].getName(), indexFilePath);
+        String timestamp = getSegmentID(carbonIndexFiles[i].getName(), indexFilePath);
         // TODO. During Partition table handling, place Segment File Name.
         List<String> indexList;
         SegmentRefreshInfo segmentRefreshInfo;
-        if (indexFileStore.get(segId) == null) {
+        if (indexFileStore.get(timestamp) == null) {
           indexList = new ArrayList<>(1);
           segmentRefreshInfo =
-              new SegmentRefreshInfo(carbonIndexFiles[i].getLastModifiedTime(), 0);
-          segmentTimestampUpdaterMap.put(segId, segmentRefreshInfo);
+              new SegmentRefreshInfo(carbonIndexFiles[i].getLastModifiedTime(), 0, 0L);
+          segmentTimestampUpdaterMap.put(timestamp, segmentRefreshInfo);
         } else {
           // Entry is already present.
-          indexList = indexFileStore.get(segId);
-          segmentRefreshInfo = segmentTimestampUpdaterMap.get(segId);
+          indexList = indexFileStore.get(timestamp);
+          segmentRefreshInfo = segmentTimestampUpdaterMap.get(timestamp);
         }
         indexList.add(indexFilePath);
         if (segmentRefreshInfo.getSegmentUpdatedTimestamp() < carbonIndexFiles[i]
@@ -234,7 +233,7 @@ public class LatestFilesReadCommittedScope implements ReadCommittedScope {
           segmentRefreshInfo
               .setSegmentUpdatedTimestamp(carbonIndexFiles[i].getLastModifiedTime());
         }
-        indexFileStore.put(segId, indexList);
+        indexFileStore.put(timestamp, indexList);
         segmentRefreshInfo.setCountOfFileInSegment(indexList.size());
       }
     }

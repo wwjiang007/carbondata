@@ -20,7 +20,6 @@ package org.apache.carbondata.core.scan.executor.infos;
 import java.util.Map;
 
 import org.apache.carbondata.core.datastore.DataRefNode;
-import org.apache.carbondata.core.datastore.IndexKey;
 import org.apache.carbondata.core.datastore.ReusableDataBuffer;
 import org.apache.carbondata.core.datastore.block.AbstractIndex;
 import org.apache.carbondata.core.mutate.DeleteDeltaVo;
@@ -46,20 +45,6 @@ public class BlockExecutionInfo {
    * execution
    */
   private MeasureInfo measureInfo;
-
-  /**
-   * this will be used to get the first tentative block from which query
-   * execution start, this will be useful in case of filter query to get the
-   * start block based on filter values
-   */
-  private IndexKey startKey;
-
-  /**
-   * this will be used to get the last tentative block till which scanning
-   * will be done, this will be useful in case of filter query to get the last
-   * block based on filter values
-   */
-  private IndexKey endKey;
 
   private String blockId;
 
@@ -116,11 +101,6 @@ public class BlockExecutionInfo {
    * no dictionary column block indexes in based on the query order
    */
   private int[] noDictionaryColumnChunkIndexes;
-
-  /**
-   * each column value size
-   */
-  private int[] eachColumnValueSize;
 
   /**
    * filter tree to execute the filter
@@ -223,9 +203,15 @@ public class BlockExecutionInfo {
    */
   private boolean isDirectVectorFill;
 
-  private ReusableDataBuffer[] dimensionResusableDataBuffer;
+  private ReusableDataBuffer[] dimensionReusableDataBuffer;
 
-  private ReusableDataBuffer[] measureResusableDataBuffer;
+  private ReusableDataBuffer[] measureReusableDataBuffer;
+
+  /**
+   * It is used to read only the deleted data of a particular version. It will be used to get the
+   * old updated/deleted data before update.
+   */
+  private boolean readOnlyDelta;
 
   /**
    * @param blockIndex the tableBlock to set
@@ -246,34 +232,6 @@ public class BlockExecutionInfo {
    */
   public void setMeasureInfo(MeasureInfo measureInfo) {
     this.measureInfo = measureInfo;
-  }
-
-  /**
-   * @return the startKey
-   */
-  public IndexKey getStartKey() {
-    return startKey;
-  }
-
-  /**
-   * @param startKey the startKey to set
-   */
-  public void setStartKey(IndexKey startKey) {
-    this.startKey = startKey;
-  }
-
-  /**
-   * @return the endKey
-   */
-  public IndexKey getEndKey() {
-    return endKey;
-  }
-
-  /**
-   * @param endKey the endKey to set
-   */
-  public void setEndKey(IndexKey endKey) {
-    this.endKey = endKey;
   }
 
   /**
@@ -386,20 +344,6 @@ public class BlockExecutionInfo {
    */
   public void setFilterExecuterTree(FilterExecuter filterExecuterTree) {
     this.filterExecuterTree = filterExecuterTree;
-  }
-
-  /**
-   * @return the eachColumnValueSize
-   */
-  public int[] getEachColumnValueSize() {
-    return eachColumnValueSize;
-  }
-
-  /**
-   * @param eachColumnValueSize the eachColumnValueSize to set
-   */
-  public void setEachColumnValueSize(int[] eachColumnValueSize) {
-    this.eachColumnValueSize = eachColumnValueSize;
   }
 
   /**
@@ -644,19 +588,27 @@ public class BlockExecutionInfo {
     isDirectVectorFill = directVectorFill;
   }
 
-  public ReusableDataBuffer[] getDimensionResusableDataBuffer() {
-    return dimensionResusableDataBuffer;
+  public ReusableDataBuffer[] getDimensionReusableDataBuffer() {
+    return dimensionReusableDataBuffer;
   }
 
-  public void setDimensionResusableDataBuffer(ReusableDataBuffer[] dimensionResusableDataBuffer) {
-    this.dimensionResusableDataBuffer = dimensionResusableDataBuffer;
+  public void setDimensionReusableDataBuffer(ReusableDataBuffer[] dimensionReusableDataBuffer) {
+    this.dimensionReusableDataBuffer = dimensionReusableDataBuffer;
   }
 
-  public ReusableDataBuffer[] getMeasureResusableDataBuffer() {
-    return measureResusableDataBuffer;
+  public ReusableDataBuffer[] getMeasureReusableDataBuffer() {
+    return measureReusableDataBuffer;
   }
 
-  public void setMeasureResusableDataBuffer(ReusableDataBuffer[] measureResusableDataBuffer) {
-    this.measureResusableDataBuffer = measureResusableDataBuffer;
+  public void setMeasureReusableDataBuffer(ReusableDataBuffer[] measureReusableDataBuffer) {
+    this.measureReusableDataBuffer = measureReusableDataBuffer;
+  }
+
+  public boolean isReadOnlyDelta() {
+    return readOnlyDelta;
+  }
+
+  public void setReadOnlyDelta(boolean readOnlyDelta) {
+    this.readOnlyDelta = readOnlyDelta;
   }
 }

@@ -146,6 +146,30 @@ public final class CarbonCommonConstants {
   public static final String DEFAULT_COMPRESSOR = "snappy";
 
   /**
+   * the level 1 complex delimiter
+   */
+  @CarbonProperty
+  public static final String COMPLEX_DELIMITERS_LEVEL_1 = "carbon.complex.delimiter.level.1";
+
+  /**
+   * the level 2 complex delimiter
+   */
+  @CarbonProperty
+  public static final String COMPLEX_DELIMITERS_LEVEL_2 = "carbon.complex.delimiter.level.2";
+
+  /**
+   * the level 3 complex delimiter
+   */
+  @CarbonProperty
+  public static final String COMPLEX_DELIMITERS_LEVEL_3 = "carbon.complex.delimiter.level.3";
+
+  /**
+   * the level 4 complex delimiter
+   */
+  @CarbonProperty
+  public static final String COMPLEX_DELIMITERS_LEVEL_4 = "carbon.complex.delimiter.level.4";
+
+  /**
    * ZOOKEEPER_ENABLE_LOCK if this is set to true then zookeeper
    * will be used to handle locking
    * mechanism of carbon
@@ -168,21 +192,17 @@ public final class CarbonCommonConstants {
   public static final String LOCK_PATH_DEFAULT = "";
 
   /**
+   * Specifies the lock implement class.
+   * the class should be the implement of ICarbonLock
+   */
+  @CarbonProperty
+  public static final String LOCK_CLASS = "carbon.lock.class";
+
+  /**
    * ZOOKEEPER_LOCATION this is the location in zookeeper file system where locks are created.
    * mechanism of carbon
    */
   public static final String ZOOKEEPER_LOCATION = "/CarbonLocks";
-
-  /**
-   * xxhash algorithm property for hashmap
-   */
-  @CarbonProperty
-  public static final String ENABLE_XXHASH = "carbon.enableXXHash";
-
-  /**
-   * xxhash algorithm property for hashmap Default value false
-   */
-  public static final String ENABLE_XXHASH_DEFAULT = "true";
 
   /**
    * System property to enable or disable local dictionary generation
@@ -275,12 +295,6 @@ public final class CarbonCommonConstants {
 
   public static final int CARBON_LEASE_RECOVERY_RETRY_INTERVAL_MAX = 10000;
 
-  @CarbonProperty
-  public static final String CARBON_SECURE_DICTIONARY_SERVER =
-      "carbon.secure.dictionary.server";
-
-  public static final String CARBON_SECURE_DICTIONARY_SERVER_DEFAULT = "true";
-
   /**
    * ENABLE_CALCULATE_DATA_INDEX_SIZE
    */
@@ -299,6 +313,15 @@ public final class CarbonCommonConstants {
   public static final String CARBON_SKIP_EMPTY_LINE = "carbon.skip.empty.line";
 
   public static final String CARBON_SKIP_EMPTY_LINE_DEFAULT = "false";
+
+
+  /**
+   *In the write processing, data needs to be converted to string, where the string forms of
+   * array("") and array() are EMPTY_STRING, causing confusion about the write results.
+   * In order to distinguish between array and array(), or map("") and map (), we need to
+   * identity array("") as the EMPTY_STRING, while array() is the SIZE_ZERO_DATA_RETURN
+   */
+  public static final String SIZE_ZERO_DATA_RETURN = "!LENGTH_ZERO_DATA_RETURN!";
 
   /**
    * Currently the segment lock files are not deleted immediately when unlock,
@@ -330,10 +353,19 @@ public final class CarbonCommonConstants {
   public static final String CARBON_INVISIBLE_SEGMENTS_PRESERVE_COUNT_DEFAULT = "200";
 
   /**
-   * System older location to store system level data like datamap schema and status files.
+   * System older location to store system level data like index schema and status files.
    */
   @CarbonProperty
   public static final String CARBON_SYSTEM_FOLDER_LOCATION = "carbon.system.folder.location";
+
+  @CarbonProperty
+  public static final String CARBON_INDEX_SCHEMA_STORAGE = "carbon.index.schema.storage";
+
+  public static final String CARBON_INDEX_SCHEMA_STORAGE_DEFAULT = "DISK";
+
+  public static final String CARBON_INDEX_SCHEMA_STORAGE_DISK = "DISK";
+
+  public static final String CARBON_INDEX_SCHEMA_STORAGE_DATABASE = "DATABASE";
 
   /**
    * It is internal configuration and used only for test purpose.
@@ -428,22 +460,24 @@ public final class CarbonCommonConstants {
   public static final String LOCAL_DICTIONARY_EXCLUDE = "local_dictionary_exclude";
 
   /**
-   * DMPROPERTY for Index DataMap, like lucene, bloomfilter DataMap,
-   * to indicate a list of column name to be indexed
+   * Internal property to store for index column names
+   * TODO: remove it after index metadata refactory
    */
   public static final String INDEX_COLUMNS = "INDEX_COLUMNS";
 
   /**
-   * key for dictionary path
+   * Index handler table property. It allows user to create a new sort column from the set of
+   * existing schema columns. And can generate value for the new column after parsing each row
+   * through custom handler.
    */
-  public static final String DICTIONARY_PATH = "dictionary_path";
+  public static final String INDEX_HANDLER = "index_handler";
+
+  // GeoHash index handler type
+  public static final String GEOHASH = "geohash";
+
   public static final String SORT_COLUMNS = "sort_columns";
   public static final String SORT_SCOPE = "sort_scope";
   public static final String RANGE_COLUMN = "range_column";
-  public static final String PARTITION_TYPE = "partition_type";
-  public static final String NUM_PARTITIONS = "num_partitions";
-  public static final String RANGE_INFO = "range_info";
-  public static final String LIST_INFO = "list_info";
   public static final String COLUMN_PROPERTIES = "columnproperties";
   // table block size in MB
   public static final String TABLE_BLOCKSIZE = "table_blocksize";
@@ -702,17 +736,6 @@ public final class CarbonCommonConstants {
   public static final String DICTIONARY_ONE_CHUNK_SIZE_DEFAULT = "10000";
 
   /**
-   *  Dictionary Server Worker Threads
-   */
-  @CarbonProperty
-  public static final String DICTIONARY_WORKER_THREADS = "dictionary.worker.threads";
-
-  /**
-   *  Dictionary Server Worker Threads
-   */
-  public static final String DICTIONARY_WORKER_THREADS_DEFAULT = "1";
-
-  /**
    * Size of Major Compaction in MBs
    */
   @CarbonProperty(dynamicConfigurable = true)
@@ -768,45 +791,6 @@ public final class CarbonCommonConstants {
   public static final String CARBON_MERGE_SORT_PREFETCH_DEFAULT = "true";
 
   /**
-   * If we are executing insert into query from source table using select statement
-   * & loading the same source table concurrently, when select happens on source table
-   * during the data load , it gets new record for which dictionary is not generated,
-   * So there will be inconsistency. To avoid this condition we can persist the dataframe
-   * into MEMORY_AND_DISK and perform insert into operation. By default this value
-   * will be false because no need to persist the dataframe in all cases. If user want
-   * to run load and insert queries on source table concurrently then user can enable this flag
-   */
-  @InterfaceStability.Evolving
-  @CarbonProperty
-  public static final String CARBON_INSERT_PERSIST_ENABLED = "carbon.insert.persist.enable";
-
-  /**
-   * by default rdd will not be persisted in the insert case.
-   */
-  public static final String CARBON_INSERT_PERSIST_ENABLED_DEFAULT = "false";
-
-  /**
-   * Which storage level to persist dataset when insert into data
-   * with 'carbon.insert.persist.enable'='true'
-   */
-  @InterfaceStability.Evolving
-  @CarbonProperty
-  public static final String CARBON_INSERT_STORAGE_LEVEL =
-      "carbon.insert.storage.level";
-
-  /**
-   * The default value(MEMORY_AND_DISK) is the same as the default storage level of Dataset.
-   * Unlike `RDD.cache()`, the default storage level is set to be `MEMORY_AND_DISK` because
-   * recomputing the in-memory columnar representation of the underlying table is expensive.
-   *
-   * if user's executor has less memory, set the CARBON_INSERT_STORAGE_LEVEL
-   * to MEMORY_AND_DISK_SER or other storage level to correspond to different environment.
-   * You can get more recommendations about storage level in spark website:
-   * http://spark.apache.org/docs/latest/rdd-programming-guide.html#rdd-persistence.
-   */
-  public static final String CARBON_INSERT_STORAGE_LEVEL_DEFAULT = "MEMORY_AND_DISK";
-
-  /**
    * Number of unmerged segments to be merged.
    */
   @CarbonProperty(dynamicConfigurable = true)
@@ -817,6 +801,17 @@ public final class CarbonCommonConstants {
    * Default count for Number of segments to be merged in levels is 4,3
    */
   public static final String DEFAULT_SEGMENT_LEVEL_THRESHOLD = "4,3";
+
+
+  /**
+   * Lower limit for the number of segment compacted per time
+   */
+  public static final int NUMBER_OF_SEGMENT_COMPACTED_PERTIME_LOWER_LIMIT = 0;
+
+  /**
+   * Upper limit for the number of segment compacted per time
+   */
+  public static final int NUMBER_OF_SEGMENT_COMPACTED_PERTIME_UPPER_LIMIT = 10000;
 
   /**
    * Number of Update Delta files which is the Threshold for IUD compaction.
@@ -891,6 +886,23 @@ public final class CarbonCommonConstants {
    * Default value for HorizontalCompaction is true.
    */
   public static final String CARBON_HORIZONTAL_COMPACTION_ENABLE_DEFAULT = "true";
+
+  /**
+   * For validating the key to value mapping in case of update.
+   * Update operation should throw exception if one key has more than one value to update.
+   * This validation might have slight degrade in performance of update query.
+   * If user knows that key value mapping is correct.
+   * can disable this validation for better update performance.
+   */
+  @CarbonProperty
+  public static final String CARBON_UPDATE_CHECK_UNIQUE_VALUE =
+      "carbon.update.check.unique.value";
+
+  /**
+   * Default validation of unique value check enabled for the update.
+   */
+  public static final String CARBON_UPDATE_CHECK_UNIQUE_VALUE_DEFAULT = "true";
+
 
   /**
    * Which storage level to persist dataset when updating data
@@ -972,23 +984,12 @@ public final class CarbonCommonConstants {
   public static final String LOAD_SORT_SCOPE = "carbon.load.sort.scope";
 
   /**
-   * If set to BATCH_SORT, the sorting scope is smaller and more index tree will be created,
-   * thus loading is faster but query maybe slower.
    * If set to LOCAL_SORT, the sorting scope is bigger and one index tree per data node will be
    * created, thus loading is slower but query is faster.
    * If set to GLOBAL_SORT, the sorting scope is bigger and one index tree per task will be
    * created, thus loading is slower but query is faster.
    */
   public static final String LOAD_SORT_SCOPE_DEFAULT = "NO_SORT";
-
-  /**
-   * Size of batch data to keep in memory, as a thumb rule it supposed
-   * to be less than 45% of sort.inmemory.size.inmb otherwise it may spill intermediate data to disk
-   */
-  @CarbonProperty
-  public static final String LOAD_BATCH_SORT_SIZE_INMB = "carbon.load.batch.sort.size.inmb";
-
-  public static final String LOAD_BATCH_SORT_SIZE_INMB_DEFAULT = "0";
 
   /**
    * The Number of partitions to use when shuffling data for sort. If user don't configurate or
@@ -1000,16 +1001,6 @@ public final class CarbonCommonConstants {
 
   public static final String LOAD_GLOBAL_SORT_PARTITIONS_DEFAULT = "0";
 
-  /*
-   * carbon dictionary server port
-   */
-  @CarbonProperty
-  public static final String DICTIONARY_SERVER_PORT = "carbon.dictionary.server.port";
-
-  /**
-   * Default carbon dictionary server port
-   */
-  public static final String DICTIONARY_SERVER_PORT_DEFAULT = "2030";
   /**
    * whether to prefetch data while loading.
    */
@@ -1220,6 +1211,14 @@ public final class CarbonCommonConstants {
 
   public static final int CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB_MAX = 16;
 
+  /**
+  * by default, disable the bad record and converter during "insert into"
+  */
+  public static final String CARBON_ENABLE_BAD_RECORD_HANDLING_FOR_INSERT =
+      "carbon.enable.bad.record.handling.for.insert";
+
+  public static final String CARBON_ENABLE_BAD_RECORD_HANDLING_FOR_INSERT_DEFAULT = "false";
+
   //////////////////////////////////////////////////////////////////////////////////////////
   // Query parameter start here
   //////////////////////////////////////////////////////////////////////////////////////////
@@ -1310,6 +1309,17 @@ public final class CarbonCommonConstants {
   public static final String ENABLE_VECTOR_READER_DEFAULT = "true";
 
   /**
+   * In cloud object store scenario, overwriting table status file is not an atomic
+   * operation since it uses rename API. Thus, it is possible that table status is corrupted
+   * if process crashed when overwriting the table status file.
+   * To protect from file corruption, user can enable this property.
+   */
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String ENABLE_TABLE_STATUS_BACKUP = "carbon.enable.tablestatus.backup";
+
+  public static final String ENABLE_TABLE_STATUS_BACKUP_DEFAULT = "false";
+
+  /**
    * property to set is IS_DRIVER_INSTANCE
    */
   @CarbonProperty
@@ -1340,6 +1350,12 @@ public final class CarbonCommonConstants {
 
   @CarbonProperty(dynamicConfigurable = true)
   public static final String CARBON_CUSTOM_BLOCK_DISTRIBUTION = "carbon.custom.block.distribution";
+
+  /**
+   * Default value for CARBON_CUSTOM_BLOCK_DISTRIBUTION
+   */
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String CARBON_CUSTOM_BLOCK_DISTRIBUTION_DEFAULT = "false";
 
   /**
    * This property defines how the tasks are split/combined and launch spark tasks during query
@@ -1483,8 +1499,14 @@ public final class CarbonCommonConstants {
 
   public static final String CARBON_MAX_DRIVER_THREADS_FOR_BLOCK_PRUNING_DEFAULT = "4";
 
-  // block prune in multi-thread if files size more than 100K files.
-  public static final int CARBON_DRIVER_PRUNING_MULTI_THREAD_ENABLE_FILES_COUNT = 100000;
+  // block prune in multi-thread if files count more than specify threshold.
+  @CarbonProperty
+  public static final String CARBON_DRIVER_PRUNING_MULTI_THREAD_ENABLE_FILES_COUNT =
+      "carbon.driver.pruning.multi.thread.enable.files.count";
+
+  // the default value of file count to trigger block prune in multi-thread is 100K files.
+  public static final String CARBON_DRIVER_PRUNING_MULTI_THREAD_ENABLE_FILES_COUNT_DEFAULT =
+      "100000";
 
   /**
    * max executor threads used for block pruning [1 to 4 threads]
@@ -1503,28 +1525,27 @@ public final class CarbonCommonConstants {
 
   public static final String CARBON_QUERY_PREFETCH_ENABLE_DEFAULT = "true";
 
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String CARBON_QUERY_STAGE_INPUT =
+      "carbon.query.stage.input.enable";
+
+  public static final String CARBON_QUERY_STAGE_INPUT_DEFAULT = "false";
+
   //////////////////////////////////////////////////////////////////////////////////////////
-  // Datamap parameter start here
+  // Index parameter start here
   //////////////////////////////////////////////////////////////////////////////////////////
 
   /**
-   * key prefix for set command. 'carbon.datamap.visible.dbName.tableName.dmName = false' means
-   * that the query on 'dbName.table' will not use the datamap 'dmName'
+   * key prefix for set command. 'carbon.index.visible.dbName.tableName.indexName = false' means
+   * that the query on 'dbName.table' will not use the index 'indexName'
    */
   @InterfaceStability.Unstable
   @CarbonProperty(dynamicConfigurable = true)
-  public static final String CARBON_DATAMAP_VISIBLE = "carbon.datamap.visible.";
-
-  /**
-   * Fetch and validate the segments.
-   * Used for aggregate table load as segment validation is not required.
-   */
-  @CarbonProperty(dynamicConfigurable = true)
-  public static final String VALIDATE_CARBON_INPUT_SEGMENTS = "validate.carbon.input.segments.";
+  public static final String CARBON_INDEX_VISIBLE = "carbon.index.visible.";
 
   /**
    * Whether load/insert command is fired internally or by the user.
-   * Used to block load/insert on pre-aggregate if fired by user
+   * Used to block load/insert on MV if fired by user
    */
   @CarbonProperty
   public static final String IS_INTERNAL_LOAD_CALL = "is.internal.load.call";
@@ -1532,24 +1553,13 @@ public final class CarbonCommonConstants {
   public static final String IS_INTERNAL_LOAD_CALL_DEFAULT = "false";
 
   @CarbonProperty
-  public static final String USE_DISTRIBUTED_DATAMAP = "carbon.enable.distributed.datamap";
+  public static final String USE_DISTRIBUTED_INDEX = "carbon.enable.distributed.index";
 
-  public static final String USE_DISTRIBUTED_DATAMAP_DEFAULT = "false";
+  public static final String USE_DISTRIBUTED_INDEX_DEFAULT = "false";
 
+  // Property to enable parallel index loading for a table
   @CarbonProperty(dynamicConfigurable = true)
-  public static final String SUPPORT_DIRECT_QUERY_ON_DATAMAP =
-      "carbon.query.directQueryOnDataMap.enabled";
-
-  public static final String SUPPORT_DIRECT_QUERY_ON_DATAMAP_DEFAULTVALUE = "false";
-
-  @CarbonProperty
-  public static final String CARBON_SHOW_DATAMAPS = "carbon.query.show.datamaps";
-
-  public static final String CARBON_SHOW_DATAMAPS_DEFAULT = "true";
-
-  // Property to enable parallel datamap loading for a table
-  @CarbonProperty(dynamicConfigurable = true)
-  public static final String CARBON_LOAD_DATAMAPS_PARALLEL = "carbon.load.datamaps.parallel.";
+  public static final String CARBON_LOAD_INDEXES_PARALLEL = "carbon.load.indexes.parallel.";
 
   // by default lucene will not store or create index for stop words like "is","the", if this
   // property is set to true lucene will index for stop words also and gives result for the filter
@@ -1890,6 +1900,11 @@ public final class CarbonCommonConstants {
   public static final long CARBON_256MB = 256 * 1024 * 1024;
 
   /**
+   * CUSTOM TYPE
+   */
+  public static final String CARBON_LOCK_TYPE_CUSTOM = "CUSTOM";
+
+  /**
    * ZOOKEEPERLOCK TYPE
    */
   public static final String CARBON_LOCK_TYPE_ZOOKEEPER = "ZOOKEEPERLOCK";
@@ -2013,8 +2028,6 @@ public final class CarbonCommonConstants {
   public static final String MINOR = "minor";
   public static final String MAJOR = "major";
 
-  public static final int DICTIONARY_DEFAULT_CARDINALITY = 1;
-
   /**
    * this will be used to provide comment for table
    */
@@ -2065,12 +2078,6 @@ public final class CarbonCommonConstants {
   public static final String CARBON_WRITTEN_BY_APPNAME = "carbon.writtenby.app.name";
 
   /**
-   * When more global dictionary columns are there then there is issue in generating codegen to them
-   * and it slows down the query.So we limit to 100 for now
-   */
-  public static final int CARBON_ALLOW_DIRECT_FILL_DICT_COLS_LIMIT = 100;
-
-  /**
    * page size in mb. If page size exceeds this value before 32000 rows count, page will be cut.
    * And remaining rows will written in next page.
    */
@@ -2083,6 +2090,11 @@ public final class CarbonCommonConstants {
 
   // As due to SnappyCompressor.MAX_BYTE_TO_COMPRESS is 1.75 GB
   public static final int TABLE_PAGE_SIZE_MAX_INMB = 1755;
+
+  /**
+   * Current segment file
+   */
+  public static final String CURRENT_SEGMENTFILE = "current.segmentfile";
 
   //////////////////////////////////////////////////////////////////////////////////////////
   // Unused constants and parameters start here
@@ -2185,11 +2197,6 @@ public final class CarbonCommonConstants {
   public static final String FACT_FILE_UPDATED = "update";
 
   /**
-   * default value in size for cache size of bloom filter datamap.
-   */
-  public static final String CARBON_QUERY_DATAMAP_BLOOM_CACHE_SIZE_DEFAULT_VAL = "512";
-
-  /**
    * The IP on which Index Server will be started.
    */
   @CarbonProperty
@@ -2231,14 +2238,26 @@ public final class CarbonCommonConstants {
       500;
 
   /**
-   * This property will be used to store datamap name
+   * Set it to true to enable audit
    */
-  public static final String DATAMAP_NAME = "datamap_name";
+  public static final String CARBON_ENABLE_AUDIT = "carbon.audit.enabled";
+
+  public static final String CARBON_ENABLE_AUDIT_DEFAULT = "true";
 
   /**
-   * This property will be used to store parentable name's associated with datamap
+   * This property will be used to store mv name
+   */
+  public static final String MV_NAME = "mv_name";
+
+  /**
+   * This property will be used to store parentable name's associated with mv
    */
   public static final String PARENT_TABLES = "parent_tables";
+
+  /**
+   * This property will be used to store table name's related with mv
+   */
+  public static final String MV_RELATED_TABLES = "mv_related_tables";
 
   public static final String LOAD_SYNC_TIME = "load_sync_time";
 
@@ -2286,6 +2305,9 @@ public final class CarbonCommonConstants {
    */
   public static final int MAXIMUM_CHAR_LENGTH = 128;
 
+  public static final String DATABASE_LOCATION_PROVIDER =
+      "org.apache.carbondata.database.location.provider";
+
   /**
    * Carbon property for timeseries MV to define the first day of week
    */
@@ -2296,4 +2318,129 @@ public final class CarbonCommonConstants {
    * Default first day of week
    */
   public static final String CARBON_TIMESERIES_FIRST_DAY_OF_WEEK_DEFAULT = "SUNDAY";
+
+  @CarbonProperty
+  public static final String CARBON_PUSH_LEFTSEMIEXIST_JOIN_AS_IN_FILTER =
+      "carbon.infilter.subquery.pushdown.enable";
+
+
+  /**
+   * CARBON_PUSH_LEFTSEMIEXIST_JOIN_AS_IN_FILTER_DEFAULT
+   */
+  public static final String CARBON_PUSH_LEFTSEMIEXIST_JOIN_AS_IN_FILTER_DEFAULT = "false";
+
+  /**
+   * key to get broadcast record size from properties
+   */
+  @CarbonProperty
+  public static final String BROADCAST_RECORD_SIZE = "broadcast.record.size";
+
+  /**
+   * default broadcast record size
+   */
+  public static final String DEFAULT_BROADCAST_RECORD_SIZE = "100";
+
+  /**
+   * to enable SI lookup partial string
+   */
+  @CarbonProperty
+  public static final String ENABLE_SI_LOOKUP_PARTIALSTRING = "carbon.si.lookup.partialstring";
+
+  /**
+   * default value of ENABLE_SI_LOOKUP_PARTIALSTRING
+   */
+  public static final String ENABLE_SI_LOOKUP_PARTIALSTRING_DEFAULT = "true";
+
+  /**
+   * configuration for launching the number of threads during secondary index creation
+   */
+  @CarbonProperty
+  public static final String CARBON_SECONDARY_INDEX_CREATION_THREADS =
+      "carbon.secondary.index.creation.threads";
+
+  /**
+   * default value configuration for launching the number of threads during secondary
+   * index creation
+   */
+  public static final String CARBON_SECONDARY_INDEX_CREATION_THREADS_DEFAULT = "1";
+
+  /**
+   * max value configuration for launching the number of threads during secondary
+   * index creation
+   */
+  public static final int CARBON_SECONDARY_INDEX_CREATION_THREADS_MAX = 50;
+
+  /**
+   * Enable SI segment Compaction / merge small files
+   */
+  @CarbonProperty
+  public static final String CARBON_SI_SEGMENT_MERGE = "carbon.si.segment.merge";
+
+  /**
+   * Default value for SI segment Compaction / merge small files
+   * Making this true degrade the LOAD performance
+   * When the number of small files increase for SI segments(it can happen as number of columns will
+   * be less and we store position id and reference columns), user an either set to true which will
+   * merge the data files for upcoming loads or run SI rebuild command which does this job for all
+   * segments. (REBUILD INDEX <index_table>)
+   */
+  public static final String CARBON_SI_SEGMENT_MERGE_DEFAULT = "false";
+
+  /**
+   * Hash method of bucket table
+   */
+  public static final String BUCKET_HASH_METHOD = "bucket_hash_method";
+  public static final String BUCKET_HASH_METHOD_DEFAULT = "spark_hash_expression";
+  public static final String BUCKET_HASH_METHOD_SPARK_EXPRESSION = "spark_hash_expression";
+  public static final String BUCKET_HASH_METHOD_NATIVE = "native";
+
+  /**
+   * bucket properties
+   */
+  public static final String BUCKET_COLUMNS = "bucket_columns";
+  public static final String BUCKET_NUMBER = "bucket_number";
+
+  /**
+   * Table property name for table level cache expiration. Carbon maintains index cache in driver
+   * side and the cache will be expired after seconds indicated by this table property.
+   * Cache entries can have individual variable expiration times and policies by providing
+   * variableExpiration policy to ExpirationMap
+   */
+  public static final String INDEX_CACHE_EXPIRATION_TIME_IN_SECONDS =
+      "index_cache_expiration_seconds";
+
+  /**
+   * By default, the index cache is not expired by time, thus the cache size is controlled by
+   * setting the maximum size to 'INDEX_CACHE_EXPIRATION_TIME_IN_SECONDS'
+   */
+  public static final int INDEX_CACHE_EXPIRATION_TIME_IN_SECONDS_DEFAULT = Integer.MAX_VALUE;
+
+  /**
+   * Load all indexes to carbon LRU cache
+   */
+  public static final String CARBON_LOAD_ALL_SEGMENT_INDEXES_TO_CACHE =
+      "carbon.load.all.segment.indexes.to.cache";
+
+  /**
+   * Default value for loading cache is true
+   * Make this false, to load index for the matched segments from filter expression
+   */
+  public static final String CARBON_LOAD_ALL_SEGMENT_INDEXES_TO_CACHE_DEFAULT = "true";
+
+  /**
+   * Index properties
+   * Index_Provider is the name of CG or FG Index provider
+   */
+  public static final String INDEX_PROVIDER = "index_provider";
+
+  /**
+   * INDEX_STATUS defines the status of index. (Enabled / Disabled)
+   */
+  public static final String INDEX_STATUS = "index_status";
+
+  /**
+   * Materialized view thread context properties
+   */
+  @CarbonProperty
+  public static final String DISABLE_SQL_REWRITE = "disable_sql_rewrite";
 }

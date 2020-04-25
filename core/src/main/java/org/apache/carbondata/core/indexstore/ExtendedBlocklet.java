@@ -24,8 +24,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.carbondata.core.datamap.Segment;
-import org.apache.carbondata.core.indexstore.row.DataMapRow;
+import org.apache.carbondata.core.index.Segment;
+import org.apache.carbondata.core.indexstore.blockletindex.BlockletIndexRowIndexes;
+import org.apache.carbondata.core.indexstore.row.IndexRow;
 import org.apache.carbondata.core.metadata.ColumnarFormatVersion;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.stream.ExtendedByteArrayOutputStream;
@@ -36,7 +37,7 @@ import org.apache.carbondata.hadoop.CarbonInputSplit;
  */
 public class ExtendedBlocklet extends Blocklet {
 
-  private String dataMapUniqueId;
+  private String indexUniqueId;
 
   private CarbonInputSplit inputSplit;
 
@@ -51,11 +52,7 @@ public class ExtendedBlocklet extends Blocklet {
   public ExtendedBlocklet(String filePath, String blockletId,
       boolean compareBlockletIdForObjectMatching, ColumnarFormatVersion version) {
     super(filePath, blockletId, compareBlockletIdForObjectMatching);
-    try {
-      this.inputSplit = CarbonInputSplit.from(null, blockletId, filePath, 0, -1, version, null);
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
+    this.inputSplit = CarbonInputSplit.from(null, blockletId, filePath, 0, -1, version, null);
   }
 
   public ExtendedBlocklet(String filePath, String blockletId, ColumnarFormatVersion version) {
@@ -66,8 +63,8 @@ public class ExtendedBlocklet extends Blocklet {
     return this.inputSplit.getDetailInfo();
   }
 
-  public void setDataMapRow(DataMapRow dataMapRow) {
-    this.inputSplit.setDataMapRow(dataMapRow);
+  public void setIndexRow(IndexRow indexRow) {
+    this.inputSplit.setIndexRow(indexRow);
   }
 
   public String[] getLocations() {
@@ -109,16 +106,16 @@ public class ExtendedBlocklet extends Blocklet {
     }
   }
 
-  public void setDataMapWriterPath(String dataMapWriterPath) {
-    this.inputSplit.setDataMapWritePath(dataMapWriterPath);
+  public void setIndexWriterPath(String indexWriterPath) {
+    this.inputSplit.setIndexWritePath(indexWriterPath);
   }
 
-  public String getDataMapUniqueId() {
-    return dataMapUniqueId;
+  public String getIndexUniqueId() {
+    return indexUniqueId;
   }
 
-  public void setDataMapUniqueId(String dataMapUniqueId) {
-    this.dataMapUniqueId = dataMapUniqueId;
+  public void setIndexUniqueId(String indexUniqueId) {
+    this.indexUniqueId = indexUniqueId;
   }
 
   @Override
@@ -148,14 +145,6 @@ public class ExtendedBlocklet extends Blocklet {
     return inputSplit;
   }
 
-  public void setColumnCardinality(int[] cardinality) {
-    inputSplit.setColumnCardinality(cardinality);
-  }
-
-  public void setLegacyStore(boolean isLegacyStore) {
-    inputSplit.setLegacyStore(isLegacyStore);
-  }
-
   public void setUseMinMaxForPruning(boolean useMinMaxForPruning) {
     this.inputSplit.setUseMinMaxForPruning(useMinMaxForPruning);
   }
@@ -180,14 +169,17 @@ public class ExtendedBlocklet extends Blocklet {
       throws IOException {
     super.write(out);
     if (isCountJob) {
-      out.writeLong(inputSplit.getRowCount());
+      // In CarbonInputSplit, getDetailInfo() is a lazy call. we want to avoid this during
+      // countStar query. As rowCount is filled inside getDetailInfo(). In countStar case we may
+      // not have proper row count. So, always take row count from indexRow.
+      out.writeLong(inputSplit.getIndexRow().getInt(BlockletIndexRowIndexes.ROW_COUNT_INDEX));
       out.writeUTF(inputSplit.getSegmentId());
     } else {
-      if (dataMapUniqueId == null) {
+      if (indexUniqueId == null) {
         out.writeBoolean(false);
       } else {
         out.writeBoolean(true);
-        out.writeUTF(dataMapUniqueId);
+        out.writeUTF(indexUniqueId);
       }
       out.writeBoolean(inputSplit != null);
       if (inputSplit != null) {
@@ -225,7 +217,7 @@ public class ExtendedBlocklet extends Blocklet {
       return;
     }
     if (in.readBoolean()) {
-      dataMapUniqueId = in.readUTF();
+      indexUniqueId = in.readUTF();
     }
     setFilePath(tablePath + getPath());
     boolean isSplitPresent = in.readBoolean();

@@ -32,6 +32,25 @@ public class LoadEvents {
   public static class LoadTablePreExecutionEvent extends Event {
     private CarbonTableIdentifier carbonTableIdentifier;
     private CarbonLoadModel carbonLoadModel;
+    private String factPath;
+    private boolean isDataFrameDefined;
+    private Map<String, String> optionsFinal;
+    // userProvidedOptions are needed if we need only the load options given by user
+    private Map<String, String> userProvidedOptions;
+    private boolean isOverWriteTable;
+
+    public LoadTablePreExecutionEvent(CarbonTableIdentifier carbonTableIdentifier,
+        CarbonLoadModel carbonLoadModel, String factPath, boolean isDataFrameDefined,
+        Map<String, String> optionsFinal, Map<String, String> userProvidedOptions,
+        boolean isOverWriteTable) {
+      this.carbonTableIdentifier = carbonTableIdentifier;
+      this.carbonLoadModel = carbonLoadModel;
+      this.factPath = factPath;
+      this.isDataFrameDefined = isDataFrameDefined;
+      this.optionsFinal = optionsFinal;
+      this.userProvidedOptions = userProvidedOptions;
+      this.isOverWriteTable = isOverWriteTable;
+    }
 
     public LoadTablePreExecutionEvent(CarbonTableIdentifier carbonTableIdentifier,
         CarbonLoadModel carbonLoadModel) {
@@ -46,11 +65,31 @@ public class LoadEvents {
     public CarbonLoadModel getCarbonLoadModel() {
       return carbonLoadModel;
     }
+
+    public String getFactPath() {
+      return factPath;
+    }
+
+    public boolean isDataFrameDefined() {
+      return isDataFrameDefined;
+    }
+
+    public Map<String, String> getOptionsFinal() {
+      return optionsFinal;
+    }
+
+    public Map<String, String> getUserProvidedOptions() {
+      return userProvidedOptions;
+    }
+
+    public boolean isOverWriteTable() {
+      return isOverWriteTable;
+    }
   }
 
   /**
    * Class for handling operations after data load completion and before final
-   * commit of load operation. Example usage: For loading pre-aggregate tables
+   * commit of load operation. Example usage: For loading MV
    */
 
   public static class LoadTablePostExecutionEvent extends Event {
@@ -74,7 +113,7 @@ public class LoadEvents {
 
   /**
    * Event for handling operations after data load completion and before final
-   * commit of load operation. Example usage: For loading pre-aggregate tables
+   * commit of load operation. Example usage: For loading MV
    */
 
   public static class LoadTablePreStatusUpdateEvent extends Event {

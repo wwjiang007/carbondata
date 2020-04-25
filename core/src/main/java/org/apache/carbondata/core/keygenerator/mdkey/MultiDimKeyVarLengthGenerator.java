@@ -17,8 +17,6 @@
 
 package org.apache.carbondata.core.keygenerator.mdkey;
 
-import org.apache.carbondata.core.keygenerator.KeyGenException;
-
 public class MultiDimKeyVarLengthGenerator extends AbstractKeyGenerator {
 
   private static final long serialVersionUID = 9134778127271586515L;
@@ -38,42 +36,15 @@ public class MultiDimKeyVarLengthGenerator extends AbstractKeyGenerator {
   }
 
   @Override
-  public byte[] generateKey(long[] keys) throws KeyGenException {
+  public byte[] generateKey(int[] keys) {
 
     return bits.getBytes(keys);
-  }
-
-  @Override
-  public byte[] generateKey(int[] keys) throws KeyGenException {
-
-    return bits.getBytes(keys);
-  }
-
-  @Override
-  public long[] getKeyArray(byte[] key) {
-
-    return bits.getKeyArray(key, 0);
   }
 
   @Override
   public long[] getKeyArray(byte[] key, int offset) {
 
     return bits.getKeyArray(key, offset);
-  }
-
-  @Override
-  public long getKey(byte[] key, int index) {
-
-    return bits.getKeyArray(key, 0)[index];
-  }
-
-  public int getKeySizeInBytes() {
-    return bits.getByteSize();
-  }
-
-  @Override
-  public int[] getKeyByteOffsets(int index) {
-    return byteRangesForKeys[index];
   }
 
   @Override
@@ -95,11 +66,6 @@ public class MultiDimKeyVarLengthGenerator extends AbstractKeyGenerator {
   @Override
   public int hashCode() {
     return bits.hashCode();
-  }
-
-  @Override
-  public long[] getKeyArray(byte[] key, int[] maskedByteRanges) {
-    return bits.getKeyArray(key, maskedByteRanges);
   }
 
 }

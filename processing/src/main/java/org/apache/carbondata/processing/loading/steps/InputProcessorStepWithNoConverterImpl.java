@@ -20,6 +20,7 @@ package org.apache.carbondata.processing.loading.steps;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -27,12 +28,14 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.carbondata.common.CarbonIterator;
+import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.row.CarbonRow;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryGenerator;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
+import org.apache.carbondata.core.metadata.schema.BucketingInfo;
+import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.DataTypeUtil;
 import org.apache.carbondata.processing.datatypes.GenericDataType;
@@ -41,10 +44,14 @@ import org.apache.carbondata.processing.loading.CarbonDataLoadConfiguration;
 import org.apache.carbondata.processing.loading.DataField;
 import org.apache.carbondata.processing.loading.constants.DataLoadProcessorConstants;
 import org.apache.carbondata.processing.loading.converter.BadRecordLogHolder;
+import org.apache.carbondata.processing.loading.converter.RowConverter;
 import org.apache.carbondata.processing.loading.converter.impl.FieldEncoderFactory;
 import org.apache.carbondata.processing.loading.converter.impl.RowConverterImpl;
 import org.apache.carbondata.processing.loading.exception.BadRecordFoundException;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
+import org.apache.carbondata.processing.loading.partition.Partitioner;
+import org.apache.carbondata.processing.loading.partition.impl.HashPartitionerImpl;
+import org.apache.carbondata.processing.loading.partition.impl.SparkHashExpressionPartitionerImpl;
 import org.apache.carbondata.processing.loading.row.CarbonRowBatch;
 import org.apache.carbondata.processing.util.CarbonDataProcessorUtil;
 
@@ -63,14 +70,22 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
 
   private Map<Integer, GenericDataType> dataFieldsWithComplexDataType;
 
+  private RowConverterImpl rowConverter;
+
   // cores used in SDK writer, set by the user
   private short sdkWriterCores;
 
+  // set to true when there is no need to reArrange the data
+  private boolean withoutReArrange;
+  private boolean isBucketColumnEnabled = false;
+  private Partitioner<CarbonRow> partitioner;
+
   public InputProcessorStepWithNoConverterImpl(CarbonDataLoadConfiguration configuration,
-      CarbonIterator<Object[]>[] inputIterators) {
+      CarbonIterator<Object[]>[] inputIterators, boolean withoutReArrange) {
     super(configuration, null);
     this.inputIterators = inputIterators;
-    sdkWriterCores = configuration.getWritingCoresCount();
+    this.sdkWriterCores = configuration.getWritingCoresCount();
+    this.withoutReArrange = withoutReArrange;
   }
 
   @Override
@@ -82,43 +97,83 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
   public void initialize() throws IOException {
     super.initialize();
     // if logger is enabled then raw data will be required.
-    RowConverterImpl rowConverter =
+    rowConverter =
         new RowConverterImpl(configuration.getDataFields(), configuration, null);
     rowConverter.initialize();
-    configuration.setCardinalityFinder(rowConverter);
-    noDictionaryMapping =
-        CarbonDataProcessorUtil.getNoDictionaryMapping(configuration.getDataFields());
-
+    if (!withoutReArrange) {
+      noDictionaryMapping =
+          CarbonDataProcessorUtil.getNoDictionaryMapping(configuration.getDataFields());
+    }
     dataFieldsWithComplexDataType = new HashMap<>();
     convertComplexDataType(dataFieldsWithComplexDataType);
 
     dataTypes = new DataType[configuration.getDataFields().length];
     for (int i = 0; i < dataTypes.length; i++) {
-      if (configuration.getDataFields()[i].getColumn().hasEncoding(Encoding.DICTIONARY)) {
+      if (configuration.getDataFields()[i].getColumn().getDataType() == DataTypes.DATE) {
         dataTypes[i] = DataTypes.INT;
       } else {
         dataTypes[i] = configuration.getDataFields()[i].getColumn().getDataType();
       }
     }
-    orderOfData = arrangeData(configuration.getDataFields(), configuration.getHeader());
+    if (!withoutReArrange) {
+      orderOfData = arrangeData(configuration.getDataFields(), configuration.getHeader());
+    }
+    if (null != configuration.getBucketingInfo()) {
+      this.isBucketColumnEnabled = true;
+      initializeBucketColumnPartitioner();
+    }
+  }
+
+  /**
+   * initialize partitioner for bucket column
+   */
+  private void initializeBucketColumnPartitioner() {
+    List<Integer> indexes = new ArrayList<>();
+    List<ColumnSchema> columnSchemas = new ArrayList<>();
+    DataField[] inputDataFields = getOutput();
+    BucketingInfo bucketingInfo = configuration.getBucketingInfo();
+    for (int i = 0; i < inputDataFields.length; i++) {
+      for (int j = 0; j < bucketingInfo.getListOfColumns().size(); j++) {
+        if (inputDataFields[i].getColumn().getColName()
+                .equals(bucketingInfo.getListOfColumns().get(j).getColumnName())) {
+          indexes.add(i);
+          columnSchemas.add(inputDataFields[i].getColumn().getColumnSchema());
+          break;
+        }
+      }
+    }
+
+    // hash partitioner to dispatch rows by bucket column
+    if (CarbonCommonConstants.BUCKET_HASH_METHOD_DEFAULT.equals(
+            configuration.getBucketHashMethod())) {
+      // keep consistent with both carbon and spark tables.
+      this.partitioner = new SparkHashExpressionPartitionerImpl(
+              indexes, columnSchemas, bucketingInfo.getNumOfRanges());
+    } else if (CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE.equals(
+            configuration.getBucketHashMethod())) {
+      // native does not keep consistent with spark, it just use java hash method directly such as
+      // Long, String, etc. May have better performance during convert process.
+      // But, do not use it when the table need to join with spark bucket tables!
+      this.partitioner = new HashPartitionerImpl(
+              indexes, columnSchemas, bucketingInfo.getNumOfRanges());
+    } else {
+      // by default we use SparkHashExpressionPartitionerImpl hash.
+      this.partitioner = new SparkHashExpressionPartitionerImpl(
+              indexes, columnSchemas, bucketingInfo.getNumOfRanges());
+    }
+
   }
 
   private void convertComplexDataType(Map<Integer, GenericDataType> dataFieldsWithComplexDataType) {
     DataField[] srcDataField = configuration.getDataFields();
-    FieldEncoderFactory fieldConverterFactory = FieldEncoderFactory.getInstance();
     String nullFormat =
         configuration.getDataLoadProperty(DataLoadProcessorConstants.SERIALIZATION_NULL_FORMAT)
             .toString();
-    boolean isEmptyBadRecord = Boolean.parseBoolean(
-        configuration.getDataLoadProperty(DataLoadProcessorConstants.IS_EMPTY_DATA_BAD_RECORD)
-            .toString());
     for (int i = 0; i < srcDataField.length; i++) {
       if (srcDataField[i].getColumn().isComplex()) {
         // create a ComplexDataType
         dataFieldsWithComplexDataType.put(srcDataField[i].getColumn().getOrdinal(),
-            fieldConverterFactory
-                .createComplexDataType(srcDataField[i], configuration.getTableIdentifier(), null,
-                    false, null, i, nullFormat, isEmptyBadRecord));
+            FieldEncoderFactory.createComplexDataType(srcDataField[i], nullFormat, null));
       }
     }
   }
@@ -144,9 +199,10 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
     Iterator<CarbonRowBatch>[] outIterators = new Iterator[readerIterators.length];
     for (int i = 0; i < outIterators.length; i++) {
       outIterators[i] =
-          new InputProcessorIterator(readerIterators[i], batchSize, configuration.isPreFetch(),
+          new InputProcessorIterator(readerIterators[i], batchSize,
               rowCounter, orderOfData, noDictionaryMapping, dataTypes, configuration,
-              dataFieldsWithComplexDataType);
+              dataFieldsWithComplexDataType, rowConverter, withoutReArrange, isBucketColumnEnabled,
+                  partitioner);
     }
     return outIterators;
   }
@@ -202,10 +258,19 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
 
     private BadRecordLogHolder logHolder = new BadRecordLogHolder();
 
+    private boolean isHivePartitionTable = false;
+
+    RowConverter converter;
+    CarbonDataLoadConfiguration configuration;
+    private boolean isBucketColumnEnabled = false;
+    private Partitioner<CarbonRow> partitioner;
+    private boolean withoutReArrange;
+
     public InputProcessorIterator(List<CarbonIterator<Object[]>> inputIterators, int batchSize,
-        boolean preFetch, AtomicLong rowCounter, int[] orderOfData, boolean[] noDictionaryMapping,
+        AtomicLong rowCounter, int[] orderOfData, boolean[] noDictionaryMapping,
         DataType[] dataTypes, CarbonDataLoadConfiguration configuration,
-        Map<Integer, GenericDataType> dataFieldsWithComplexDataType) {
+        Map<Integer, GenericDataType> dataFieldsWithComplexDataType, RowConverter converter,
+        boolean withoutReArrange, boolean bucketColumnEnabled, Partitioner<CarbonRow> partitioner) {
       this.inputIterators = inputIterators;
       this.batchSize = batchSize;
       this.counter = 0;
@@ -219,6 +284,13 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
       this.dataFields = configuration.getDataFields();
       this.orderOfData = orderOfData;
       this.dataFieldsWithComplexDataType = dataFieldsWithComplexDataType;
+      this.isHivePartitionTable =
+          configuration.getTableSpec().getCarbonTable().isHivePartitionTable();
+      this.configuration = configuration;
+      this.converter = converter;
+      this.withoutReArrange = withoutReArrange;
+      this.isBucketColumnEnabled = bucketColumnEnabled;
+      this.partitioner = partitioner;
     }
 
     @Override
@@ -256,11 +328,34 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
       // Create batch and fill it.
       CarbonRowBatch carbonRowBatch = new CarbonRowBatch(batchSize);
       int count = 0;
-
-      while (internalHasNext() && count < batchSize) {
-        carbonRowBatch.addRow(
-            new CarbonRow(convertToNoDictionaryToBytes(currentIterator.next(), dataFields)));
-        count++;
+      if (!withoutReArrange) {
+        while (internalHasNext() && count < batchSize) {
+          CarbonRow carbonRow =
+              new CarbonRow(convertToNoDictionaryToBytes(currentIterator.next(), dataFields));
+          if (configuration.isIndexColumnsPresent()) {
+            carbonRow = converter.convert(carbonRow);
+          }
+          if (isBucketColumnEnabled) {
+            short rangeNumber = (short) partitioner.getPartition(carbonRow);
+            carbonRow.setRangeId(rangeNumber);
+          }
+          carbonRowBatch.addRow(carbonRow);
+          count++;
+        }
+      } else {
+        while (internalHasNext() && count < batchSize) {
+          CarbonRow carbonRow = new CarbonRow(
+              convertToNoDictionaryToBytesWithoutReArrange(currentIterator.next(), dataFields));
+          if (configuration.isIndexColumnsPresent()) {
+            carbonRow = converter.convert(carbonRow);
+          }
+          if (isBucketColumnEnabled) {
+            short rangeNumber = (short) partitioner.getPartition(carbonRow);
+            carbonRow.setRangeId(rangeNumber);
+          }
+          carbonRowBatch.addRow(carbonRow);
+          count++;
+        }
       }
       rowCounter.getAndAdd(carbonRowBatch.getSize());
 
@@ -270,8 +365,11 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
     }
 
     private Object[] convertToNoDictionaryToBytes(Object[] data, DataField[] dataFields) {
-      Object[] newData = new Object[data.length];
-      for (int i = 0; i < data.length; i++) {
+      Object[] newData = new Object[dataFields.length];
+      for (int i = 0; i < dataFields.length; i++) {
+        if (dataFields[i].getColumn().isIndexColumn()) {
+          continue;
+        }
         if (i < noDictionaryMapping.length && noDictionaryMapping[i]) {
           if (DataTypeUtil.isPrimitiveColumn(dataTypes[i])) {
             // keep the no dictionary measure column as original data
@@ -282,20 +380,10 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
           }
         } else {
           // if this is a complex column then recursively comver the data into Byte Array.
-          if (dataTypes[i].isComplexType()) {
-            ByteArrayOutputStream byteArray = new ByteArrayOutputStream();
-            DataOutputStream dataOutputStream = new DataOutputStream(byteArray);
-            try {
-              GenericDataType complextType =
-                  dataFieldsWithComplexDataType.get(dataFields[i].getColumn().getOrdinal());
-              complextType.writeByteArray(data[orderOfData[i]], dataOutputStream, logHolder);
-              dataOutputStream.close();
-              newData[i] = byteArray.toByteArray();
-            } catch (BadRecordFoundException e) {
-              throw new CarbonDataLoadingException("Loading Exception: " + e.getMessage(), e);
-            } catch (Exception e) {
-              throw new CarbonDataLoadingException("Loading Exception", e);
-            }
+          if (dataTypes[i].isComplexType() && isHivePartitionTable) {
+            newData[i] = data[orderOfData[i]];
+          } else if (dataTypes[i].isComplexType()) {
+            getComplexTypeByteArray(newData, i, data, dataFields[i], orderOfData[i], false);
           } else {
             DataType dataType = dataFields[i].getColumn().getDataType();
             if (dataType == DataTypes.DATE && data[orderOfData[i]] instanceof Long) {
@@ -317,6 +405,51 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
         }
       }
       return newData;
+    }
+
+    private Object[] convertToNoDictionaryToBytesWithoutReArrange(Object[] data,
+        DataField[] dataFields) {
+      Object[] newData = new Object[data.length];
+      // now dictionary is removed, no need of no dictionary mapping
+      for (int i = 0; i < data.length; i++) {
+        if (dataFields[i].getColumn().isIndexColumn()) {
+          continue;
+        }
+        if (DataTypeUtil.isPrimitiveColumn(dataTypes[i])) {
+          // keep the no dictionary measure column as original data
+          newData[i] = data[i];
+        } else if (dataTypes[i].isComplexType()) {
+          getComplexTypeByteArray(newData, i, data, dataFields[i], i, true);
+        } else if (dataTypes[i] == DataTypes.DATE && data[i] instanceof Long) {
+          if (dateDictionaryGenerator == null) {
+            dateDictionaryGenerator = DirectDictionaryKeyGeneratorFactory
+                .getDirectDictionaryGenerator(dataTypes[i], dataFields[i].getDateFormat());
+          }
+          newData[i] = dateDictionaryGenerator.generateKey((long) data[i]);
+        } else {
+          newData[i] =
+              DataTypeUtil.getBytesDataDataTypeForNoDictionaryColumn(data[i], dataTypes[i]);
+        }
+      }
+      return newData;
+    }
+
+    private void getComplexTypeByteArray(Object[] newData, int index, Object[] data,
+        DataField dataField, int orderedIndex, boolean isWithoutConverter) {
+      ByteArrayOutputStream byteArray = new ByteArrayOutputStream();
+      DataOutputStream dataOutputStream = new DataOutputStream(byteArray);
+      try {
+        GenericDataType complextType =
+            dataFieldsWithComplexDataType.get(dataField.getColumn().getOrdinal());
+        complextType
+            .writeByteArray(data[orderedIndex], dataOutputStream, logHolder, isWithoutConverter);
+        dataOutputStream.close();
+        newData[index] = byteArray.toByteArray();
+      } catch (BadRecordFoundException e) {
+        throw new CarbonDataLoadingException("Loading Exception: " + e.getMessage(), e);
+      } catch (Exception e) {
+        throw new CarbonDataLoadingException("Loading Exception", e);
+      }
     }
 
   }

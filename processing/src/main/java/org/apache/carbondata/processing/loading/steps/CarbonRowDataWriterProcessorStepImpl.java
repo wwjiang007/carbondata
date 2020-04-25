@@ -18,6 +18,8 @@
 package org.apache.carbondata.processing.loading.steps;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -30,17 +32,19 @@ import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.datastore.exception.CarbonDataWriterException;
 import org.apache.carbondata.core.datastore.row.CarbonRow;
 import org.apache.carbondata.core.datastore.row.WriteStepRowUtil;
-import org.apache.carbondata.core.keygenerator.KeyGenException;
 import org.apache.carbondata.core.localdictionary.generator.LocalDictionaryGenerator;
 import org.apache.carbondata.core.metadata.CarbonTableIdentifier;
-import org.apache.carbondata.core.metadata.datatype.DataType;
+import org.apache.carbondata.core.metadata.encoder.Encoding;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.util.CarbonThreadFactory;
 import org.apache.carbondata.core.util.CarbonTimeStatisticsFactory;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
-import org.apache.carbondata.processing.datamap.DataMapWriterListener;
+import org.apache.carbondata.processing.index.IndexWriterListener;
 import org.apache.carbondata.processing.loading.AbstractDataLoadProcessorStep;
 import org.apache.carbondata.processing.loading.CarbonDataLoadConfiguration;
+import org.apache.carbondata.processing.loading.DataField;
+import org.apache.carbondata.processing.loading.constants.DataLoadProcessorConstants;
 import org.apache.carbondata.processing.loading.exception.BadRecordFoundException;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
 import org.apache.carbondata.processing.loading.row.CarbonRowBatch;
@@ -66,17 +70,13 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
 
   private boolean[] isNoDictionaryDimensionColumn;
 
-  private DataType[] measureDataType;
-
-  private int dimensionCount;
+  private int directDictionaryDimensionCount;
 
   private int measureCount;
 
   private long[] readCounter;
 
   private long[] writeCounter;
-
-  private int outputLength;
 
   private CarbonTableIdentifier tableIdentifier;
 
@@ -87,6 +87,15 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
   private List<CarbonFactHandler> carbonFactHandlers;
 
   private ExecutorService executorService = null;
+
+  /* Below 4 list is used when isLoadWithoutConverterWithoutReArrangeStep is set in load model*/
+  private ArrayList<Integer> directDictionaryDimensionIndex = new ArrayList<>();
+
+  private ArrayList<Integer> otherDimensionIndex = new ArrayList<>();
+
+  private ArrayList<Integer> complexTypeIndex = new ArrayList<>();
+
+  private ArrayList<Integer> measureIndex = new ArrayList<>();
 
   public CarbonRowDataWriterProcessorStepImpl(CarbonDataLoadConfiguration configuration,
       AbstractDataLoadProcessorStep child) {
@@ -122,16 +131,17 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
       noDictWithComplextCount =
           configuration.getNoDictionaryCount() + configuration.getComplexDictionaryColumnCount()
               + configuration.getComplexNonDictionaryColumnCount();
-      dimensionCount = configuration.getDimensionCount() - noDictWithComplextCount;
+      directDictionaryDimensionCount = configuration.getDimensionCount() - noDictWithComplextCount;
       isNoDictionaryDimensionColumn =
           CarbonDataProcessorUtil.getNoDictionaryMapping(configuration.getDataFields());
-      measureDataType = configuration.getMeasureDataType();
       measureCount = configuration.getMeasureCount();
-      outputLength = measureCount + (this.noDictWithComplextCount > 0 ? 1 : 0) + 1;
       CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
           .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
               System.currentTimeMillis());
-
+      if (configuration.getDataLoadProperty(
+          DataLoadProcessorConstants.NO_REARRANGE_OF_ROWS) != null) {
+        initializeNoReArrangeIndexes();
+      }
       if (iterators.length == 1) {
         doExecute(iterators[0], 0);
       } else {
@@ -160,9 +170,38 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
     return null;
   }
 
-  private void doExecute(Iterator<CarbonRowBatch> iterator, int iteratorIndex) throws IOException {
+  private void initializeNoReArrangeIndexes() {
+    // Data might have partition columns in the end in new insert into flow.
+    // But when convert to 3 parts, just keep in internal order. so derive index for that.
+    List<CarbonColumn> listOfColumns = new ArrayList<>();
+    listOfColumns.addAll(configuration.getTableSpec().getCarbonTable().getVisibleDimensions());
+    listOfColumns.addAll(configuration.getTableSpec().getCarbonTable().getVisibleMeasures());
+    // In case of partition, partition data will be at the end. So, need to keep data position
+    Map<String, Integer> dataPositionMap = new HashMap<>();
+    int dataPosition = 0;
+    for (DataField field : configuration.getDataFields()) {
+      dataPositionMap.put(field.getColumn().getColName(), dataPosition++);
+    }
+    // get the index of each type and to be used in 3 parts conversion
+    for (CarbonColumn column : listOfColumns) {
+      if (column.hasEncoding(Encoding.DICTIONARY)) {
+        directDictionaryDimensionIndex.add(dataPositionMap.get(column.getColName()));
+      } else {
+        if (column.getDataType().isComplexType()) {
+          complexTypeIndex.add(dataPositionMap.get(column.getColName()));
+        } else if (column.isMeasure()) {
+          measureIndex.add(dataPositionMap.get(column.getColName()));
+        } else {
+          // other dimensions
+          otherDimensionIndex.add(dataPositionMap.get(column.getColName()));
+        }
+      }
+    }
+  }
+
+  private void doExecute(Iterator<CarbonRowBatch> iterator, int iteratorIndex) {
     String[] storeLocation = getStoreLocation();
-    DataMapWriterListener listener = getDataMapWriterListener(0);
+    IndexWriterListener listener = getIndexWriterListener(0);
     CarbonFactDataHandlerModel model = CarbonFactDataHandlerModel.createCarbonFactDataHandlerModel(
         configuration, storeLocation, 0, iteratorIndex, listener);
     model.setColumnLocalDictGenMap(localDictionaryGeneratorMap);
@@ -277,10 +316,10 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
    * @param row
    * @return
    */
-  private CarbonRow convertRow(CarbonRow row) throws KeyGenException {
+  private CarbonRow convertRow(CarbonRow row) {
     int dictIndex = 0;
     int nonDicIndex = 0;
-    int[] dim = new int[this.dimensionCount];
+    int[] dim = new int[this.directDictionaryDimensionCount];
     Object[] nonDicArray = new Object[this.noDictWithComplextCount];
     // read dimension values
     int dimCount = 0;
@@ -304,14 +343,44 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
     return WriteStepRowUtil.fromColumnCategory(dim, nonDicArray, measures);
   }
 
+  private CarbonRow convertRowWithoutRearrange(CarbonRow row) {
+    int[] directDictionaryDimension = new int[directDictionaryDimensionIndex.size()];
+    Object[] otherDimension = new Object[otherDimensionIndex.size() + complexTypeIndex.size()];
+    Object[] measures = new Object[measureIndex.size()];
+    for (int i = 0; i < directDictionaryDimensionIndex.size(); i++) {
+      directDictionaryDimension[i] = (int) row.getObject(directDictionaryDimensionIndex.get(i));
+    }
+    for (int i = 0; i < otherDimensionIndex.size(); i++) {
+      otherDimension[i] = row.getObject(otherDimensionIndex.get(i));
+    }
+    for (int i = 0; i < complexTypeIndex.size(); i++) {
+      otherDimension[otherDimensionIndex.size() + i] = row.getObject(complexTypeIndex.get(i));
+    }
+    for (int i = 0; i < measureIndex.size(); i++) {
+      measures[i] = row.getObject(measureIndex.get(i));
+    }
+    return WriteStepRowUtil.fromColumnCategory(directDictionaryDimension, otherDimension, measures);
+  }
+
   private void processBatch(CarbonRowBatch batch, CarbonFactHandler dataHandler, int iteratorIndex)
       throws CarbonDataLoadingException {
     try {
-      while (batch.hasNext()) {
-        CarbonRow row = batch.next();
-        CarbonRow converted = convertRow(row);
-        dataHandler.addDataToStore(converted);
-        readCounter[iteratorIndex]++;
+      if (configuration.getDataLoadProperty(
+          DataLoadProcessorConstants.NO_REARRANGE_OF_ROWS) != null) {
+        // convert without re-arrange
+        while (batch.hasNext()) {
+          CarbonRow row = batch.next();
+          CarbonRow converted = convertRowWithoutRearrange(row);
+          dataHandler.addDataToStore(converted);
+          readCounter[iteratorIndex]++;
+        }
+      } else {
+        while (batch.hasNext()) {
+          CarbonRow row = batch.next();
+          CarbonRow converted = convertRow(row);
+          dataHandler.addDataToStore(converted);
+          readCounter[iteratorIndex]++;
+        }
       }
       writeCounter[iteratorIndex] += batch.getSize();
     } catch (Exception e) {
@@ -332,12 +401,7 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
 
     @Override
     public void run() {
-      try {
-        doExecute(this.iterator, iteratorIndex);
-      } catch (IOException e) {
-        LOGGER.error(e.getMessage(), e);
-        throw new RuntimeException(e);
-      }
+      doExecute(this.iterator, iteratorIndex);
     }
   }
 

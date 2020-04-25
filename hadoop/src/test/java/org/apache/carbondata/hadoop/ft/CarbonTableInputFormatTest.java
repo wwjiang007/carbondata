@@ -28,7 +28,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.DataMapFilter;
+import org.apache.carbondata.core.index.IndexFilter;
+import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.scan.expression.ColumnExpression;
@@ -73,6 +74,7 @@ public class CarbonTableInputFormatTest {
           new File("../hadoop/src/test/resources/data.csv").getCanonicalPath());
       loadModel = creator.createCarbonStore();
     } catch (Exception e) {
+      e.printStackTrace();
       Assert.fail("create table failed: " + e.getMessage());
     }
   }
@@ -89,7 +91,7 @@ public class CarbonTableInputFormatTest {
     Expression expression = new EqualToExpression(new ColumnExpression("country", DataTypes.STRING),
         new LiteralExpression("china", DataTypes.STRING));
     CarbonTableInputFormat.setFilterPredicates(job.getConfiguration(),
-        new DataMapFilter(loadModel.getCarbonDataLoadSchema().getCarbonTable(), expression));
+        new IndexFilter(loadModel.getCarbonDataLoadSchema().getCarbonTable(), expression));
     List splits = carbonInputFormat.getSplits(job);
 
     Assert.assertTrue(splits != null);
@@ -126,8 +128,8 @@ public class CarbonTableInputFormatTest {
   }
 
   @Test public void testInputFormatMapperReadAllRowsAndColumns() throws Exception {
+    String outPath = "target/output";
     try {
-      String outPath = "target/output";
       CarbonProjection carbonProjection = new CarbonProjection();
       carbonProjection.addColumn("ID");
       carbonProjection.addColumn("date");
@@ -144,7 +146,8 @@ public class CarbonTableInputFormatTest {
       Assert.assertTrue("failed", false);
       throw e;
     } finally {
-      creator.clearDataMaps();
+      creator.clearIndexes();
+      FileFactory.deleteAllFilesOfDir(new File(outPath));
     }
   }
 
@@ -163,7 +166,7 @@ public class CarbonTableInputFormatTest {
       e.printStackTrace();
       Assert.assertTrue("failed", false);
     } finally {
-      creator.clearDataMaps();
+      creator.clearIndexes();
     }
   }
 
@@ -183,7 +186,7 @@ public class CarbonTableInputFormatTest {
     } catch (Exception e) {
       Assert.assertTrue("failed", false);
     } finally {
-      creator.clearDataMaps();
+      creator.clearIndexes();
     }
   }
 
@@ -262,7 +265,7 @@ public class CarbonTableInputFormatTest {
     }
     if (filter != null) {
       CarbonTableInputFormat.setFilterPredicates(job.getConfiguration(),
-          new DataMapFilter(loadModel.getCarbonDataLoadSchema().getCarbonTable(), filter));
+          new IndexFilter(loadModel.getCarbonDataLoadSchema().getCarbonTable(), filter));
     }
     CarbonTableInputFormat.setDatabaseName(job.getConfiguration(),
         abs.getCarbonTableIdentifier().getDatabaseName());

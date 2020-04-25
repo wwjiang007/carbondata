@@ -32,7 +32,6 @@ import org.apache.carbondata.core.datastore.compression.CompressorFactory;
 import org.apache.carbondata.core.datastore.page.ColumnPage;
 import org.apache.carbondata.core.datastore.page.ComplexColumnPage;
 import org.apache.carbondata.core.datastore.page.encoding.compress.DirectCompressCodec;
-import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.util.CarbonMetadataUtil;
@@ -58,7 +57,7 @@ public abstract class ColumnPageEncoder {
   private static final Logger LOGGER =
       LogServiceFactory.getLogService(ColumnPageEncoder.class.getName());
 
-  protected abstract byte[] encodeData(ColumnPage input) throws MemoryException, IOException;
+  protected abstract ByteBuffer encodeData(ColumnPage input) throws IOException;
 
   protected abstract List<Encoding> getEncodingList();
 
@@ -91,16 +90,16 @@ public abstract class ColumnPageEncoder {
    * Return a encoded column page by encoding the input page
    * The encoded binary data and metadata are wrapped in encoding column page
    */
-  public EncodedColumnPage encode(ColumnPage inputPage) throws IOException, MemoryException {
-    byte[] encodedBytes = encodeData(inputPage);
+  public EncodedColumnPage encode(ColumnPage inputPage) throws IOException {
+    ByteBuffer encodedBytes = encodeData(inputPage);
     DataChunk2 pageMetadata = buildPageMetadata(inputPage, encodedBytes);
     return new EncodedColumnPage(pageMetadata, encodedBytes, inputPage);
   }
 
-  private DataChunk2 buildPageMetadata(ColumnPage inputPage, byte[] encodedBytes)
+  private DataChunk2 buildPageMetadata(ColumnPage inputPage, ByteBuffer encodedBytes)
       throws IOException {
     DataChunk2 dataChunk = new DataChunk2();
-    dataChunk.setData_page_length(encodedBytes.length);
+    dataChunk.setData_page_length(encodedBytes.limit() - encodedBytes.position());
     fillBasicFields(inputPage, dataChunk);
     fillNullBitSet(inputPage, dataChunk);
     fillEncoding(inputPage, dataChunk);
@@ -176,8 +175,7 @@ public abstract class ColumnPageEncoder {
   /**
    * `buildPageMetadata` will call this for backward compatibility
    */
-  protected void fillLegacyFields(DataChunk2 dataChunk)
-      throws IOException {
+  protected void fillLegacyFields(DataChunk2 dataChunk) {
     // Subclass should override this to update datachunk2 if any backward compatibility if required,
     // For example, when using IndexStorageCodec, rle_page_length and rowid_page_length need to be
     // updated
@@ -188,19 +186,23 @@ public abstract class ColumnPageEncoder {
    * TODO: remove this interface after complex column page is unified with column page
    */
   public static EncodedColumnPage[] encodeComplexColumn(ComplexColumnPage input)
-      throws IOException, MemoryException {
+      throws IOException {
     EncodedColumnPage[] encodedPages = new EncodedColumnPage[input.getComplexColumnIndex()];
     int index = 0;
     while (index < input.getComplexColumnIndex()) {
       ColumnPage subColumnPage = input.getColumnPage(index);
       encodedPages[index] = encodedColumn(subColumnPage);
+      // by default add this encoding,
+      // it is used for checking length of
+      // complex child byte array columns (short and int)
+      encodedPages[index].getPageMetadata().getEncoders()
+          .add(Encoding.INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY);
       index++;
     }
     return encodedPages;
   }
 
-  public static EncodedColumnPage encodedColumn(ColumnPage page)
-      throws IOException, MemoryException {
+  public static EncodedColumnPage encodedColumn(ColumnPage page) throws IOException {
     ColumnPageEncoder pageEncoder = createCodecForDimension(page);
     if (pageEncoder == null) {
       ColumnPageEncoder encoder = new DirectCompressCodec(DataTypes.BYTE_ARRAY).createEncoder(null);
@@ -244,11 +246,9 @@ public abstract class ColumnPageEncoder {
    * @return local dictionary chunk
    * @throws IOException
    * Problem in encoding
-   * @throws MemoryException
-   * problem in encoding
    */
   public LocalDictionaryChunk encodeDictionary(ColumnPage dictionaryPage)
-      throws IOException, MemoryException {
+      throws IOException {
     LocalDictionaryChunk localDictionaryChunk = new LocalDictionaryChunk();
     localDictionaryChunk.setDictionary_data(encodeData(dictionaryPage));
     LocalDictionaryChunkMeta localDictionaryChunkMeta = new LocalDictionaryChunkMeta();

@@ -30,8 +30,8 @@ import org.apache.spark.sql.test.TestQueryExecutor
 import org.junit.Assert
 import org.scalatest.{BeforeAndAfterAll,FunSuite}
 
-import org.apache.carbondata.core.datamap.DataMapStoreManager
 import org.apache.carbondata.core.datastore.impl.FileFactory
+import org.apache.carbondata.core.index.IndexStoreManager
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier
 import org.apache.carbondata.core.metadata.datatype.{DataTypes, StructField}
 import org.apache.carbondata.hadoop.testutil.StoreCreator
@@ -40,7 +40,7 @@ import org.apache.carbondata.sdk.file.{CarbonWriter, Field, Schema}
 class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
   import spark._
 
-  val warehouse1 = s"${TestQueryExecutor.projectPath}/integration/spark-datasource/target/warehouse"
+  val warehouse1 = s"${TestQueryExecutor.projectPath}/integration/spark/target/warehouse"
 
   test("test write using dataframe") {
     import sqlContext.implicits._
@@ -72,10 +72,10 @@ class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
     checkAnswer(sql("select * from carbon_table where c1='a1'"),
       sql("select * from testparquet where c1='a1'"))
     if (!sqlContext.sparkContext.version.startsWith("2.1")) {
-      val mapSize = DataMapStoreManager.getInstance().getAllDataMaps.size()
-      DataMapStoreManager.getInstance()
-        .clearDataMaps(AbsoluteTableIdentifier.from(warehouse1 + "/carbon_table"))
-      assert(mapSize >= DataMapStoreManager.getInstance().getAllDataMaps.size())
+      val mapSize = IndexStoreManager.getInstance().getTableIndexForAllTables.size()
+      IndexStoreManager.getInstance()
+        .clearIndex(AbsoluteTableIdentifier.from(warehouse1 + "/carbon_table"))
+      assert(mapSize >= IndexStoreManager.getInstance().getTableIndexForAllTables.size())
     }
     sql("drop table if exists testparquet")
     sql("drop table if exists testformat")
@@ -112,10 +112,10 @@ class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
       val frame = sqlContext.read.format("carbon").load(warehouse1 + "/test_folder")
       assert(frame.where("c1='a1'").count() == 3)
 
-      val mapSize = DataMapStoreManager.getInstance().getAllDataMaps.size()
-      DataMapStoreManager.getInstance()
-        .clearDataMaps(AbsoluteTableIdentifier.from(warehouse1 + "/test_folder"))
-      assert(mapSize > DataMapStoreManager.getInstance().getAllDataMaps.size())
+      val mapSize = IndexStoreManager.getInstance().getTableIndexForAllTables.size()
+      IndexStoreManager.getInstance()
+        .clearIndex(AbsoluteTableIdentifier.from(warehouse1 + "/test_folder"))
+      assert(mapSize > IndexStoreManager.getInstance().getTableIndexForAllTables.size())
       FileFactory.deleteAllCarbonFilesOfDir(FileFactory.getCarbonFile(warehouse1 + "/test_folder"))
     }
   }
@@ -617,7 +617,7 @@ class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
       "double, HQ_DEPOSIT double) row format delimited fields terminated by ',' collection items " +
       "terminated by '$'")
     val sourceFile = FileFactory
-      .getPath(s"$resource" + "../../../../../spark-datasource/src/test/resources/Array.csv")
+      .getPath(s"$resource" + "../../../../../spark/src/test/resources/Array.csv")
       .toString
     sql(s"load data local inpath '$sourceFile' into table array_com_hive")
     sql(
@@ -644,7 +644,7 @@ class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
       "terminated by '$' map keys terminated by '&'")
     val sourceFile = FileFactory
       .getPath(
-        s"$resource" + "../../../../../spark-datasource/src/test/resources/structofarray.csv")
+        s"$resource" + "../../../../../spark/src/test/resources/structofarray.csv")
       .toString
     sql(s"load data local inpath '$sourceFile' into table STRUCT_OF_ARRAY_com_hive")
     sql(
@@ -735,18 +735,17 @@ class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
       val frame = sqlContext.read.format("carbon").load(warehouse1 + "/test_folder")
       assert(frame.count() == 30)
       assert(frame.where("c1='a1'").count() == 3)
-      val mapSize = DataMapStoreManager.getInstance().getAllDataMaps.size()
-      DataMapStoreManager.getInstance()
-        .clearDataMaps(AbsoluteTableIdentifier.from(warehouse1 + "/test_folder"))
-      assert(mapSize > DataMapStoreManager.getInstance().getAllDataMaps.size())
+      val mapSize = IndexStoreManager.getInstance().getTableIndexForAllTables.size()
+      IndexStoreManager.getInstance()
+        .clearIndex(AbsoluteTableIdentifier.from(warehouse1 + "/test_folder"))
+      assert(mapSize > IndexStoreManager.getInstance().getTableIndexForAllTables.size())
       FileFactory.deleteAllCarbonFilesOfDir(FileFactory.getCarbonFile(warehouse1 + "/test_folder"))
     }
   }
 
   test("test read using old data") {
     val store = new StoreCreator(new File(warehouse1).getAbsolutePath,
-      new File(warehouse1 + "../../../../../hadoop/src/test/resources/data.csv").getCanonicalPath,
-      false)
+      new File(warehouse1 + "../../../../../hadoop/src/test/resources/data.csv").getCanonicalPath)
     store.createCarbonStore()
     FileFactory
       .deleteAllFilesOfDir(new File(warehouse1 + "/testdb/testtable/Fact/Part0/Segment_0/0"))
@@ -1275,7 +1274,7 @@ class SparkCarbonDataSourceTestCase extends FunSuite with BeforeAndAfterAll {
       "terminated by ',' LINES terminated by '\n' stored as textfile")
     val sourceFile = FileFactory
       .getPath(s"$resource" +
-               "../../../../../spark-datasource/src/test/resources/vardhandaterestruct.csv")
+               "../../../../../spark/src/test/resources/vardhandaterestruct.csv")
       .toString
     sql(s"load data local inpath '$sourceFile' into table fileformat_drop_hive")
     sql(

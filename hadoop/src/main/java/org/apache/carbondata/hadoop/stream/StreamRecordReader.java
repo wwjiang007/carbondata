@@ -25,11 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.carbondata.core.cache.Cache;
-import org.apache.carbondata.core.cache.CacheProvider;
-import org.apache.carbondata.core.cache.CacheType;
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.cache.dictionary.DictionaryColumnUniqueIdentifier;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.datastore.compression.CompressorFactory;
@@ -38,7 +33,6 @@ import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionary
 import org.apache.carbondata.core.metadata.blocklet.index.BlockletMinMaxIndex;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
@@ -97,8 +91,6 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
   private BitSet allNonNull;
   private boolean[] isNoDictColumn;
   private DirectDictionaryGenerator[] directDictionaryGenerators;
-  private CacheProvider cacheProvider;
-  private Cache<DictionaryColumnUniqueIdentifier, Dictionary> cache;
   private GenericQueryType[] queryTypes;
   private String compressorName;
 
@@ -149,18 +141,16 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
       model = format.createQueryModel(split, context);
     }
     carbonTable = model.getTable();
-    List<CarbonDimension> dimensions =
-        carbonTable.getVisibleDimensions();
+    List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
     dimensionCount = dimensions.size();
     List<CarbonMeasure> measures = carbonTable.getVisibleMeasures();
     measureCount = measures.size();
-    List<CarbonColumn> carbonColumnList =
-        carbonTable.getStreamStorageOrderColumn();
+    List<CarbonColumn> carbonColumnList = carbonTable.getStreamStorageOrderColumn();
     storageColumns = carbonColumnList.toArray(new CarbonColumn[carbonColumnList.size()]);
     isNoDictColumn = CarbonDataProcessorUtil.getNoDictionaryMapping(storageColumns);
     directDictionaryGenerators = new DirectDictionaryGenerator[storageColumns.length];
     for (int i = 0; i < storageColumns.length; i++) {
-      if (storageColumns[i].hasEncoding(Encoding.DIRECT_DICTIONARY)) {
+      if (storageColumns[i].getDataType() == DataTypes.DATE) {
         directDictionaryGenerators[i] = DirectDictionaryKeyGeneratorFactory
             .getDirectDictionaryGenerator(storageColumns[i].getDataType());
       }
@@ -213,7 +203,7 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     }
 
     // initialize filter
-    if (null != model.getDataMapFilter()) {
+    if (null != model.getIndexFilter()) {
       initializeFilter();
     } else if (projection.length == 0) {
       skipScanData = true;
@@ -224,20 +214,13 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
   private void initializeFilter() {
     List<ColumnSchema> wrapperColumnSchemaList = CarbonUtil
         .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
-    int[] dimLensWithComplex = new int[wrapperColumnSchemaList.size()];
-    for (int i = 0; i < dimLensWithComplex.length; i++) {
-      dimLensWithComplex[i] = Integer.MAX_VALUE;
-    }
 
-    int[] dictionaryColumnCardinality =
-        CarbonUtil.getFormattedCardinality(dimLensWithComplex, wrapperColumnSchemaList);
-    SegmentProperties segmentProperties =
-        new SegmentProperties(wrapperColumnSchemaList, dictionaryColumnCardinality);
+    SegmentProperties segmentProperties = new SegmentProperties(wrapperColumnSchemaList);
     Map<Integer, GenericQueryType> complexDimensionInfoMap = new HashMap<>();
 
-    FilterResolverIntf resolverIntf = model.getDataMapFilter().getResolver();
-    filter =
-        FilterUtil.getFilterExecuterTree(resolverIntf, segmentProperties, complexDimensionInfoMap);
+    FilterResolverIntf resolverIntf = model.getIndexFilter().getResolver();
+    filter = FilterUtil.getFilterExecuterTree(
+        resolverIntf, segmentProperties, complexDimensionInfoMap, true);
     // for row filter, we need update column index
     FilterUtil.updateIndexOfColumnExpression(resolverIntf.getFilterExpression(),
         carbonTable.getDimensionOrdinalMax());
@@ -277,9 +260,7 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
     input = new StreamBlockletReader(syncMarker, fileIn, fileSplit.getLength(),
         fileSplit.getStart() == 0, compressorName);
 
-    cacheProvider = CacheProvider.getInstance();
-    cache = cacheProvider.createCache(CacheType.FORWARD_DICTIONARY);
-    queryTypes = CarbonStreamInputFormat.getComplexDimensions(carbonTable, storageColumns, cache);
+    queryTypes = CarbonStreamInputFormat.getComplexDimensions(storageColumns);
   }
 
   /**
@@ -335,7 +316,7 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
   }
 
   @Override
-  public boolean nextKeyValue() throws IOException, InterruptedException {
+  public boolean nextKeyValue() throws IOException {
     if (isFirstRow) {
       isFirstRow = false;
       initializeAtFirstRow();
@@ -348,12 +329,12 @@ public class StreamRecordReader extends RecordReader<Void, Object> {
   }
 
   @Override
-  public Void getCurrentKey() throws IOException, InterruptedException {
+  public Void getCurrentKey() {
     return null;
   }
 
   @Override
-  public Object getCurrentValue() throws IOException, InterruptedException {
+  public Object getCurrentValue() {
     return outputValues;
   }
 

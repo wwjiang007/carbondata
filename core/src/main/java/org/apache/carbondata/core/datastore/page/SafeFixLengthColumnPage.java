@@ -290,13 +290,13 @@ public class SafeFixLengthColumnPage extends ColumnPage {
   }
 
   @Override
-  public byte[] getLVFlattenedBytePage() throws IOException {
+  public byte[] getLVFlattenedBytePage() {
     throw new UnsupportedOperationException(
         "invalid data type: " + columnPageEncoderMeta.getStoreDataType());
   }
 
   @Override
-  public byte[] getComplexChildrenLVFlattenedBytePage() throws IOException {
+  public byte[] getComplexChildrenLVFlattenedBytePage(DataType dataType) throws IOException {
     ByteArrayOutputStream stream = new ByteArrayOutputStream();
     DataOutputStream out = new DataOutputStream(stream);
     for (int i = 0; i < arrayElementCount; i++) {
@@ -306,7 +306,7 @@ public class SafeFixLengthColumnPage extends ColumnPage {
   }
 
   @Override
-  public byte[] getComplexParentFlattenedBytePage() throws IOException {
+  public byte[] getComplexParentFlattenedBytePage() {
     throw new UnsupportedOperationException("internal error");
   }
 
@@ -489,7 +489,7 @@ public class SafeFixLengthColumnPage extends ColumnPage {
   }
 
   @Override
-  public long getPageLengthInBytes() throws IOException {
+  public long getPageLengthInBytes() {
     return totalLength;
   }
 }

@@ -72,7 +72,7 @@ public class CarbonColumn implements Serializable {
     this.ordinal = ordinal;
     this.schemaOrdinal = schemaOrdinal;
     this.columnIdentifier =
-     new ColumnIdentifier(getColumnId(), getColumnProperties(), getDataType());
+        new ColumnIdentifier(getColumnId(), getColumnProperties(), getDataType());
   }
 
   /**
@@ -164,6 +164,14 @@ public class CarbonColumn implements Serializable {
 
   public ColumnSchema getColumnSchema() {
     return this.columnSchema;
+  }
+
+  /**
+   * Checks if it is index column
+   * @return Returns True if the column is an index column. Otherwise returns false.
+   */
+  public boolean isIndexColumn() {
+    return columnSchema.isIndexColumn();
   }
 
   /**

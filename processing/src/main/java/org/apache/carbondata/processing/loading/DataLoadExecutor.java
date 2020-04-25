@@ -19,7 +19,6 @@ package org.apache.carbondata.processing.loading;
 
 import org.apache.carbondata.common.CarbonIterator;
 import org.apache.carbondata.common.logging.LogServiceFactory;
-import org.apache.carbondata.core.metadata.CarbonTableIdentifier;
 import org.apache.carbondata.processing.loading.exception.BadRecordFoundException;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
 import org.apache.carbondata.processing.loading.exception.NoRetryException;
@@ -41,7 +40,7 @@ public class DataLoadExecutor {
   private boolean isClosed;
 
   public void execute(CarbonLoadModel loadModel, String[] storeLocation,
-      CarbonIterator<Object[]>[] inputIterators) throws Exception {
+      CarbonIterator<Object[]>[] inputIterators) {
     try {
       loadProcessorStep =
           new DataLoadProcessBuilder().build(loadModel, storeLocation, inputIterators);
@@ -65,21 +64,6 @@ public class DataLoadExecutor {
       throw new CarbonDataLoadingException(
           "Data Loading failed for table " + loadModel.getTableName(), e);
     }
-  }
-
-  /**
-   * This method will remove any bad record key from the map entry
-   *
-   * @param carbonTableIdentifier
-   * @return
-   */
-  private boolean badRecordFound(CarbonTableIdentifier carbonTableIdentifier) {
-    String badRecordLoggerKey = carbonTableIdentifier.getBadRecordLoggerKey();
-    boolean badRecordKeyFound = false;
-    if (null != BadRecordsLogger.hasBadRecord(badRecordLoggerKey)) {
-      badRecordKeyFound = true;
-    }
-    return badRecordKeyFound;
   }
 
   /**

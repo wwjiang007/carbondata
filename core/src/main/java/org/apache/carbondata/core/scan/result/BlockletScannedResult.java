@@ -32,9 +32,7 @@ import org.apache.carbondata.core.datastore.chunk.DimensionColumnPage;
 import org.apache.carbondata.core.datastore.chunk.impl.DimensionRawColumnChunk;
 import org.apache.carbondata.core.datastore.chunk.impl.MeasureRawColumnChunk;
 import org.apache.carbondata.core.datastore.page.ColumnPage;
-import org.apache.carbondata.core.mutate.CarbonUpdateUtil;
 import org.apache.carbondata.core.mutate.DeleteDeltaVo;
-import org.apache.carbondata.core.mutate.TupleIdEnum;
 import org.apache.carbondata.core.scan.executor.infos.BlockExecutionInfo;
 import org.apache.carbondata.core.scan.filter.GenericQueryType;
 import org.apache.carbondata.core.scan.result.vector.CarbonColumnVector;
@@ -157,8 +155,8 @@ public abstract class BlockletScannedResult {
 
   public BlockletScannedResult(BlockExecutionInfo blockExecutionInfo,
       QueryStatisticsModel queryStatisticsModel) {
-    this.dimensionReusableBuffer = blockExecutionInfo.getDimensionResusableDataBuffer();
-    this.measureReusableBuffer = blockExecutionInfo.getMeasureResusableDataBuffer();
+    this.dimensionReusableBuffer = blockExecutionInfo.getDimensionReusableDataBuffer();
+    this.measureReusableBuffer = blockExecutionInfo.getMeasureReusableDataBuffer();
     this.fixedLengthKeySize = blockExecutionInfo.getFixedLengthKeySize();
     this.noDictionaryColumnChunkIndexes = blockExecutionInfo.getNoDictionaryColumnChunkIndexes();
     this.dictionaryColumnChunkIndexes = blockExecutionInfo.getDictionaryColumnChunkIndex();
@@ -217,24 +215,6 @@ public abstract class BlockletScannedResult {
 
   /**
    * Below method will be used to get the key for all the dictionary dimensions
-   * which is present in the query
-   *
-   * @param rowId row id selected after scanning
-   * @return return the dictionary key
-   */
-  protected byte[] getDictionaryKeyArray(int rowId) {
-    byte[] completeKey = new byte[fixedLengthKeySize];
-    int offset = 0;
-    for (int i = 0; i < this.dictionaryColumnChunkIndexes.length; i++) {
-      offset += dimensionColumnPages[dictionaryColumnChunkIndexes[i]][pageCounter].fillRawData(
-          rowId, offset, completeKey);
-    }
-    rowCounter++;
-    return completeKey;
-  }
-
-  /**
-   * Below method will be used to get the key for all the dictionary dimensions
    * in integer array format which is present in the query
    *
    * @param rowId row id selected after scanning
@@ -247,7 +227,6 @@ public abstract class BlockletScannedResult {
       column = dimensionColumnPages[dictionaryColumnChunkIndexes[i]][pageCounter]
           .fillSurrogateKey(rowId, column, completeKey);
     }
-    rowCounter++;
     return completeKey;
   }
 
@@ -591,17 +570,17 @@ public abstract class BlockletScannedResult {
    * Set blocklet id, which looks like
    * "Part0/Segment_0/part-0-0_batchno0-0-1517155583332.carbondata/0"
    */
-  public void setBlockletId(String blockletId) {
-    this.blockletId = blockletId;
-    blockletNumber = CarbonUpdateUtil.getRequiredFieldFromTID(blockletId, TupleIdEnum.BLOCKLET_ID);
+  public void setBlockletId(String blockletId, String blockletNumber) {
+    this.blockletId = blockletId + CarbonCommonConstants.FILE_SEPARATOR + blockletNumber;
+    this.blockletNumber = blockletNumber;
     // if deleted recors map is present for this block
     // then get the first page deleted vo
     if (null != deletedRecordMap) {
       String key;
       if (pageIdFiltered != null) {
-        key = blockletNumber + '_' + pageIdFiltered[pageCounter];
+        key = this.blockletNumber + '_' + pageIdFiltered[pageCounter];
       } else {
-        key = blockletNumber + '_' + pageCounter;
+        key = this.blockletNumber + '_' + pageCounter;
       }
       currentDeleteDeltaVo = deletedRecordMap.get(key);
     }
@@ -746,12 +725,6 @@ public abstract class BlockletScannedResult {
    * @return valid row id
    */
   public abstract int getCurrentRowId();
-
-  /**
-   * @return dictionary key array for all the dictionary dimension
-   * selected in query
-   */
-  public abstract byte[] getDictionaryKeyArray();
 
   /**
    * @return dictionary key array for all the dictionary dimension in integer array forat

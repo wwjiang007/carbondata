@@ -19,21 +19,20 @@ package org.apache.carbondata.processing.datatypes;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.carbondata.core.datastore.row.ComplexColumnInfo;
-import org.apache.carbondata.core.devapi.DictionaryGenerationException;
 import org.apache.carbondata.core.keygenerator.KeyGenException;
-import org.apache.carbondata.core.keygenerator.KeyGenerator;
 import org.apache.carbondata.processing.loading.converter.BadRecordLogHolder;
 
 /**
  * Generic DataType interface which will be used while data loading for complex types like Array &
  * Struct
  */
-public interface GenericDataType<T> {
+public interface GenericDataType<T> extends Serializable {
 
   /**
    * @return name of the column
@@ -58,15 +57,12 @@ public interface GenericDataType<T> {
   /**
    * writes to byte stream
    * @param dataOutputStream
+   * @param isWithoutConverter
    * @throws IOException
    */
-  void writeByteArray(T input, DataOutputStream dataOutputStream, BadRecordLogHolder logHolder)
-      throws IOException, DictionaryGenerationException;
-
-  /**
-   * @return surrogateIndex for primitive column in complex type
-   */
-  int getSurrogateIndex();
+  void writeByteArray(T input, DataOutputStream dataOutputStream, BadRecordLogHolder logHolder,
+      Boolean isWithoutConverter)
+      throws IOException;
 
   /**
    * @param surrIndex - surrogate index of primitive column in complex type
@@ -83,13 +79,11 @@ public interface GenericDataType<T> {
    * Parse the Complex Datatype from the ByteBuffer.
    * @param byteArrayInput
    * @param dataOutputStream
-   * @param generator
    * @return
    * @throws IOException
    * @throws KeyGenException
    */
-  void parseComplexValue(ByteBuffer byteArrayInput, DataOutputStream dataOutputStream,
-      KeyGenerator[] generator)
+  void parseComplexValue(ByteBuffer byteArrayInput, DataOutputStream dataOutputStream)
       throws IOException, KeyGenException;
 
   /**
@@ -124,33 +118,6 @@ public interface GenericDataType<T> {
    * @return current read row count
    */
   int getDataCounter();
-
-  /**
-   * fill agg key block including complex types
-   * @param aggKeyBlockWithComplex
-   * @param aggKeyBlock
-   */
-  void fillAggKeyBlock(List<Boolean> aggKeyBlockWithComplex, boolean[] aggKeyBlock);
-
-  /**
-   * fill block key size including complex types
-   * @param blockKeySizeWithComplex
-   * @param primitiveBlockKeySize
-   */
-  void fillBlockKeySize(List<Integer> blockKeySizeWithComplex, int[] primitiveBlockKeySize);
-
-  /**
-   * fill cardinality value including complex types
-   * @param dimCardWithComplex
-   * @param maxSurrogateKeyArray
-   */
-  void fillCardinalityAfterDataLoad(List<Integer> dimCardWithComplex, int[] maxSurrogateKeyArray);
-
-  /**
-   * Fill the cardinality of the primitive datatypes
-   * @param dimCardWithComplex
-   */
-  void fillCardinality(List<Integer> dimCardWithComplex);
 
   /**
    * clone self for multithread access (for complex type processing in table page)

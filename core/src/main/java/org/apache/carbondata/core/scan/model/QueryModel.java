@@ -19,11 +19,9 @@ package org.apache.carbondata.core.scan.model;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
+import org.apache.carbondata.core.index.IndexFilter;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
@@ -46,11 +44,6 @@ import org.apache.carbondata.core.util.DataTypeConverter;
 public class QueryModel {
 
   /**
-   * this will hold the information about the dictionary dimension
-   * which to
-   */
-  private transient Map<String, Dictionary> columnToDictionaryMapping;
-  /**
    * list of projection columns in query
    */
   private QueryProjection projection;
@@ -62,7 +55,7 @@ public class QueryModel {
   /**
    * filter expression tree
    */
-  private DataMapFilter dataMapFilter;
+  private IndexFilter indexFilter;
 
   /**
    * table block information in which query will be executed
@@ -117,6 +110,12 @@ public class QueryModel {
    * vector, so it is execution engine responsibility to filter the rows at row level.
    */
   private boolean isDirectVectorFill;
+
+  /**
+   * It is used to read only the deleted data of a particular version. It will be used to get the
+   * old updated/deleted data before update.
+   */
+  private boolean readOnlyDelta;
 
   private QueryModel(CarbonTable carbonTable) {
     tableBlockInfos = new ArrayList<TableBlockInfo>();
@@ -272,12 +271,12 @@ public class QueryModel {
     this.tableBlockInfos = tableBlockInfos;
   }
 
-  public DataMapFilter getDataMapFilter() {
-    return dataMapFilter;
+  public IndexFilter getIndexFilter() {
+    return indexFilter;
   }
 
-  public void setDataMapFilter(DataMapFilter dataMapFilter) {
-    this.dataMapFilter = dataMapFilter;
+  public void setIndexFilter(IndexFilter indexFilter) {
+    this.indexFilter = indexFilter;
   }
 
   /**
@@ -300,20 +299,6 @@ public class QueryModel {
 
   public void setForcedDetailRawQuery(boolean forcedDetailRawQuery) {
     this.forcedDetailRawQuery = forcedDetailRawQuery;
-  }
-
-  /**
-   * @return
-   */
-  public Map<String, Dictionary> getColumnToDictionaryMapping() {
-    return columnToDictionaryMapping;
-  }
-
-  /**
-   * @param columnToDictionaryMapping
-   */
-  public void setColumnToDictionaryMapping(Map<String, Dictionary> columnToDictionaryMapping) {
-    this.columnToDictionaryMapping = columnToDictionaryMapping;
   }
 
   public QueryStatisticsRecorder getStatisticsRecorder() {
@@ -396,12 +381,20 @@ public class QueryModel {
     isDirectVectorFill = directVectorFill;
   }
 
+  public boolean isReadOnlyDelta() {
+    return readOnlyDelta;
+  }
+
+  public void setReadOnlyDelta(boolean readOnlyDelta) {
+    this.readOnlyDelta = readOnlyDelta;
+  }
+
   @Override
   public String toString() {
     return String.format("scan on table %s.%s, %d projection columns with filter (%s)",
         table.getDatabaseName(), table.getTableName(),
         projection.getDimensions().size() + projection.getMeasures().size(),
-        dataMapFilter.getExpression().toString());
+        indexFilter.getExpression().toString());
   }
 
   public boolean isFreeUnsafeMemory() {

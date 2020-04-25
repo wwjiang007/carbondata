@@ -17,17 +17,15 @@
 
 package org.apache.carbondata.processing.loading.converter;
 
-import java.io.IOException;
-
 import org.apache.carbondata.core.datastore.row.CarbonRow;
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
 
 /**
  * convert the row
  */
-public interface RowConverter extends DictionaryCardinalityFinder {
+public interface RowConverter {
 
-  void initialize() throws IOException;
+  void initialize();
 
   CarbonRow convert(CarbonRow row) throws CarbonDataLoadingException;
 

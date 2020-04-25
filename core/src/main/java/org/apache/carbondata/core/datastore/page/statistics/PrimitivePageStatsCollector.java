@@ -105,8 +105,7 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
     } else if (dataType == DataTypes.INT) {
       instance.minInt = (int) meta.getMinValue();
       instance.maxInt = (int) meta.getMaxValue();
-    } else if (dataType == DataTypes.LEGACY_LONG || dataType == DataTypes.LONG
-        || dataType == DataTypes.TIMESTAMP) {
+    } else if (dataType == DataTypes.LONG || dataType == DataTypes.TIMESTAMP) {
       instance.minLong = (long) meta.getMinValue();
       instance.maxLong = (long) meta.getMaxValue();
     } else if (dataType == DataTypes.DOUBLE) {
@@ -142,8 +141,7 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
     } else if (dataType == DataTypes.INT) {
       minInt = Integer.MAX_VALUE;
       maxInt = Integer.MIN_VALUE;
-    } else if (dataType == DataTypes.LEGACY_LONG || dataType == DataTypes.LONG
-        || dataType == DataTypes.TIMESTAMP) {
+    } else if (dataType == DataTypes.LONG || dataType == DataTypes.TIMESTAMP) {
       minLong = Long.MAX_VALUE;
       maxLong = Long.MIN_VALUE;
     } else if (dataType == DataTypes.DOUBLE) {
@@ -235,20 +233,18 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
 
   /**
    * Return number of digit after decimal point
-   * TODO: it operation is costly, optimize for performance
    */
   private int getDecimalCount(double value) {
     int decimalPlaces = 0;
     try {
-      String strValue = BigDecimal.valueOf(Math.abs(value)).toPlainString();
-      int integerPlaces = strValue.indexOf('.');
-      if (-1 != integerPlaces) {
-        decimalPlaces = strValue.length() - integerPlaces - 1;
+      BigDecimal decimalValue = BigDecimal.valueOf(value);
+      decimalPlaces = decimalValue.scale();
+      if (decimalPlaces == 1) {
         // If decimal places are one and it is just zero then treat the decimal count a zero.
-        if (decimalPlaces == 1) {
-          if (strValue.substring(integerPlaces + 1, strValue.length()).equals(ZERO_STRING)) {
-            decimalPlaces = 0;
-          }
+        // note: here toString() uses stringCache of BigDecimal
+        String str = decimalValue.toString();
+        if (str.charAt(str.length() - 1) == '0') {
+          decimalPlaces = 0;
         }
       }
     } catch (NumberFormatException e) {
@@ -275,7 +271,7 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
       int decimalCount = getDecimalCount(value);
       decimalCountForComplexPrimitive = decimalCount;
       if (decimalCount > 5) {
-        // If deciaml count is too big, we do not do adaptive encoding.
+        // If decimal count is too big, we do not do adaptive encoding.
         // So set decimal to negative value
         decimal = -1;
       } else if (decimalCount > decimal) {
@@ -296,7 +292,7 @@ public class PrimitivePageStatsCollector implements ColumnPageStatsCollector, Si
       int decimalCount = getDecimalCount(value);
       decimalCountForComplexPrimitive = decimalCount;
       if (decimalCount > 5) {
-        // If deciaml count is too big, we do not do adaptive encoding.
+        // If decimal count is too big, we do not do adaptive encoding.
         // So set decimal to negative value
         decimal = -1;
       } else if (decimalCount > decimal) {

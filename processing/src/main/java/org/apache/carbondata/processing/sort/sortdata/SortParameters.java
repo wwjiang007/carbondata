@@ -30,6 +30,7 @@ import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.processing.loading.CarbonDataLoadConfiguration;
+import org.apache.carbondata.processing.loading.constants.DataLoadProcessorConstants;
 import org.apache.carbondata.processing.util.CarbonDataProcessorUtil;
 
 import org.apache.commons.lang3.StringUtils;
@@ -138,7 +139,6 @@ public class SortParameters implements Serializable {
 
   private int numberOfCores;
 
-  private int batchSortSizeinMb;
   private int rangeId = 0;
 
   /**
@@ -158,6 +158,8 @@ public class SortParameters implements Serializable {
    * Index of the no dict Sort columns in the carbonRow for final merge step of sorting.
    */
   private int[] noDictSortColumnSchemaOrderMapping;
+
+  private boolean isInsertWithoutReArrangeFlow;
 
   public SortParameters getCopy() {
     SortParameters parameters = new SortParameters();
@@ -190,7 +192,6 @@ public class SortParameters implements Serializable {
     parameters.numberOfSortColumns = numberOfSortColumns;
     parameters.numberOfNoDictSortColumns = numberOfNoDictSortColumns;
     parameters.numberOfCores = numberOfCores;
-    parameters.batchSortSizeinMb = batchSortSizeinMb;
     parameters.rangeId = rangeId;
     parameters.carbonTable = carbonTable;
     parameters.isUpdateDictDims = isUpdateDictDims;
@@ -198,6 +199,7 @@ public class SortParameters implements Serializable {
     parameters.dictDimActualPosition = dictDimActualPosition;
     parameters.noDictActualPosition = noDictActualPosition;
     parameters.noDictSortColumnSchemaOrderMapping = noDictSortColumnSchemaOrderMapping;
+    parameters.isInsertWithoutReArrangeFlow = isInsertWithoutReArrangeFlow;
     return parameters;
   }
 
@@ -393,14 +395,6 @@ public class SortParameters implements Serializable {
     this.numberOfNoDictSortColumns = Math.min(numberOfNoDictSortColumns, noDictionaryCount);
   }
 
-  public int getBatchSortSizeinMb() {
-    return batchSortSizeinMb;
-  }
-
-  public void setBatchSortSizeinMb(int batchSortSizeinMb) {
-    this.batchSortSizeinMb = batchSortSizeinMb;
-  }
-
   public void setCarbonTable(CarbonTable carbonTable) {
     this.carbonTable = carbonTable;
   }
@@ -415,6 +409,14 @@ public class SortParameters implements Serializable {
 
   private void setNoDictSortColumnSchemaOrderMapping(int[] noDictSortColumnSchemaOrderMapping) {
     this.noDictSortColumnSchemaOrderMapping = noDictSortColumnSchemaOrderMapping;
+  }
+
+  public boolean isInsertWithoutReArrangeFlow() {
+    return isInsertWithoutReArrangeFlow;
+  }
+
+  public void setInsertWithoutReArrangeFlow(boolean insertWithoutReArrangeFlow) {
+    isInsertWithoutReArrangeFlow = insertWithoutReArrangeFlow;
   }
 
   public static SortParameters createSortParameters(CarbonDataLoadConfiguration configuration) {
@@ -439,14 +441,8 @@ public class SortParameters implements Serializable {
         CarbonDataProcessorUtil.getNoDictionaryMapping(configuration.getDataFields()));
     parameters.setIsVarcharDimensionColumn(
         CarbonDataProcessorUtil.getIsVarcharColumnMapping(configuration.getDataFields()));
-    parameters.setBatchSortSizeinMb(CarbonDataProcessorUtil.getBatchSortSizeinMb(configuration));
-
     parameters.setNumberOfSortColumns(configuration.getNumberOfSortColumns());
     parameters.setNumberOfNoDictSortColumns(configuration.getNumberOfNoDictSortColumns());
-    parameters.setNoDictionarySortColumn(CarbonDataProcessorUtil
-        .getNoDictSortColMapping(parameters.getCarbonTable()));
-    parameters.setNoDictSortColumnSchemaOrderMapping(CarbonDataProcessorUtil
-        .getColumnIdxBasedOnSchemaInRow(parameters.getCarbonTable()));
     parameters.setSortColumn(configuration.getSortColumnMapping());
     parameters.setObserver(new SortObserver());
     // get sort buffer size
@@ -494,18 +490,46 @@ public class SortParameters implements Serializable {
         CarbonCommonConstants.CARBON_PREFETCH_BUFFERSIZE,
         CarbonCommonConstants.CARBON_PREFETCH_BUFFERSIZE_DEFAULT)));
 
-    DataType[] measureDataType = configuration.getMeasureDataType();
-    parameters.setMeasureDataType(measureDataType);
-    parameters.setNoDictDataType(CarbonDataProcessorUtil
-        .getNoDictDataTypes(configuration.getTableSpec().getCarbonTable()));
-    Map<String, DataType[]> noDictSortAndNoSortDataTypes = CarbonDataProcessorUtil
-        .getNoDictSortAndNoSortDataTypes(configuration.getTableSpec().getCarbonTable());
-    parameters.setNoDictSortDataType(noDictSortAndNoSortDataTypes.get("noDictSortDataTypes"));
-    parameters.setNoDictNoSortDataType(noDictSortAndNoSortDataTypes.get("noDictNoSortDataTypes"));
-    parameters.setNoDictActualPosition(configuration.getTableSpec().getNoDictDimActualPosition());
-    parameters.setDictDimActualPosition(configuration.getTableSpec().getDictDimActualPosition());
-    parameters.setUpdateDictDims(configuration.getTableSpec().isUpdateDictDim());
-    parameters.setUpdateNonDictDims(configuration.getTableSpec().isUpdateNoDictDims());
+    if (configuration.getDataLoadProperty(DataLoadProcessorConstants.NO_REARRANGE_OF_ROWS) != null
+        && configuration.getTableSpec().getCarbonTable().getPartitionInfo() != null) {
+      // In case of partition, partition data will be present in the end for rearrange flow
+      // So, prepare the indexes and mapping as per dataFields order.
+      parameters.setInsertWithoutReArrangeFlow(true);
+      parameters.setNoDictionarySortColumn(CarbonDataProcessorUtil
+          .getNoDictSortColMappingAsDataFieldOrder(configuration.getDataFields()));
+      parameters.setNoDictSortColumnSchemaOrderMapping(CarbonDataProcessorUtil
+          .getColumnIdxBasedOnSchemaInRowAsDataFieldOrder(configuration.getDataFields()));
+      parameters.setMeasureDataType(configuration.getMeasureDataTypeAsDataFieldOrder());
+      parameters.setNoDictDataType(CarbonDataProcessorUtil
+          .getNoDictDataTypesAsDataFieldOrder(configuration.getDataFields()));
+      Map<String, DataType[]> noDictSortAndNoSortDataTypes = CarbonDataProcessorUtil
+          .getNoDictSortAndNoSortDataTypesAsDataFieldOrder(configuration.getDataFields());
+      parameters.setNoDictSortDataType(noDictSortAndNoSortDataTypes.get("noDictSortDataTypes"));
+      parameters.setNoDictNoSortDataType(noDictSortAndNoSortDataTypes.get("noDictNoSortDataTypes"));
+      // keep partition columns in the end for table spec by getting rearranged tale spec
+      TableSpec tableSpec = new TableSpec(configuration.getTableSpec().getCarbonTable(), true);
+      parameters.setNoDictActualPosition(tableSpec.getNoDictDimActualPosition());
+      parameters.setDictDimActualPosition(tableSpec.getDictDimActualPosition());
+      parameters.setUpdateDictDims(tableSpec.isUpdateDictDim());
+      parameters.setUpdateNonDictDims(tableSpec.isUpdateNoDictDims());
+    } else {
+      parameters.setNoDictionarySortColumn(CarbonDataProcessorUtil
+          .getNoDictSortColMapping(parameters.getCarbonTable()));
+      parameters.setNoDictSortColumnSchemaOrderMapping(CarbonDataProcessorUtil
+          .getColumnIdxBasedOnSchemaInRow(parameters.getCarbonTable()));
+      parameters.setMeasureDataType(configuration.getMeasureDataType());
+      parameters.setNoDictDataType(CarbonDataProcessorUtil
+          .getNoDictDataTypes(configuration.getTableSpec().getCarbonTable()));
+      Map<String, DataType[]> noDictSortAndNoSortDataTypes = CarbonDataProcessorUtil
+          .getNoDictSortAndNoSortDataTypes(configuration.getTableSpec().getCarbonTable());
+      parameters.setNoDictSortDataType(noDictSortAndNoSortDataTypes.get("noDictSortDataTypes"));
+      parameters.setNoDictNoSortDataType(noDictSortAndNoSortDataTypes.get("noDictNoSortDataTypes"));
+      TableSpec tableSpec = configuration.getTableSpec();
+      parameters.setNoDictActualPosition(tableSpec.getNoDictDimActualPosition());
+      parameters.setDictDimActualPosition(tableSpec.getDictDimActualPosition());
+      parameters.setUpdateDictDims(tableSpec.isUpdateDictDim());
+      parameters.setUpdateNonDictDims(tableSpec.isUpdateNoDictDims());
+    }
     return parameters;
   }
 
@@ -591,7 +615,7 @@ public class SortParameters implements Serializable {
         .getNoDictSortColMapping(parameters.getCarbonTable()));
     parameters.setNoDictSortColumnSchemaOrderMapping(CarbonDataProcessorUtil
         .getColumnIdxBasedOnSchemaInRow(parameters.getCarbonTable()));
-    TableSpec tableSpec = new TableSpec(carbonTable);
+    TableSpec tableSpec = new TableSpec(carbonTable, false);
     parameters.setNoDictActualPosition(tableSpec.getNoDictDimActualPosition());
     parameters.setDictDimActualPosition(tableSpec.getDictDimActualPosition());
     parameters.setUpdateDictDims(tableSpec.isUpdateDictDim());

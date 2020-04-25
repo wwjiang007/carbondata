@@ -30,7 +30,6 @@ import org.apache.carbondata.core.metadata.schema.SchemaEvolutionEntry;
 import org.apache.carbondata.core.metadata.schema.table.TableInfo;
 import org.apache.carbondata.core.metadata.schema.table.TableSchema;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
-import org.apache.carbondata.format.DataMapSchema;
 
 import mockit.Mock;
 import mockit.MockUp;
@@ -156,6 +155,10 @@ public class ThriftWrapperSchemaConverterImplTest {
 
       @Mock public org.apache.carbondata.format.ColumnSchema setColumnReferenceId(
           String columnReferenceId) {
+        return thriftColumnSchema;
+      }
+
+      @Mock public org.apache.carbondata.format.ColumnSchema setIndexColumn(boolean indexColumn) {
         return thriftColumnSchema;
       }
 
@@ -1430,7 +1433,6 @@ public class ThriftWrapperSchemaConverterImplTest {
     org.apache.carbondata.format.TableInfo expectedResult =
         new org.apache.carbondata.format.TableInfo(thriftFactTable, new ArrayList<org.apache
             .carbondata.format.TableSchema>());
-    expectedResult.setDataMapSchemas(new ArrayList<DataMapSchema>());
     assertEquals(expectedResult, actualResult);
   }
 

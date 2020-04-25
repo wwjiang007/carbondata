@@ -17,30 +17,18 @@
 
 package org.apache.carbondata.core.statusmanager;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.Closeable;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.io.*;
+import java.util.*;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.fileoperations.AtomicFileOperationFactory;
 import org.apache.carbondata.core.fileoperations.AtomicFileOperations;
 import org.apache.carbondata.core.fileoperations.FileWriteOperation;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.locks.CarbonLockFactory;
 import org.apache.carbondata.core.locks.ICarbonLock;
 import org.apache.carbondata.core.locks.LockUsage;
@@ -72,6 +60,7 @@ public class SegmentUpdateStatusManager {
   private LoadMetadataDetails[] segmentDetails;
   private SegmentUpdateDetails[] updateDetails;
   private Map<String, SegmentUpdateDetails> blockAndDetailsMap;
+  private boolean isPartitionTable;
   /**
    * It contains the mapping of segment path and corresponding delete delta file paths,
    * avoiding listing these files for every query
@@ -80,15 +69,31 @@ public class SegmentUpdateStatusManager {
 
   public SegmentUpdateStatusManager(CarbonTable table,
       LoadMetadataDetails[] segmentDetails) {
+    this(table, segmentDetails, null);
+  }
+
+  /**
+   * It takes the updateVersion as one of the parameter. Basically user can give on which
+   * updateVersion user can retrieve the data.It is useful to get the history changed data
+   * of a particular version.
+   */
+  public SegmentUpdateStatusManager(CarbonTable table,
+      LoadMetadataDetails[] segmentDetails, String updateVersion) {
     this.identifier = table.getAbsoluteTableIdentifier();
+    this.isPartitionTable = table.isHivePartitionTable();
     // current it is used only for read function scenarios, as file update always requires to work
     // on latest file status.
     this.segmentDetails = segmentDetails;
     updateDetails = readLoadMetadata();
+    updateUpdateDetails(updateVersion);
     populateMap();
   }
 
   public SegmentUpdateStatusManager(CarbonTable table) {
+    this(table, (String) null);
+  }
+
+  public SegmentUpdateStatusManager(CarbonTable table, String updateVersion) {
     this.identifier = table.getAbsoluteTableIdentifier();
     // current it is used only for read function scenarios, as file update always requires to work
     // on latest file status.
@@ -99,12 +104,39 @@ public class SegmentUpdateStatusManager {
       segmentDetails = SegmentStatusManager.readLoadMetadata(
           CarbonTablePath.getMetadataPath(identifier.getTablePath()));
     }
+    this.isPartitionTable = table.isHivePartitionTable();
     if (segmentDetails.length != 0) {
       updateDetails = readLoadMetadata();
     } else {
       updateDetails = new SegmentUpdateDetails[0];
     }
+    updateUpdateDetails(updateVersion);
     populateMap();
+  }
+
+  /**
+   * It adds only the SegmentUpdateDetails of given updateVersion, it is used to get the history
+   * data of updated/deleted data.
+   */
+  private void updateUpdateDetails(String updateVersion) {
+    if (updateVersion != null) {
+      List<SegmentUpdateDetails> newupdateDetails = new ArrayList<>();
+      for (SegmentUpdateDetails updateDetail : updateDetails) {
+        if (updateDetail.getDeltaFileStamps() != null) {
+          if (updateDetail.getDeltaFileStamps().contains(updateVersion)) {
+            HashSet<String> set = new HashSet<>();
+            set.add(updateVersion);
+            updateDetail.setDeltaFileStamps(set);
+            updateDetail.setSegmentStatus(SegmentStatus.SUCCESS);
+            newupdateDetails.add(updateDetail);
+          }
+        } else if (updateDetail.getDeleteDeltaStartTimestamp().equalsIgnoreCase(updateVersion)) {
+          updateDetail.setSegmentStatus(SegmentStatus.SUCCESS);
+          newupdateDetails.add(updateDetail);
+        }
+      }
+      updateDetails = newupdateDetails.toArray(new SegmentUpdateDetails[0]);
+    }
   }
 
   /**
@@ -113,14 +145,11 @@ public class SegmentUpdateStatusManager {
   private void populateMap() {
     blockAndDetailsMap = new HashMap<>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     for (SegmentUpdateDetails blockDetails : updateDetails) {
-
       String blockIdentifier = CarbonUpdateUtil
-          .getSegmentBlockNameKey(blockDetails.getSegmentName(), blockDetails.getActualBlockName());
-
+          .getSegmentBlockNameKey(blockDetails.getSegmentName(), blockDetails.getActualBlockName(),
+              isPartitionTable);
       blockAndDetailsMap.put(blockIdentifier, blockDetails);
-
     }
-
   }
 
   /**
@@ -132,7 +161,7 @@ public class SegmentUpdateStatusManager {
   private SegmentUpdateDetails getDetailsForABlock(String segID, String actualBlockName) {
 
     String blockIdentifier = CarbonUpdateUtil
-        .getSegmentBlockNameKey(segID, actualBlockName);
+        .getSegmentBlockNameKey(segID, actualBlockName, isPartitionTable);
 
     return blockAndDetailsMap.get(blockIdentifier);
 
@@ -198,7 +227,7 @@ public class SegmentUpdateStatusManager {
     String segmentPath = CarbonTablePath.getSegmentPath(
         identifier.getTablePath(), segmentId);
     CarbonFile segDir =
-        FileFactory.getCarbonFile(segmentPath, FileFactory.getFileType(segmentPath));
+        FileFactory.getCarbonFile(segmentPath);
     for (LoadMetadataDetails eachSeg : segmentDetails) {
       if (eachSeg.getLoadName().equalsIgnoreCase(segmentId)) {
         // if the segment is found then take the start and end time stamp.
@@ -252,9 +281,8 @@ public class SegmentUpdateStatusManager {
    *
    * @param blockFilePath actual block filePath
    * @return all delete delta files
-   * @throws Exception
    */
-  public String[] getDeleteDeltaFilePath(String blockFilePath, String segmentId) throws Exception {
+  public String[] getDeleteDeltaFilePath(String blockFilePath, String segmentId) {
     return getDeltaFiles(blockFilePath, segmentId, CarbonCommonConstants.DELETE_DELTA_FILE_EXT)
         .toArray(new String[0]);
   }
@@ -262,8 +290,7 @@ public class SegmentUpdateStatusManager {
   /**
    * Returns all delta file paths of specified block
    */
-  private List<String> getDeltaFiles(String blockPath, String segment, String extension)
-      throws Exception {
+  private List<String> getDeltaFiles(String blockPath, String segment, String extension) {
     Path path = new Path(blockPath);
     String completeBlockName = path.getName();
     String blockNameWithoutExtn =
@@ -316,7 +343,7 @@ public class SegmentUpdateStatusManager {
    * @return the list of delete file
    */
   private List<String> getDeltaFiles(String blockDir, final String blockNameFromTuple,
-      final String extension, String segment) throws IOException {
+      final String extension, String segment) {
     List<String> deleteFileList = new ArrayList<>();
     for (SegmentUpdateDetails block : updateDetails) {
       if (block.getBlockName().equalsIgnoreCase(blockNameFromTuple) && block.getSegmentName()
@@ -356,7 +383,7 @@ public class SegmentUpdateStatusManager {
 
   private List<String> getFilePaths(String blockDir, final String blockNameFromTuple,
       final String extension, List<String> deleteFileList, final long deltaStartTimestamp,
-      final long deltaEndTimeStamp) throws IOException {
+      final long deltaEndTimeStamp) {
     List<String> deltaList = segmentDeleteDeltaListMap.get(blockDir);
     if (deltaList == null) {
       CarbonFile[] files = FileFactory.getCarbonFile(blockDir).listFiles(new CarbonFileFilter() {
@@ -380,8 +407,8 @@ public class SegmentUpdateStatusManager {
       String firstPart = deltaFilePathName.substring(0, deltaFilePathName.lastIndexOf('.'));
       String blockName =
           firstPart.substring(0, firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN));
-      long timestamp = Long.parseLong(firstPart
-          .substring(firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN) + 1, firstPart.length()));
+      long timestamp =
+          Long.parseLong(CarbonTablePath.DataFileUtil.getTimeStampFromFileName(deltaFilePathName));
       // It compares whether this delta file belongs to this block or not. And also checks that
       // corresponding delta file is valid or not by considering its load start and end time with
       // the file timestamp.
@@ -406,7 +433,7 @@ public class SegmentUpdateStatusManager {
     String segmentPath = CarbonTablePath.getSegmentPath(
         identifier.getTablePath(), segmentId.getSegmentNo());
     CarbonFile segDir =
-        FileFactory.getCarbonFile(segmentPath, FileFactory.getFileType(segmentPath));
+        FileFactory.getCarbonFile(segmentPath);
     for (SegmentUpdateDetails block : updateDetails) {
       if ((block.getBlockName().equalsIgnoreCase(blockName)) &&
           (block.getSegmentName().equalsIgnoreCase(segmentId.getSegmentNo()))
@@ -425,8 +452,8 @@ public class SegmentUpdateStatusManager {
                 && pathName.getSize() > 0) {
               String firstPart = fileName.substring(0, fileName.indexOf('.'));
               String blkName = firstPart.substring(0, firstPart.lastIndexOf("-"));
-              long timestamp = Long.parseLong(
-                  firstPart.substring(firstPart.lastIndexOf("-") + 1, firstPart.length()));
+              long timestamp =
+                  Long.parseLong(CarbonTablePath.DataFileUtil.getTimeStampFromFileName(fileName));
               if (blockName.equals(blkName) && (Long.compare(timestamp, deltaEndTimeStamp) <= 0)
                   && (Long.compare(timestamp, deltaStartTimestamp) >= 0)) {
                 return true;
@@ -478,11 +505,8 @@ public class SegmentUpdateStatusManager {
 
       String fileName = eachFile.getName();
       if (fileName.endsWith(fileExtension)) {
-        String firstPart = fileName.substring(0, fileName.lastIndexOf('.'));
-
-        long timestamp = Long.parseLong(firstPart
-            .substring(firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN) + 1,
-                firstPart.length()));
+        long timestamp =
+            Long.parseLong(CarbonTablePath.DataFileUtil.getTimeStampFromFileName(fileName));
 
         if (excludeOriginalFact) {
           if (Long.compare(factTimeStampFinal, timestamp) == 0) {
@@ -640,28 +664,37 @@ public class SegmentUpdateStatusManager {
    * @return
    */
   public SegmentUpdateDetails[] readLoadMetadata() {
+    // get the updated status file identifier from the table status.
+    String tableUpdateStatusIdentifier = getUpdatedStatusIdentifier();
+    return readLoadMetadata(tableUpdateStatusIdentifier, identifier.getTablePath());
+  }
+
+  /**
+   * This method loads segment update details
+   *
+   * @return
+   */
+  public static SegmentUpdateDetails[] readLoadMetadata(String tableUpdateStatusIdentifier,
+      String tablePath) {
     Gson gsonObjectToRead = new Gson();
     DataInputStream dataInputStream = null;
     BufferedReader buffReader = null;
     InputStreamReader inStream = null;
     SegmentUpdateDetails[] listOfSegmentUpdateDetailsArray;
 
-    // get the updated status file identifier from the table status.
-    String tableUpdateStatusIdentifier = getUpdatedStatusIdentifier();
-
     if (StringUtils.isEmpty(tableUpdateStatusIdentifier)) {
       return new SegmentUpdateDetails[0];
     }
 
     String tableUpdateStatusPath =
-        CarbonTablePath.getMetadataPath(identifier.getTablePath()) +
+        CarbonTablePath.getMetadataPath(tablePath) +
             CarbonCommonConstants.FILE_SEPARATOR + tableUpdateStatusIdentifier;
     AtomicFileOperations fileOperation =
         AtomicFileOperationFactory.getAtomicFileOperations(tableUpdateStatusPath);
 
     try {
       if (!FileFactory
-          .isFileExist(tableUpdateStatusPath, FileFactory.getFileType(tableUpdateStatusPath))) {
+          .isFileExist(tableUpdateStatusPath)) {
         return new SegmentUpdateDetails[0];
       }
       dataInputStream = fileOperation.openForRead();
@@ -735,7 +768,7 @@ public class SegmentUpdateStatusManager {
    *
    * @param streams - streams to close.
    */
-  private void closeStreams(Closeable... streams) {
+  private static void closeStreams(Closeable... streams) {
     // Added if to avoid NullPointerException in case one stream is being passed as null
     if (null != streams) {
       for (Closeable stream : streams) {
@@ -752,23 +785,18 @@ public class SegmentUpdateStatusManager {
 
   /**
    * Returns the invalid timestamp range of a segment.
-   * @param segmentId
-   * @return
    */
-  public UpdateVO getInvalidTimestampRange(String segmentId) {
+  public static UpdateVO getInvalidTimestampRange(LoadMetadataDetails loadMetadataDetails) {
     UpdateVO range = new UpdateVO();
-    for (LoadMetadataDetails segment : segmentDetails) {
-      if (segment.getLoadName().equalsIgnoreCase(segmentId)) {
-        range.setSegmentId(segmentId);
-        range.setFactTimestamp(segment.getLoadStartTime());
-        if (!segment.getUpdateDeltaStartTimestamp().isEmpty() && !segment
-            .getUpdateDeltaEndTimestamp().isEmpty()) {
-          range.setUpdateDeltaStartTimestamp(
-              CarbonUpdateUtil.getTimeStampAsLong(segment.getUpdateDeltaStartTimestamp()));
-          range.setLatestUpdateTimestamp(
-              CarbonUpdateUtil.getTimeStampAsLong(segment.getUpdateDeltaEndTimestamp()));
-        }
-        return range;
+    if (loadMetadataDetails != null) {
+      range.setSegmentId(loadMetadataDetails.getLoadName());
+      range.setFactTimestamp(loadMetadataDetails.getLoadStartTime());
+      if (!loadMetadataDetails.getUpdateDeltaStartTimestamp().isEmpty() && !loadMetadataDetails
+          .getUpdateDeltaEndTimestamp().isEmpty()) {
+        range.setUpdateDeltaStartTimestamp(CarbonUpdateUtil
+            .getTimeStampAsLong(loadMetadataDetails.getUpdateDeltaStartTimestamp()));
+        range.setLatestUpdateTimestamp(
+            CarbonUpdateUtil.getTimeStampAsLong(loadMetadataDetails.getUpdateDeltaEndTimestamp()));
       }
     }
     return range;

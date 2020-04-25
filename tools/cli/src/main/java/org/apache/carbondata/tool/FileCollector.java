@@ -18,7 +18,14 @@
 package org.apache.carbondata.tool;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.carbondata.common.Strings;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
@@ -176,7 +183,7 @@ class FileCollector {
     }
   }
 
-  public void collectSortColumns(String segmentFolder) throws IOException {
+  public void collectSortColumns(String segmentFolder) {
     CarbonFile[] files = SegmentIndexFileStore.getCarbonIndexFiles(
         segmentFolder, FileFactory.getConfiguration());
     if (files.length == 0) {

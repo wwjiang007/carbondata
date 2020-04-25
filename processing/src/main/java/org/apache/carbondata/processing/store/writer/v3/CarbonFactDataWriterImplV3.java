@@ -105,7 +105,7 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
       long footerOffset = currentOffsetInFile;
       // get thrift file footer instance
       FileFooter3 convertFileMeta = CarbonMetadataUtil
-          .convertFileFooterVersion3(blockletMetadata, blockletIndex, localCardinality,
+          .convertFileFooterVersion3(blockletMetadata, blockletIndex,
               thriftColumnSchemaList.size());
       convertFileMeta.setIs_sort(isSorted);
       String appName = CarbonProperties.getInstance()
@@ -140,7 +140,7 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
    */
   @Override
   public void writeTablePage(TablePage tablePage)
-      throws CarbonDataWriterException,IOException {
+      throws CarbonDataWriterException, IOException {
 
     // condition for writting all the pages
     if (!tablePage.isLastPage()) {
@@ -374,14 +374,6 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
       blockIndexInfoList.add(biInfo);
       i++;
     }
-  }
-
-  private byte[][] toByteArray(List<ByteBuffer> buffers) {
-    byte[][] arrays = new byte[buffers.size()][];
-    for (int i = 0; i < arrays.length; i++) {
-      arrays[i] = buffers.get(i).array();
-    }
-    return arrays;
   }
 
   /**

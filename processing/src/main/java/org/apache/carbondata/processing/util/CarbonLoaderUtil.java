@@ -30,25 +30,19 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
-import org.apache.carbondata.core.cache.Cache;
-import org.apache.carbondata.core.cache.CacheProvider;
-import org.apache.carbondata.core.cache.CacheType;
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.cache.dictionary.DictionaryColumnUniqueIdentifier;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.constants.CarbonLoadOptionConstants;
-import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.block.Distributable;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
-import org.apache.carbondata.core.datastore.impl.FileFactory.FileType;
+import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.locks.CarbonLockUtil;
 import org.apache.carbondata.core.locks.ICarbonLock;
+import org.apache.carbondata.core.locks.LockUsage;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
-import org.apache.carbondata.core.metadata.ColumnIdentifier;
-import org.apache.carbondata.core.metadata.datatype.DataType;
+import org.apache.carbondata.core.metadata.SegmentFileStore;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.mutate.CarbonUpdateUtil;
 import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
@@ -114,8 +108,7 @@ public final class CarbonLoaderUtil {
     int fileCount = 0;
     String segmentPath = CarbonTablePath.getSegmentPath(
         loadModel.getTablePath(), currentLoad + "");
-    CarbonFile carbonFile = FileFactory.getCarbonFile(segmentPath,
-        FileFactory.getFileType(segmentPath));
+    CarbonFile carbonFile = FileFactory.getCarbonFile(segmentPath);
     CarbonFile[] files = carbonFile.listFiles(new CarbonFileFilter() {
 
       @Override
@@ -139,9 +132,8 @@ public final class CarbonLoaderUtil {
 
   public static void deleteStorePath(String path) {
     try {
-      FileType fileType = FileFactory.getFileType(path);
-      if (FileFactory.isFileExist(path, fileType)) {
-        CarbonFile carbonFile = FileFactory.getCarbonFile(path, fileType);
+      if (FileFactory.isFileExist(path)) {
+        CarbonFile carbonFile = FileFactory.getCarbonFile(path);
         CarbonUtil.deleteFoldersAndFiles(carbonFile);
       }
     } catch (IOException | InterruptedException e) {
@@ -162,6 +154,24 @@ public final class CarbonLoaderUtil {
       CarbonLoadModel loadModel, boolean loadStartEntry, boolean insertOverwrite)
       throws IOException {
     return recordNewLoadMetadata(newMetaEntry, loadModel, loadStartEntry, insertOverwrite, "");
+  }
+
+  /**
+   * Append a new load metadata into table status file
+   *
+   * @param loadModel load model
+   * @return boolean which determines whether status update is done or not
+   * @throws IOException
+   */
+  public static boolean recordNewLoadMetadata(CarbonLoadModel loadModel) throws IOException {
+    LoadMetadataDetails newLoadMetaEntry = new LoadMetadataDetails();
+    loadModel.setFactTimeStamp(System.currentTimeMillis());
+    CarbonLoaderUtil.populateNewLoadMetaEntry(
+        newLoadMetaEntry,
+        SegmentStatus.INSERT_IN_PROGRESS,
+        loadModel.getFactTimeStamp(),
+        false);
+    return recordNewLoadMetadata(newLoadMetaEntry, loadModel, true, false);
   }
 
   /**
@@ -229,18 +239,11 @@ public final class CarbonLoaderUtil {
         loadModel.getCarbonDataLoadSchema().getCarbonTable().getAbsoluteTableIdentifier();
     if (loadModel.isCarbonTransactionalTable()) {
       String metadataPath = CarbonTablePath.getMetadataPath(identifier.getTablePath());
-      FileType fileType = FileFactory.getFileType(metadataPath);
-      if (!FileFactory.isFileExist(metadataPath, fileType)) {
-        FileFactory.mkdirs(metadataPath, fileType);
+      if (!FileFactory.isFileExist(metadataPath)) {
+        FileFactory.mkdirs(metadataPath);
       }
     }
-    String tableStatusPath;
-    if (loadModel.getCarbonDataLoadSchema().getCarbonTable().isChildDataMap() && !uuid.isEmpty()) {
-      tableStatusPath = CarbonTablePath.getTableStatusFilePathWithUUID(
-          identifier.getTablePath(), uuid);
-    } else {
-      tableStatusPath = CarbonTablePath.getTableStatusFilePath(identifier.getTablePath());
-    }
+    String tableStatusPath = CarbonTablePath.getTableStatusFilePath(identifier.getTablePath());
     SegmentStatusManager segmentStatusManager = new SegmentStatusManager(identifier);
     ICarbonLock carbonLock = segmentStatusManager.getTableStatusLock();
     int retryCount = CarbonLockUtil
@@ -249,6 +252,8 @@ public final class CarbonLoaderUtil {
     int maxTimeout = CarbonLockUtil
         .getLockProperty(CarbonCommonConstants.MAX_TIMEOUT_FOR_CONCURRENT_LOCK,
             CarbonCommonConstants.MAX_TIMEOUT_FOR_CONCURRENT_LOCK_DEFAULT);
+    // TODO only for overwrite scene
+    final List<LoadMetadataDetails> staleLoadMetadataDetails = new ArrayList<>();
     try {
       if (carbonLock.lockWithRetries(retryCount, maxTimeout)) {
         LOGGER.info(
@@ -267,12 +272,7 @@ public final class CarbonLoaderUtil {
               String.valueOf(SegmentStatusManager.createNewSegmentId(listOfLoadFolderDetailsArray));
           loadModel.setLoadMetadataDetails(listOfLoadFolderDetails);
           LoadMetadataDetails entryTobeRemoved = null;
-          // Segment id would be provided in case this is compaction flow for aggregate data map.
-          // If that is true then used the segment id as the load name.
-          if (loadModel.getCarbonDataLoadSchema().getCarbonTable().isChildDataMap() && !loadModel
-              .getSegmentId().isEmpty()) {
-            newMetaEntry.setLoadName(loadModel.getSegmentId());
-          } else if (loadModel.getCarbonDataLoadSchema().getCarbonTable().isChildTable()
+          if (loadModel.getCarbonDataLoadSchema().getCarbonTable().isMV()
               && !loadModel.getSegmentId().isEmpty()) {
             for (LoadMetadataDetails entry : listOfLoadFolderDetails) {
               if (entry.getLoadName().equalsIgnoreCase(loadModel.getSegmentId())) {
@@ -326,6 +326,7 @@ public final class CarbonLoaderUtil {
                 // For insert overwrite, we will delete the old segment folder immediately
                 // So collect the old segments here
                 addToStaleFolders(identifier, staleFolders, entry);
+                staleLoadMetadataDetails.add(entry);
               }
             }
           }
@@ -354,14 +355,9 @@ public final class CarbonLoaderUtil {
           }
         }
 
-        if (loadModel.getCarbonDataLoadSchema().getCarbonTable().isChildDataMap() && !loadStartEntry
-            && !uuid.isEmpty() && segmentsToBeDeleted.isEmpty() && !insertOverwrite) {
-          SegmentStatusManager.writeLoadDetailsIntoFile(tableStatusPath,
-              new LoadMetadataDetails[] { newMetaEntry });
-        } else {
-          SegmentStatusManager.writeLoadDetailsIntoFile(tableStatusPath, listOfLoadFolderDetails
-              .toArray(new LoadMetadataDetails[listOfLoadFolderDetails.size()]));
-        }
+        SegmentStatusManager.writeLoadDetailsIntoFile(tableStatusPath, listOfLoadFolderDetails
+            .toArray(new LoadMetadataDetails[0]));
+
         // Delete all old stale segment folders
         for (CarbonFile staleFolder : staleFolders) {
           // try block is inside for loop because even if there is failure in deletion of 1 stale
@@ -370,6 +366,33 @@ public final class CarbonLoaderUtil {
             CarbonUtil.deleteFoldersAndFiles(staleFolder);
           } catch (IOException | InterruptedException e) {
             LOGGER.error("Failed to delete stale folder: " + e.getMessage(), e);
+          }
+        }
+        if (!staleLoadMetadataDetails.isEmpty()) {
+          final String segmentFileLocation =
+              CarbonTablePath.getSegmentFilesLocation(identifier.getTablePath())
+                  + CarbonCommonConstants.FILE_SEPARATOR;
+          final String segmentLockFileLocation =
+              CarbonTablePath.getLockFilesDirPath(identifier.getTablePath())
+                  + CarbonCommonConstants.FILE_SEPARATOR;
+          for (LoadMetadataDetails staleLoadMetadataDetail : staleLoadMetadataDetails) {
+            try {
+              CarbonUtil.deleteFoldersAndFiles(
+                  FileFactory.getCarbonFile(segmentFileLocation
+                      + staleLoadMetadataDetail.getSegmentFile())
+              );
+            } catch (IOException | InterruptedException e) {
+              LOGGER.error("Failed to delete segment file: " + e.getMessage(), e);
+            }
+            try {
+              CarbonUtil.deleteFoldersAndFiles(
+                  FileFactory.getCarbonFile(segmentLockFileLocation
+                      + CarbonTablePath.addSegmentPrefix(staleLoadMetadataDetail.getLoadName())
+                      + LockUsage.LOCK)
+              );
+            } catch (IOException | InterruptedException e) {
+              LOGGER.error("Failed to delete segment lock file: " + e.getMessage(), e);
+            }
           }
         }
         status = true;
@@ -397,7 +420,7 @@ public final class CarbonLoaderUtil {
         identifier.getTablePath(), entry.getLoadName());
     // add to the deletion list only if file exist else HDFS file system will throw
     // exception while deleting the file if file path does not exist
-    if (FileFactory.isFileExist(path, FileFactory.getFileType(path))) {
+    if (FileFactory.isFileExist(path)) {
       staleFolders.add(FileFactory.getCarbonFile(path));
     }
   }
@@ -508,20 +531,6 @@ public final class CarbonLoaderUtil {
     updateTableStatusForFailure(model, "");
   }
 
-  public static Dictionary getDictionary(DictionaryColumnUniqueIdentifier columnIdentifier)
-      throws IOException {
-    Cache<DictionaryColumnUniqueIdentifier, Dictionary> dictCache =
-        CacheProvider.getInstance().createCache(CacheType.REVERSE_DICTIONARY);
-    return dictCache.get(columnIdentifier);
-  }
-
-  public static Dictionary getDictionary(AbsoluteTableIdentifier absoluteTableIdentifier,
-      ColumnIdentifier columnIdentifier, DataType dataType)
-      throws IOException {
-    return getDictionary(
-        new DictionaryColumnUniqueIdentifier(absoluteTableIdentifier, columnIdentifier, dataType));
-  }
-
   /**
    * This method will divide the blocks among the tasks of the nodes as per the data locality
    *
@@ -554,7 +563,7 @@ public final class CarbonLoaderUtil {
   public static Map<String, List<Distributable>> nodeBlockMapping(List<Distributable> blockInfos,
       int noOfNodesInput, List<String> activeNodes) {
     return nodeBlockMapping(blockInfos, noOfNodesInput, activeNodes,
-        BlockAssignmentStrategy.BLOCK_NUM_FIRST,null);
+        BlockAssignmentStrategy.BLOCK_NUM_FIRST, null);
   }
 
   /**
@@ -566,7 +575,7 @@ public final class CarbonLoaderUtil {
   public static Map<String, List<Distributable>> nodeBlockMapping(List<Distributable> blockInfos) {
     // -1 if number of nodes has to be decided based on block location information
     return nodeBlockMapping(blockInfos, -1, null,
-        BlockAssignmentStrategy.BLOCK_NUM_FIRST,null);
+        BlockAssignmentStrategy.BLOCK_NUM_FIRST, null);
   }
 
   /**
@@ -1174,6 +1183,20 @@ public final class CarbonLoaderUtil {
     return dataSize + indexSize;
   }
 
+  public static void addIndexSizeIntoMetaEntry(LoadMetadataDetails loadMetadataDetails,
+      String segmentId, CarbonTable carbonTable) throws IOException {
+    Segment segment = new Segment(segmentId, loadMetadataDetails.getSegmentFile());
+    if (segment.getSegmentFileName() != null) {
+      SegmentFileStore fileStore =
+          new SegmentFileStore(carbonTable.getTablePath(), segment.getSegmentFileName());
+      if (fileStore.getLocationMap() != null) {
+        fileStore.readIndexFiles(FileFactory.getConfiguration());
+        long carbonIndexSize = CarbonUtil.getCarbonIndexSize(fileStore, fileStore.getLocationMap());
+        loadMetadataDetails.setIndexSize(String.valueOf(carbonIndexSize));
+      }
+    }
+  }
+
   /**
    * Merge index files with in the segment of partitioned table
    *
@@ -1181,18 +1204,26 @@ public final class CarbonLoaderUtil {
    * @param segmentId
    * @param uuid
    * @return
-   * @throws IOException
    */
   public static String mergeIndexFilesInPartitionedSegment(CarbonTable table, String segmentId,
-      String uuid, String partitionPath) throws IOException {
+      String uuid, String partitionPath) {
     String tablePath = table.getTablePath();
     return new CarbonIndexFileMergeWriter(table)
         .mergeCarbonIndexFilesOfSegment(segmentId, uuid, tablePath, partitionPath);
   }
 
+  public static SegmentFileStore.FolderDetails mergeIndexFilesInPartitionedTempSegment(
+      CarbonTable table, String segmentId, String partitionPath, List<String> partitionInfo,
+      String uuid, String tempFolderPath, String currPartitionSpec) throws IOException {
+    String tablePath = table.getTablePath();
+    return new CarbonIndexFileMergeWriter(table)
+        .mergeCarbonIndexFilesOfSegment(segmentId, tablePath, partitionPath, partitionInfo, uuid,
+            tempFolderPath, currPartitionSpec);
+  }
+
   private static void deleteFiles(List<String> filesToBeDeleted) throws IOException {
     for (String filePath : filesToBeDeleted) {
-      FileFactory.deleteFile(filePath, FileFactory.getFileType(filePath));
+      FileFactory.deleteFile(filePath);
     }
   }
 

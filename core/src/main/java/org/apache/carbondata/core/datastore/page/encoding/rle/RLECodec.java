@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
@@ -34,7 +35,6 @@ import org.apache.carbondata.core.datastore.page.encoding.ColumnPageCodec;
 import org.apache.carbondata.core.datastore.page.encoding.ColumnPageDecoder;
 import org.apache.carbondata.core.datastore.page.encoding.ColumnPageEncoder;
 import org.apache.carbondata.core.datastore.page.encoding.ColumnPageEncoderMeta;
-import org.apache.carbondata.core.memory.MemoryException;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.scan.result.vector.ColumnVectorInfo;
@@ -114,7 +114,7 @@ public class RLECodec implements ColumnPageCodec {
     }
 
     @Override
-    protected byte[] encodeData(ColumnPage input) throws MemoryException, IOException {
+    protected ByteBuffer encodeData(ColumnPage input) throws IOException {
       validateDataType(input.getDataType());
       this.dataType = input.getDataType();
       if (dataType == DataTypes.BYTE) {
@@ -141,7 +141,7 @@ public class RLECodec implements ColumnPageCodec {
         throw new UnsupportedOperationException(input.getDataType() +
             " does not support RLE encoding");
       }
-      return collectResult();
+      return ByteBuffer.wrap(collectResult());
     }
 
     @Override
@@ -297,8 +297,7 @@ public class RLECodec implements ColumnPageCodec {
     }
 
     @Override
-    public ColumnPage decode(byte[] input, int offset, int length)
-        throws MemoryException, IOException {
+    public ColumnPage decode(byte[] input, int offset, int length) throws IOException {
       DataType dataType = columnSpec.getSchemaDataType();
       DataInputStream in = new DataInputStream(new ByteArrayInputStream(input, offset, length));
       ColumnPage resultPage = ColumnPage.newPage(
@@ -320,14 +319,13 @@ public class RLECodec implements ColumnPageCodec {
     @Override
     public void decodeAndFillVector(byte[] input, int offset, int length,
         ColumnVectorInfo vectorInfo, BitSet nullBits, boolean isLVEncoded, int pageSize,
-        ReusableDataBuffer reusableDataBuffer)
-        throws MemoryException, IOException {
+        ReusableDataBuffer reusableDataBuffer) {
       throw new UnsupportedOperationException("Not supposed to be called here");
     }
 
     @Override
     public ColumnPage decode(byte[] input, int offset, int length, boolean isLVEncoded)
-        throws MemoryException, IOException {
+        throws IOException {
       return decode(input, offset, length);
     }
 

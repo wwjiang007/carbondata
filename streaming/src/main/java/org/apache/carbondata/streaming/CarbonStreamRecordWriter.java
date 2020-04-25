@@ -21,13 +21,11 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datastore.compression.CompressorFactory;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.datastore.row.CarbonRow;
@@ -39,6 +37,7 @@ import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.reader.CarbonHeaderReader;
 import org.apache.carbondata.core.util.ByteUtil;
 import org.apache.carbondata.core.util.CarbonMetadataUtil;
+import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeUtil;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
@@ -140,7 +139,9 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
 
     segmentDir = CarbonTablePath.getSegmentPath(
         carbonTable.getAbsoluteTableIdentifier().getTablePath(), segmentId);
-    fileName = CarbonTablePath.getCarbonDataFileName(0, taskNo + "", 0, 0, "0", segmentId);
+    fileName = CarbonTablePath.getCarbonDataFileName(
+        0, taskNo + "", 0, 0, "0",
+        segmentId, CarbonProperties.getInstance().getDefaultCompressor());
 
     // initialize metadata
     isNoDictionaryDimensionColumn =
@@ -159,37 +160,35 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
     }
   }
 
-  private void initializeAtFirstRow() throws IOException, InterruptedException {
+  private void initializeAtFirstRow() throws IOException {
     // initialize parser and converter
     rowParser = new RowParserImpl(dataFields, configuration);
     badRecordLogger = BadRecordsLoggerProvider.createBadRecordLogger(configuration);
     converter =
         new RowConverterImpl(configuration.getDataFields(), configuration, badRecordLogger, true);
-    configuration.setCardinalityFinder(converter);
     converter.initialize();
 
     // initialize data writer and compressor
     String filePath = segmentDir + File.separator + fileName;
-    FileFactory.FileType fileType = FileFactory.getFileType(filePath);
-    CarbonFile carbonFile = FileFactory.getCarbonFile(filePath, fileType);
+    CarbonFile carbonFile = FileFactory.getCarbonFile(filePath);
     if (carbonFile.exists()) {
       // if the file is existed, use the append api
-      outputStream = FileFactory.getDataOutputStreamUsingAppend(filePath, fileType);
+      outputStream = FileFactory.getDataOutputStreamUsingAppend(filePath);
       // get the compressor from the fileheader. In legacy store,
       // the compressor name is not set and it use snappy compressor
       FileHeader header = new CarbonHeaderReader(filePath).readHeader();
       if (header.isSetCompressor_name()) {
         compressorName = header.getCompressor_name();
       } else {
-        compressorName = CompressorFactory.NativeSupportedCompressor.SNAPPY.getName();
+        compressorName = CarbonProperties.getInstance().getDefaultCompressor();
       }
     } else {
       // IF the file is not existed, use the create api
-      outputStream = FileFactory.getDataOutputStream(filePath, fileType);
+      outputStream = FileFactory.getDataOutputStream(filePath);
       compressorName = carbonTable.getTableInfo().getFactTable().getTableProperties().get(
           CarbonCommonConstants.COMPRESSOR);
       if (null == compressorName) {
-        compressorName = CompressorFactory.getInstance().getCompressor().getName();
+        compressorName = CarbonProperties.getInstance().getDefaultCompressor();
       }
       writeFileHeader();
     }
@@ -206,7 +205,7 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
   }
 
   @Override
-  public void write(Void key, Object value) throws IOException, InterruptedException {
+  public void write(Void key, Object value) throws IOException {
     if (isFirstRow) {
       initializeAtFirstRow();
     }
@@ -312,16 +311,8 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
   private void writeFileHeader() throws IOException {
     List<ColumnSchema> wrapperColumnSchemaList = CarbonUtil
         .getColumnSchemaList(carbonTable.getVisibleDimensions(), carbonTable.getVisibleMeasures());
-    int[] dimLensWithComplex = new int[wrapperColumnSchemaList.size()];
-    for (int i = 0; i < dimLensWithComplex.length; i++) {
-      dimLensWithComplex[i] = Integer.MAX_VALUE;
-    }
-    int[] dictionaryColumnCardinality =
-        CarbonUtil.getFormattedCardinality(dimLensWithComplex, wrapperColumnSchemaList);
-    List<Integer> cardinality = new ArrayList<>();
     List<org.apache.carbondata.format.ColumnSchema> columnSchemaList = AbstractFactDataWriter
-        .getColumnSchemaListAndCardinality(cardinality, dictionaryColumnCardinality,
-            wrapperColumnSchemaList);
+        .getColumnSchemaListAndCardinality(wrapperColumnSchemaList);
     FileHeader fileHeader =
         CarbonMetadataUtil.getFileHeader(true, columnSchemaList, System.currentTimeMillis());
     fileHeader.setIs_footer_present(false);
@@ -362,7 +353,7 @@ public class CarbonStreamRecordWriter extends RecordWriter<Void, Object> {
   }
 
   @Override
-  public void close(TaskAttemptContext context) throws IOException, InterruptedException {
+  public void close(TaskAttemptContext context) throws IOException {
     try {
       isClosed = true;
       // append remain buffer data

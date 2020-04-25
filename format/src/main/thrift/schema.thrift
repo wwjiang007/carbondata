@@ -62,8 +62,10 @@ enum Encoding{
 	BOOL_BYTE = 12;   // Identifies that a column is encoded using BooleanPageCodec
 	ADAPTIVE_DELTA_FLOATING = 13; // Identifies that a column is encoded using AdaptiveDeltaFloatingCodec
 	DIRECT_COMPRESS_VARCHAR = 14;  // Identifies that a columm is encoded using DirectCompressCodec, it is used for long string columns
+	INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY = 15;  // Identifies that a complex column child stored as INT length or SHORT length
 }
 
+// Only NATIVE_HIVE is supported, others are deprecated since CarbonData 2.0
 enum PartitionType{
   RANGE = 0;
   RANGE_INTERVAL = 1;
@@ -104,6 +106,7 @@ struct ColumnSchema{
 	/** 
 	 * Used when this column is part of an aggregate table.
 	 */
+	 /** Deprecated */
 	11: optional string aggregate_function;
 
 	12: optional binary default_value;
@@ -128,7 +131,13 @@ struct ColumnSchema{
   *  to maintain the column relation with parent table.
   *  will be usefull in case of pre-aggregate
   **/
+  /** Deprecated */
 	17: optional list<ParentColumnTableRelation> parentColumnTableRelations;
+
+  /**
+   * To specify if it is an index column. Its Default value is false
+	 */
+	18: optional bool indexColumn;
 }
 
 /**
@@ -194,24 +203,7 @@ struct ParentColumnTableRelation {
    3: required string columnName
 }
 
-struct DataMapSchema  {
-    // DataMap name
-    1: required string dataMapName;
-    // class name
-    2: required string className;
-    // to maintain properties which are mentioned in DMPROPERTIES of DDL and also it
-    // stores properties of select query, query type like groupby, join in
-    // case of preaggregate/timeseries
-    3: optional map<string, string> properties;
-    // relation identifier of a table which stores data of datamaps like preaggregate/timeseries.
-    4: optional RelationIdentifier childTableIdentifier;
-    // in case of preaggregate/timeseries datamap it will be used to maintain the child schema
-    // which will be usefull in case of query and data load
-    5: optional TableSchema childTableSchema;
-}
-
 struct TableInfo{
 	1: required TableSchema fact_table;
 	2: required list<TableSchema> aggregate_table_list;
-	3: optional list<DataMapSchema> dataMapSchemas; // childSchema information
 }

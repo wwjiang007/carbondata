@@ -34,11 +34,9 @@ import org.apache.carbondata.common.constants.LoggerAction;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.constants.SortScopeOptions;
-import org.apache.carbondata.core.keygenerator.KeyGenerator;
-import org.apache.carbondata.core.keygenerator.factory.KeyGeneratorFactory;
+import org.apache.carbondata.core.metadata.DatabaseLocationProvider;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
@@ -153,7 +151,8 @@ public final class CarbonDataProcessorUtil {
    */
   public static String getTempStoreLocationKey(String databaseName, String tableName,
       String segmentId, String taskId, boolean isCompactionFlow, boolean isAltPartitionFlow) {
-    String tempLocationKey = databaseName + CarbonCommonConstants.UNDERSCORE + tableName
+    String tempLocationKey = DatabaseLocationProvider.get().provide(databaseName)
+        + CarbonCommonConstants.UNDERSCORE + tableName
         + CarbonCommonConstants.UNDERSCORE + segmentId + CarbonCommonConstants.UNDERSCORE + taskId;
     if (isCompactionFlow) {
       tempLocationKey = CarbonCommonConstants.COMPACTION_KEY_WORD + CarbonCommonConstants.UNDERSCORE
@@ -177,7 +176,7 @@ public final class CarbonDataProcessorUtil {
         break;
       }
 
-      if (!field.hasDictionaryEncoding() && field.getColumn().isDimension()) {
+      if (!field.isDateDataType() && field.getColumn().isDimension()) {
         noDictionaryMapping.add(true);
       } else if (field.getColumn().isDimension()) {
         noDictionaryMapping.add(false);
@@ -214,7 +213,7 @@ public final class CarbonDataProcessorUtil {
       if (column.isComplex()) {
         break;
       }
-      if (!column.hasEncoding(Encoding.DICTIONARY) && column.isDimension()) {
+      if (column.getDataType() != DataTypes.DATE && column.isDimension()) {
         noDictionaryMapping.add(true);
       } else if (column.isDimension()) {
         noDictionaryMapping.add(false);
@@ -222,50 +221,6 @@ public final class CarbonDataProcessorUtil {
     }
     return ArrayUtils
         .toPrimitive(noDictionaryMapping.toArray(new Boolean[noDictionaryMapping.size()]));
-  }
-
-  public static void getComplexNoDictionaryMapping(DataField[] dataFields,
-      List<Integer> complexNoDictionary) {
-
-    // save the Ordinal Number in the List.
-    for (DataField field : dataFields) {
-      if (field.getColumn().isComplex()) {
-        // get the childs.
-        getComplexNoDictionaryMapping(
-            ((CarbonDimension) field.getColumn()).getListOfChildDimensions(), complexNoDictionary);
-      }
-    }
-  }
-
-  public static void getComplexNoDictionaryMapping(List<CarbonDimension> carbonDimensions,
-      List<Integer> complexNoDictionary) {
-    for (CarbonDimension carbonDimension : carbonDimensions) {
-      if (carbonDimension.isComplex()) {
-        getComplexNoDictionaryMapping(carbonDimension.getListOfChildDimensions(),
-            complexNoDictionary);
-      } else {
-        // This is primitive type. Check the encoding for NoDictionary.
-        if (!carbonDimension.hasEncoding(Encoding.DICTIONARY)) {
-          complexNoDictionary.add(carbonDimension.getOrdinal());
-        }
-      }
-    }
-  }
-
-  /**
-   * Preparing the boolean [] to map whether the dimension use inverted index or not.
-   */
-  public static boolean[] getIsUseInvertedIndex(DataField[] fields) {
-    List<Boolean> isUseInvertedIndexList = new ArrayList<Boolean>();
-    for (DataField field : fields) {
-      if (field.getColumn().isUseInvertedIndex() && field.getColumn().isDimension()) {
-        isUseInvertedIndexList.add(true);
-      } else if (field.getColumn().isDimension()) {
-        isUseInvertedIndexList.add(false);
-      }
-    }
-    return ArrayUtils
-        .toPrimitive(isUseInvertedIndexList.toArray(new Boolean[isUseInvertedIndexList.size()]));
   }
 
   private static String getComplexTypeString(DataField[] dataFields) {
@@ -280,11 +235,11 @@ public final class CarbonDataProcessorUtil {
   }
 
   private static String isDictionaryType(CarbonDimension dimension) {
-    Boolean isDictionary = true;
-    if (!(dimension.hasEncoding(Encoding.DICTIONARY))) {
+    boolean isDictionary = true;
+    if (dimension.getDataType() != DataTypes.DATE) {
       isDictionary = false;
     }
-    return isDictionary.toString();
+    return String.valueOf(isDictionary);
   }
 
   /**
@@ -379,7 +334,10 @@ public final class CarbonDataProcessorUtil {
     List<CarbonDimension> dimensions =
         schema.getCarbonTable().getVisibleDimensions();
     for (CarbonDimension dimension : dimensions) {
-      columnNames.add(dimension.getColName());
+      if (!dimension.isIndexColumn()) {
+        // skip the non-schema index column
+        columnNames.add(dimension.getColName());
+      }
     }
     List<CarbonMeasure> measures = schema.getCarbonTable().getVisibleMeasures();
     for (CarbonMeasure msr : measures) {
@@ -410,8 +368,27 @@ public final class CarbonDataProcessorUtil {
     List<CarbonDimension> dimensions = carbonTable.getVisibleDimensions();
     List<DataType> type = new ArrayList<>();
     for (int i = 0; i < dimensions.size(); i++) {
-      if (dimensions.get(i).isSortColumn() && !dimensions.get(i).hasEncoding(Encoding.DICTIONARY)) {
+      if (dimensions.get(i).isSortColumn() && dimensions.get(i).getDataType() != DataTypes.DATE) {
         type.add(dimensions.get(i).getDataType());
+      }
+    }
+    return type.toArray(new DataType[type.size()]);
+  }
+
+  /**
+   * get visible no dictionary dimensions as per data field order
+   *
+   * @param dataFields
+   * @return
+   */
+  public static DataType[] getNoDictDataTypesAsDataFieldOrder(DataField[] dataFields) {
+    List<DataType> type = new ArrayList<>();
+    for (DataField dataField : dataFields) {
+      if (!dataField.getColumn().isInvisible() && dataField.getColumn().isDimension()) {
+        if (dataField.getColumn().getColumnSchema().isSortColumn()
+            && dataField.getColumn().getColumnSchema().getDataType() != DataTypes.DATE) {
+          type.add(dataField.getColumn().getColumnSchema().getDataType());
+        }
       }
     }
     return type.toArray(new DataType[type.size()]);
@@ -428,10 +405,37 @@ public final class CarbonDataProcessorUtil {
     List<Boolean> noDicSortColMap = new ArrayList<>();
     for (int i = 0; i < dimensions.size(); i++) {
       if (dimensions.get(i).isSortColumn()) {
-        if (!dimensions.get(i).hasEncoding(Encoding.DICTIONARY)) {
+        if (dimensions.get(i).getDataType() != DataTypes.DATE) {
           noDicSortColMap.add(true);
         } else {
           noDicSortColMap.add(false);
+        }
+      }
+    }
+    Boolean[] mapping = noDicSortColMap.toArray(new Boolean[0]);
+    boolean[] noDicSortColMapping = new boolean[mapping.length];
+    for (int i = 0; i < mapping.length; i++) {
+      noDicSortColMapping[i] = mapping[i];
+    }
+    return noDicSortColMapping;
+  }
+
+  /**
+   * get mapping based on data fields order
+   *
+   * @param dataFields
+   * @return
+   */
+  public static boolean[] getNoDictSortColMappingAsDataFieldOrder(DataField[] dataFields) {
+    List<Boolean> noDicSortColMap = new ArrayList<>();
+    for (DataField dataField : dataFields) {
+      if (!dataField.getColumn().isInvisible() && dataField.getColumn().isDimension()) {
+        if (dataField.getColumn().getColumnSchema().isSortColumn()) {
+          if (dataField.getColumn().getColumnSchema().getDataType() != DataTypes.DATE) {
+            noDicSortColMap.add(true);
+          } else {
+            noDicSortColMap.add(false);
+          }
         }
       }
     }
@@ -456,13 +460,44 @@ public final class CarbonDataProcessorUtil {
     List<Integer> noDicSortColMap = new ArrayList<>();
     int counter = 0;
     for (CarbonDimension dimension : dimensions) {
-      if (dimension.hasEncoding(Encoding.DICTIONARY)) {
+      if (dimension.getDataType() == DataTypes.DATE) {
         continue;
       }
       if (dimension.isSortColumn() && DataTypeUtil.isPrimitiveColumn(dimension.getDataType())) {
         noDicSortColMap.add(counter);
       }
       counter++;
+    }
+    Integer[] mapping = noDicSortColMap.toArray(new Integer[0]);
+    int[] columnIdxBasedOnSchemaInRow = new int[mapping.length];
+    for (int i = 0; i < mapping.length; i++) {
+      columnIdxBasedOnSchemaInRow[i] = mapping[i];
+    }
+    return columnIdxBasedOnSchemaInRow;
+  }
+
+  /**
+   * If the dimension is added in older version 1.1, by default it will be sort column, So during
+   * initial sorting, carbonrow will be in order where added sort column is at the beginning, But
+   * before final merger of sort, the data should be in schema order
+   * (org.apache.carbondata.processing.sort.SchemaBasedRowUpdater updates the carbonRow in schema
+   * order), so This method helps to find the index of no dictionary sort column in the carbonrow
+   * data.
+   */
+  public static int[] getColumnIdxBasedOnSchemaInRowAsDataFieldOrder(DataField[] dataFields) {
+    List<Integer> noDicSortColMap = new ArrayList<>();
+    int counter = 0;
+    for (DataField dataField : dataFields) {
+      if (!dataField.getColumn().isInvisible() && dataField.getColumn().isDimension()) {
+        if (dataField.getColumn().getColumnSchema().getDataType() == DataTypes.DATE) {
+          continue;
+        }
+        if (dataField.getColumn().getColumnSchema().isSortColumn() && DataTypeUtil
+            .isPrimitiveColumn(dataField.getColumn().getColumnSchema().getDataType())) {
+          noDicSortColMap.add(counter);
+        }
+        counter++;
+      }
     }
     Integer[] mapping = noDicSortColMap.toArray(new Integer[0]);
     int[] columnIdxBasedOnSchemaInRow = new int[mapping.length];
@@ -483,11 +518,39 @@ public final class CarbonDataProcessorUtil {
     List<DataType> noDictSortType = new ArrayList<>();
     List<DataType> noDictNoSortType = new ArrayList<>();
     for (int i = 0; i < dimensions.size(); i++) {
-      if (!dimensions.get(i).hasEncoding(Encoding.DICTIONARY)) {
+      if (dimensions.get(i).getDataType() != DataTypes.DATE) {
         if (dimensions.get(i).isSortColumn()) {
           noDictSortType.add(dimensions.get(i).getDataType());
         } else {
           noDictNoSortType.add(dimensions.get(i).getDataType());
+        }
+      }
+    }
+    DataType[] noDictSortTypes = noDictSortType.toArray(new DataType[noDictSortType.size()]);
+    DataType[] noDictNoSortTypes = noDictNoSortType.toArray(new DataType[noDictNoSortType.size()]);
+    Map<String, DataType[]> noDictSortAndNoSortTypes = new HashMap<>(2);
+    noDictSortAndNoSortTypes.put("noDictSortDataTypes", noDictSortTypes);
+    noDictSortAndNoSortTypes.put("noDictNoSortDataTypes", noDictNoSortTypes);
+    return noDictSortAndNoSortTypes;
+  }
+
+  /**
+   * Get the data types of the no dictionary sort columns as per dataFields order
+   *
+   * @param dataFields
+   * @return
+   */
+  public static Map<String, DataType[]> getNoDictSortAndNoSortDataTypesAsDataFieldOrder(
+      DataField[] dataFields) {
+    List<DataType> noDictSortType = new ArrayList<>();
+    List<DataType> noDictNoSortType = new ArrayList<>();
+    for (DataField dataField : dataFields) {
+      if (dataField.getColumn().isDimension()
+          && dataField.getColumn().getColumnSchema().getDataType() != DataTypes.DATE) {
+        if (dataField.getColumn().getColumnSchema().isSortColumn()) {
+          noDictSortType.add(dataField.getColumn().getColumnSchema().getDataType());
+        } else {
+          noDictNoSortType.add(dataField.getColumn().getColumnSchema().getDataType());
         }
       }
     }
@@ -568,34 +631,6 @@ public final class CarbonDataProcessorUtil {
           "sort scope is set to " + sortScope);
     }
     return sortScope;
-  }
-
-  /**
-   * Get the batch sort size
-   * @param configuration
-   * @return
-   */
-  public static int getBatchSortSizeinMb(CarbonDataLoadConfiguration configuration) {
-    int batchSortSizeInMb;
-    try {
-      // First try get from user input from ddl , otherwise get from carbon properties.
-      if (configuration.getDataLoadProperty(CarbonCommonConstants.LOAD_BATCH_SORT_SIZE_INMB)
-          == null) {
-        batchSortSizeInMb = Integer.parseInt(CarbonProperties.getInstance()
-            .getProperty(CarbonCommonConstants.LOAD_BATCH_SORT_SIZE_INMB,
-                CarbonCommonConstants.LOAD_BATCH_SORT_SIZE_INMB_DEFAULT));
-      } else {
-        batchSortSizeInMb = Integer.parseInt(
-            configuration.getDataLoadProperty(CarbonCommonConstants.LOAD_BATCH_SORT_SIZE_INMB)
-                .toString());
-      }
-      LOGGER.info("batch sort size is set to " + batchSortSizeInMb);
-    } catch (Exception e) {
-      batchSortSizeInMb = 0;
-      LOGGER.warn("Exception occured while resolving batch sort size. " +
-          "batch sort size is set to " + batchSortSizeInMb);
-    }
-    return batchSortSizeInMb;
   }
 
   /**
@@ -726,37 +761,6 @@ public final class CarbonDataProcessorUtil {
       iterators[i % parallelThreadNumber].add(inputIterators[i]);
     }
     return iterators;
-  }
-
-  public static int[] calcDimensionLengths(int numberOfSortColumns, int[] complexCardinality) {
-    // For no sort we are having the cardinality as MAX_VALUE for any non zero value
-    if (numberOfSortColumns == 0) {
-      for (int i = 0; i < complexCardinality.length; i++) {
-        if (complexCardinality[i] != 0) {
-          complexCardinality[i] = Integer.MAX_VALUE;
-        }
-      }
-    }
-    List<Integer> dimsLenList = new ArrayList<Integer>();
-    for (int eachDimLen : complexCardinality) {
-      if (eachDimLen != 0) dimsLenList.add(eachDimLen);
-    }
-    int[] dimLens = new int[dimsLenList.size()];
-    for (int i = 0; i < dimsLenList.size(); i++) {
-      dimLens[i] = dimsLenList.get(i);
-    }
-    return dimLens;
-  }
-
-  // This will give us KeyGenerators for all the children inside the complex datatype
-  public static KeyGenerator[] createKeyGeneratorForComplexDimension(int numberOfSortColumns,
-      int[] complexCardinality) {
-    int[] dimLens = calcDimensionLengths(numberOfSortColumns, complexCardinality);
-    KeyGenerator[] complexKeyGenerators = new KeyGenerator[dimLens.length];
-    for (int i = 0; i < dimLens.length; i++) {
-      complexKeyGenerators[i] = KeyGeneratorFactory.getKeyGenerator(new int[] { dimLens[i] });
-    }
-    return complexKeyGenerators;
   }
 
 }

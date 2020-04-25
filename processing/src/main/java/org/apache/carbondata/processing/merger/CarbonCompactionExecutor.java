@@ -27,12 +27,11 @@ import java.util.Set;
 
 import org.apache.carbondata.common.CarbonIterator;
 import org.apache.carbondata.common.logging.LogServiceFactory;
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datamap.DataMapFilter;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.datastore.block.TaskBlockInfo;
+import org.apache.carbondata.core.index.IndexFilter;
 import org.apache.carbondata.core.metadata.blocklet.DataFileFooter;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
@@ -52,7 +51,6 @@ import org.apache.carbondata.core.stats.QueryStatisticsConstants;
 import org.apache.carbondata.core.stats.QueryStatisticsRecorder;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.CarbonTimeStatisticsFactory;
-import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.core.util.DataTypeConverter;
 
 import org.apache.hadoop.conf.Configuration;
@@ -116,7 +114,7 @@ public class CarbonCompactionExecutor {
    * In Range Column compaction we will have a Filter Expression to process
    */
   public Map<String, List<RawResultIterator>> processTableBlocks(Configuration configuration,
-      Expression filterExpr) throws QueryExecutionException, IOException {
+      Expression filterExpr) throws IOException {
 
     Map<String, List<RawResultIterator>> resultList = new HashMap<>(2);
     resultList.put(CarbonCompactionUtil.UNSORTED_IDX,
@@ -132,7 +130,7 @@ public class CarbonCompactionExecutor {
               .enableForcedDetailRawQuery();
     } else {
       builder = new QueryModelBuilder(carbonTable).projectAllColumns()
-          .filterExpression(new DataMapFilter(carbonTable, filterExpr))
+          .filterExpression(new IndexFilter(carbonTable, filterExpr))
           .dataConverter(dataTypeConverter).enableForcedDetailRawQuery()
           .convertToRangeFilter(false);
     }
@@ -179,10 +177,9 @@ public class CarbonCompactionExecutor {
 
   private RawResultIterator getRawResultIterator(Configuration configuration, String segmentId,
       String task, List<TableBlockInfo> tableBlockInfoList)
-      throws QueryExecutionException, IOException {
+      throws IOException {
     SegmentProperties sourceSegmentProperties =
-        new SegmentProperties(tableBlockInfoList.get(0).getDataFileFooter().getColumnInTable(),
-            tableBlockInfoList.get(0).getDataFileFooter().getSegmentInfo().getColumnCardinality());
+        new SegmentProperties(tableBlockInfoList.get(0).getDataFileFooter().getColumnInTable());
     boolean hasColumnDrift = carbonTable.hasColumnDrift() &&
         RestructureUtil.hasColumnDriftOnSegment(carbonTable, sourceSegmentProperties);
     if (hasColumnDrift) {
@@ -213,7 +210,7 @@ public class CarbonCompactionExecutor {
       // get the columnValueSize for the dataFileFooter
       IntArrayWrapper columnValueSize = new IntArrayWrapper(
           getSourceSegmentProperties(Collections.singletonList(tableBlock.getDataFileFooter()))
-              .getColumnsValueSize());
+              .createColumnValueLength());
       List<TableBlockInfo> tempBlockInfoList =
           columnvalueSizeToTableBlockInfoMap.get(columnValueSize);
       if (tempBlockInfoList == null) {
@@ -238,22 +235,11 @@ public class CarbonCompactionExecutor {
   private SegmentProperties getSourceSegmentProperties(List<DataFileFooter> listMetadata) {
     SegmentProperties sourceSegProperties = null;
     if (restructuredBlockExists) {
-      // update cardinality of source segment according to new schema
-      Map<String, Integer> columnToCardinalityMap =
-          new HashMap<>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
-      CarbonCompactionUtil
-          .addColumnCardinalityToMap(columnToCardinalityMap, listMetadata.get(0).getColumnInTable(),
-              listMetadata.get(0).getSegmentInfo().getColumnCardinality());
       List<ColumnSchema> updatedColumnSchemaList =
           new ArrayList<>(listMetadata.get(0).getColumnInTable().size());
-      int[] updatedColumnCardinalities = CarbonCompactionUtil
-          .updateColumnSchemaAndGetCardinality(columnToCardinalityMap, carbonTable,
-              updatedColumnSchemaList);
-      sourceSegProperties =
-          new SegmentProperties(updatedColumnSchemaList, updatedColumnCardinalities);
+      sourceSegProperties = new SegmentProperties(updatedColumnSchemaList);
     } else {
-      sourceSegProperties = new SegmentProperties(listMetadata.get(0).getColumnInTable(),
-          listMetadata.get(0).getSegmentInfo().getColumnCardinality());
+      sourceSegProperties = new SegmentProperties(listMetadata.get(0).getColumnInTable());
     }
     return sourceSegProperties;
   }
@@ -266,7 +252,7 @@ public class CarbonCompactionExecutor {
    */
   private CarbonIterator<RowBatch> executeBlockList(List<TableBlockInfo> blockList,
       String segmentId, String taskId, Configuration configuration)
-      throws QueryExecutionException, IOException {
+      throws IOException {
     queryModel.setTableBlockInfos(blockList);
     QueryStatisticsRecorder executorRecorder = CarbonTimeStatisticsFactory
         .createExecutorRecorder(queryModel.getQueryId() + "_" + segmentId + "_" + taskId);
@@ -297,7 +283,6 @@ public class CarbonCompactionExecutor {
     } catch (QueryExecutionException e) {
       LOGGER.error("Problem while close. Ignoring the exception", e);
     }
-    clearDictionaryFromQueryModel();
   }
 
   private void logStatistics(long queryStartTime) {
@@ -309,21 +294,6 @@ public class CarbonCompactionExecutor {
         recorder.recordStatistics(queryStatistic);
         // print executor query statistics for each task_id
         recorder.logStatistics();
-      }
-    }
-  }
-
-  /**
-   * This method will clear the dictionary access count after its usage is complete so
-   * that column can be deleted form LRU cache whenever memory reaches threshold
-   */
-  private void clearDictionaryFromQueryModel() {
-    if (null != queryModel) {
-      Map<String, Dictionary> columnToDictionaryMapping = queryModel.getColumnToDictionaryMapping();
-      if (null != columnToDictionaryMapping) {
-        for (Map.Entry<String, Dictionary> entry : columnToDictionaryMapping.entrySet()) {
-          CarbonUtil.clearDictionaryCache(entry.getValue());
-        }
       }
     }
   }

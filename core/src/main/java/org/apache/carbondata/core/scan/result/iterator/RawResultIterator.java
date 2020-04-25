@@ -28,9 +28,7 @@ import org.apache.carbondata.common.CarbonIterator;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
-import org.apache.carbondata.core.keygenerator.KeyGenException;
 import org.apache.carbondata.core.scan.result.RowBatch;
-import org.apache.carbondata.core.scan.wrappers.ByteArrayWrapper;
 import org.apache.carbondata.core.util.CarbonProperties;
 
 import org.apache.log4j.Logger;
@@ -119,7 +117,7 @@ public class RawResultIterator extends CarbonIterator<Object[]> {
     }
   }
 
-  private List<Object[]> fetchRows() throws Exception {
+  private List<Object[]> fetchRows() {
     List<Object[]> converted = new ArrayList<>();
     while (detailRawQueryResultIterator.hasNext()) {
       for (Object[] r : detailRawQueryResultIterator.next().getRows()) {
@@ -196,17 +194,12 @@ public class RawResultIterator extends CarbonIterator<Object[]> {
    * for fetching the row with out incrementing counter.
    * @return
    */
-  public Object[] fetchConverted() throws KeyGenException {
+  public Object[] fetchConverted() {
     pickRow();
     return this.currentRawRow;
   }
 
-  protected Object[] convertRow(Object[] rawRow) throws KeyGenException {
-    byte[] dims = ((ByteArrayWrapper) rawRow[0]).getDictionaryKey();
-    long[] keyArray = sourceSegProperties.getDimensionKeyGenerator().getKeyArray(dims);
-    byte[] covertedBytes =
-        destinationSegProperties.getDimensionKeyGenerator().generateKey(keyArray);
-    ((ByteArrayWrapper) rawRow[0]).setDictionaryKey(covertedBytes);
+  protected Object[] convertRow(Object[] rawRow) {
     return rawRow;
   }
 

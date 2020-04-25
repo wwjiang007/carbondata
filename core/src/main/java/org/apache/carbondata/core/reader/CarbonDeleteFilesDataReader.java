@@ -17,7 +17,6 @@
 
 package org.apache.carbondata.core.reader;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,7 +31,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.mutate.DeleteDeltaBlockDetails;
 import org.apache.carbondata.core.mutate.DeleteDeltaBlockletDetails;
 import org.apache.carbondata.core.mutate.DeleteDeltaVo;
@@ -205,9 +203,9 @@ public class CarbonDeleteFilesDataReader {
     }
 
     @Override
-    public DeleteDeltaBlockDetails call() throws IOException {
+    public DeleteDeltaBlockDetails call() {
       CarbonDeleteDeltaFileReaderImpl deltaFileReader =
-          new CarbonDeleteDeltaFileReaderImpl(deltaFile, FileFactory.getFileType(deltaFile));
+          new CarbonDeleteDeltaFileReaderImpl(deltaFile);
       return deltaFileReader.readJson();
     }
   }

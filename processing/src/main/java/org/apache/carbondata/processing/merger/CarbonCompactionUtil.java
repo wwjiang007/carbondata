@@ -38,7 +38,6 @@ import org.apache.carbondata.core.metadata.CarbonTableIdentifier;
 import org.apache.carbondata.core.metadata.blocklet.DataFileFooter;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
@@ -62,8 +61,6 @@ import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.format.IndexHeader;
 import org.apache.carbondata.hadoop.CarbonInputSplit;
 
-import org.apache.commons.lang3.ArrayUtils;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.log4j.Logger;
 
 /**
@@ -200,10 +197,8 @@ public class CarbonCompactionUtil {
     String majorCompactionStatusFile = metaFolderPath + CarbonCommonConstants.FILE_SEPARATOR
         + CarbonCommonConstants.majorCompactionRequiredFile;
     try {
-      if (FileFactory.isFileExist(minorCompactionStatusFile,
-          FileFactory.getFileType(minorCompactionStatusFile)) || FileFactory
-          .isFileExist(majorCompactionStatusFile,
-              FileFactory.getFileType(majorCompactionStatusFile))) {
+      if (FileFactory.isFileExist(minorCompactionStatusFile) || FileFactory
+          .isFileExist(majorCompactionStatusFile)) {
         return true;
       }
     } catch (IOException e) {
@@ -224,12 +219,10 @@ public class CarbonCompactionUtil {
     String majorCompactionStatusFile = metaFolderPath + CarbonCommonConstants.FILE_SEPARATOR
         + CarbonCommonConstants.majorCompactionRequiredFile;
     try {
-      if (FileFactory.isFileExist(minorCompactionStatusFile,
-          FileFactory.getFileType(minorCompactionStatusFile))) {
+      if (FileFactory.isFileExist(minorCompactionStatusFile)) {
         return CompactionType.MINOR;
       }
-      if (FileFactory.isFileExist(majorCompactionStatusFile,
-          FileFactory.getFileType(majorCompactionStatusFile))) {
+      if (FileFactory.isFileExist(majorCompactionStatusFile)) {
         return CompactionType.MAJOR;
       }
 
@@ -257,9 +250,9 @@ public class CarbonCompactionUtil {
     }
     try {
       if (FileFactory
-          .isFileExist(compactionRequiredFile, FileFactory.getFileType(compactionRequiredFile))) {
+          .isFileExist(compactionRequiredFile)) {
         if (FileFactory
-            .getCarbonFile(compactionRequiredFile, FileFactory.getFileType(compactionRequiredFile))
+            .getCarbonFile(compactionRequiredFile)
             .delete()) {
           LOGGER.info("Deleted the compaction request file " + compactionRequiredFile);
           return true;
@@ -292,8 +285,8 @@ public class CarbonCompactionUtil {
           + CarbonCommonConstants.majorCompactionRequiredFile;
     }
     try {
-      if (!FileFactory.isFileExist(statusFile, FileFactory.getFileType(statusFile))) {
-        if (FileFactory.createNewFile(statusFile, FileFactory.getFileType(statusFile))) {
+      if (!FileFactory.isFileExist(statusFile)) {
+        if (FileFactory.createNewFile(statusFile)) {
           LOGGER.info("successfully created a compaction required file - " + statusFile);
           return true;
         } else {
@@ -330,52 +323,17 @@ public class CarbonCompactionUtil {
   }
 
   /**
-   * This method will add the prepare the max column cardinality map
-   *
-   * @param columnCardinalityMap
-   * @param currentBlockSchema
-   * @param currentBlockCardinality
+   * This method will update the {@code updatedColumnSchemaList} according to the master schema
    */
-  public static void addColumnCardinalityToMap(Map<String, Integer> columnCardinalityMap,
-      List<ColumnSchema> currentBlockSchema, int[] currentBlockCardinality) {
-    for (int i = 0; i < currentBlockCardinality.length; i++) {
-      // add value to map only if does not exist or new cardinality is > existing value
-      String columnUniqueId = currentBlockSchema.get(i).getColumnUniqueId();
-      Integer value = columnCardinalityMap.get(columnUniqueId);
-      if (null == value) {
-        columnCardinalityMap.put(columnUniqueId, currentBlockCardinality[i]);
-      } else {
-        if (currentBlockCardinality[i] > value) {
-          columnCardinalityMap.put(columnUniqueId, currentBlockCardinality[i]);
-        }
-      }
-    }
-  }
-
-  /**
-   * This method will return the updated cardinality according to the master schema
-   *
-   * @param columnCardinalityMap
-   * @param carbonTable
-   * @param updatedColumnSchemaList
-   * @return
-   */
-  public static int[] updateColumnSchemaAndGetCardinality(Map<String, Integer> columnCardinalityMap,
+  public static void updateColumnSchema(
       CarbonTable carbonTable, List<ColumnSchema> updatedColumnSchemaList) {
     List<CarbonDimension> masterDimensions = carbonTable.getVisibleDimensions();
-    List<Integer> updatedCardinalityList = new ArrayList<>(columnCardinalityMap.size());
     for (CarbonDimension dimension : masterDimensions) {
-      Integer value = columnCardinalityMap.get(dimension.getColumnId());
-      if (null == value) {
-        updatedCardinalityList.add(getDimensionDefaultCardinality(dimension));
-      } else {
-        updatedCardinalityList.add(value);
-      }
       updatedColumnSchemaList.add(dimension.getColumnSchema());
 
       if (dimension.getNumberOfChild() > 0) {
         fillColumnSchemaListForComplexDims(dimension.getListOfChildDimensions(),
-            updatedColumnSchemaList, updatedCardinalityList, columnCardinalityMap);
+            updatedColumnSchemaList);
       }
     }
     // add measures to the column schema list
@@ -383,58 +341,21 @@ public class CarbonCompactionUtil {
     for (CarbonMeasure measure : masterSchemaMeasures) {
       updatedColumnSchemaList.add(measure.getColumnSchema());
     }
-    return ArrayUtils
-        .toPrimitive(updatedCardinalityList.toArray(new Integer[updatedCardinalityList.size()]));
   }
 
   /**
    * This method is to get the chile dimensions of the complex dimension and
    * update the cardinality for all complex dimensions
-   *
-   * @param carbonDimensionsList
-   * @param updatedColumnSchemaList
-   * @param updatedCardinalityList
-   * @param columnCardinalityMap
    */
   private static void fillColumnSchemaListForComplexDims(List<CarbonDimension> carbonDimensionsList,
-      List<ColumnSchema> updatedColumnSchemaList, List<Integer> updatedCardinalityList,
-      Map<String, Integer> columnCardinalityMap) {
+      List<ColumnSchema> updatedColumnSchemaList) {
     for (CarbonDimension carbonDimension : carbonDimensionsList) {
-      Integer value = columnCardinalityMap.get(carbonDimension.getColumnId());
-      if (null == value) {
-        updatedCardinalityList.add(getDimensionDefaultCardinality(carbonDimension));
-      } else {
-        updatedCardinalityList.add(value);
-      }
       updatedColumnSchemaList.add(carbonDimension.getColumnSchema());
       List<CarbonDimension> childDims = carbonDimension.getListOfChildDimensions();
       if (null != childDims && childDims.size() > 0) {
-        fillColumnSchemaListForComplexDims(childDims, updatedColumnSchemaList,
-            updatedCardinalityList, columnCardinalityMap);
+        fillColumnSchemaListForComplexDims(childDims, updatedColumnSchemaList);
       }
     }
-  }
-
-  /**
-   * This method will return the default cardinality based on dimension type
-   *
-   * @param dimension
-   * @return
-   */
-  private static int getDimensionDefaultCardinality(CarbonDimension dimension) {
-    int cardinality = 0;
-    if (dimension.hasEncoding(Encoding.DIRECT_DICTIONARY)) {
-      cardinality = Integer.MAX_VALUE;
-    } else if (dimension.hasEncoding(Encoding.DICTIONARY)) {
-      if (null != dimension.getDefaultValue()) {
-        cardinality = CarbonCommonConstants.DICTIONARY_DEFAULT_CARDINALITY + 1;
-      } else {
-        cardinality = CarbonCommonConstants.DICTIONARY_DEFAULT_CARDINALITY;
-      }
-    } else {
-      cardinality = -1;
-    }
-    return cardinality;
   }
 
   /**
@@ -506,7 +427,7 @@ public class CarbonCompactionUtil {
       } else {
         exp2 = new LessThanEqualToExpression(new ColumnExpression(colName, dataType),
             new LiteralExpression(maxVal, dataType));
-        if (rangeColumn.hasEncoding(Encoding.DICTIONARY)) {
+        if (rangeColumn.getDataType() == DataTypes.DATE) {
           exp2.setAlreadyResolved(true);
         }
         finalExpr = new OrExpression(exp1, exp2);
@@ -515,7 +436,7 @@ public class CarbonCompactionUtil {
       // Last task
       finalExpr = new GreaterThanExpression(new ColumnExpression(colName, dataType),
           new LiteralExpression(minVal, dataType));
-      if (rangeColumn.hasEncoding(Encoding.DICTIONARY)) {
+      if (rangeColumn.getDataType() == DataTypes.DATE) {
         finalExpr.setAlreadyResolved(true);
       }
     } else {
@@ -524,7 +445,7 @@ public class CarbonCompactionUtil {
           new LiteralExpression(minVal, dataType));
       exp2 = new LessThanEqualToExpression(new ColumnExpression(colName, dataType),
           new LiteralExpression(maxVal, dataType));
-      if (rangeColumn.hasEncoding(Encoding.DICTIONARY)) {
+      if (rangeColumn.getDataType() == DataTypes.DATE) {
         exp2.setAlreadyResolved(true);
         exp1.setAlreadyResolved(true);
       }
@@ -542,7 +463,7 @@ public class CarbonCompactionUtil {
     int idx = -1;
     DataType dataType = rangeCol.getDataType();
     Object[] minMaxVals = new Object[2];
-    boolean isDictEncode = rangeCol.hasEncoding(Encoding.DICTIONARY);
+    boolean isDictEncode = rangeCol.getDataType() == DataTypes.DATE;
     try {
       for (CarbonInputSplit split : carbonInputSplits) {
         DataFileFooter dataFileFooter = null;
@@ -667,8 +588,7 @@ public class CarbonCompactionUtil {
     }
   }
 
-  public static boolean isSortedByCurrentSortColumns(
-      CarbonTable table, LoadMetadataDetails load, Configuration hadoopConf) {
+  public static boolean isSortedByCurrentSortColumns(CarbonTable table, LoadMetadataDetails load) {
     List<String> sortColumnList = table.getSortColumns();
     if (sortColumnList.isEmpty()) {
       return false;

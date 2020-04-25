@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.carbondata.common.exceptions.DeprecatedFeatureException;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
@@ -32,7 +33,6 @@ import org.apache.carbondata.core.metadata.schema.SchemaEvolution;
 import org.apache.carbondata.core.metadata.schema.SchemaEvolutionEntry;
 import org.apache.carbondata.core.metadata.schema.partition.PartitionType;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
-import org.apache.carbondata.core.metadata.schema.table.DataMapSchema;
 import org.apache.carbondata.core.metadata.schema.table.RelationIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.TableInfo;
 import org.apache.carbondata.core.metadata.schema.table.TableSchema;
@@ -119,6 +119,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         return org.apache.carbondata.format.Encoding.BIT_PACKED;
       case DIRECT_DICTIONARY:
         return org.apache.carbondata.format.Encoding.DIRECT_DICTIONARY;
+      case INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY:
+        return org.apache.carbondata.format.Encoding.INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY;
       default:
         return org.apache.carbondata.format.Encoding.DICTIONARY;
     }
@@ -206,6 +208,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     thriftColumnSchema.setInvisible(wrapperColumnSchema.isInvisible());
     thriftColumnSchema.setColumnReferenceId(wrapperColumnSchema.getColumnReferenceId());
     thriftColumnSchema.setSchemaOrdinal(wrapperColumnSchema.getSchemaOrdinal());
+    thriftColumnSchema.setIndexColumn(wrapperColumnSchema.isIndexColumn());
     if (wrapperColumnSchema.isSortColumn()) {
       Map<String, String> properties = wrapperColumnSchema.getColumnProperties();
       if (null == properties) {
@@ -239,15 +242,11 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     }
     switch (wrapperPartitionType) {
       case HASH:
-        return org.apache.carbondata.format.PartitionType.HASH;
       case LIST:
-        return org.apache.carbondata.format.PartitionType.LIST;
       case RANGE:
-        return org.apache.carbondata.format.PartitionType.RANGE;
       case RANGE_INTERVAL:
-        return org.apache.carbondata.format.PartitionType.RANGE_INTERVAL;
-      case NATIVE_HIVE:
-        return org.apache.carbondata.format.PartitionType.NATIVE_HIVE;
+        DeprecatedFeatureException.customPartitionNotSupported();
+        return null;
       default:
         return org.apache.carbondata.format.PartitionType.NATIVE_HIVE;
     }
@@ -260,16 +259,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     for (ColumnSchema wrapperColumnSchema : wrapperPartitionInfo.getColumnSchemaList()) {
       thriftColumnSchema.add(fromWrapperToExternalColumnSchema(wrapperColumnSchema));
     }
-    org.apache.carbondata.format.PartitionInfo externalPartitionInfo =
-        new org.apache.carbondata.format.PartitionInfo(thriftColumnSchema,
-            fromWrapperToExternalPartitionType(wrapperPartitionInfo.getPartitionType()));
-    externalPartitionInfo.setList_info(wrapperPartitionInfo.getListInfo());
-    externalPartitionInfo.setRange_info(wrapperPartitionInfo.getRangeInfo());
-    externalPartitionInfo.setNum_partitions(wrapperPartitionInfo.getNumPartitions());
-    externalPartitionInfo.setMax_partition(wrapperPartitionInfo.getMaxPartitionId());
-    externalPartitionInfo.setPartition_ids(wrapperPartitionInfo
-        .getPartitionIds());
-    return externalPartitionInfo;
+    return new org.apache.carbondata.format.PartitionInfo(thriftColumnSchema,
+        fromWrapperToExternalPartitionType(wrapperPartitionInfo.getPartitionType()));
   }
 
   /* (non-Javadoc)
@@ -320,16 +311,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
       TableInfo wrapperTableInfo, String dbName, String tableName) {
     org.apache.carbondata.format.TableSchema thriftFactTable =
         fromWrapperToExternalTableSchema(wrapperTableInfo.getFactTable());
-    org.apache.carbondata.format.TableInfo tableInfo =
-        new org.apache.carbondata.format.TableInfo(thriftFactTable,
-            new ArrayList<org.apache.carbondata.format.TableSchema>());
-    List<DataMapSchema> wrapperChildSchemaList = wrapperTableInfo.getDataMapSchemaList();
-    if (null != wrapperChildSchemaList) {
-      List<org.apache.carbondata.format.DataMapSchema> thriftChildSchemas =
-          fromWrapperToExternalChildSchemaList(wrapperChildSchemaList);
-      tableInfo.setDataMapSchemas(thriftChildSchemas);
-    }
-    return tableInfo;
+    return new org.apache.carbondata.format.TableInfo(thriftFactTable, new ArrayList<>());
   }
 
   private List<org.apache.carbondata.format.RelationIdentifier> fromWrapperToExternalRI(
@@ -345,33 +327,6 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
       thriftRelationIdentifierList.add(thriftRelationIdentifier);
     }
     return thriftRelationIdentifierList;
-  }
-
-  private List<org.apache.carbondata.format.DataMapSchema> fromWrapperToExternalChildSchemaList(
-      List<DataMapSchema> wrapperChildSchemaList) {
-    List<org.apache.carbondata.format.DataMapSchema> thriftChildSchemas = new ArrayList<>();
-    for (DataMapSchema wrapperChildSchema : wrapperChildSchemaList) {
-      org.apache.carbondata.format.DataMapSchema thriftChildSchema =
-          new org.apache.carbondata.format.DataMapSchema();
-      if (wrapperChildSchema.getRelationIdentifier() != null) {
-        org.apache.carbondata.format.RelationIdentifier relationIdentifier =
-            new org.apache.carbondata.format.RelationIdentifier();
-        relationIdentifier
-            .setDatabaseName(wrapperChildSchema.getRelationIdentifier().getDatabaseName());
-        relationIdentifier.setTableName(wrapperChildSchema.getRelationIdentifier().getTableName());
-        relationIdentifier.setTableId(wrapperChildSchema.getRelationIdentifier().getTableId());
-        thriftChildSchema.setChildTableIdentifier(relationIdentifier);
-      }
-      thriftChildSchema.setProperties(wrapperChildSchema.getProperties());
-      thriftChildSchema.setClassName(wrapperChildSchema.getProviderName());
-      thriftChildSchema.setDataMapName(wrapperChildSchema.getDataMapName());
-      if (wrapperChildSchema.getChildSchema() != null) {
-        thriftChildSchema.setChildTableSchema(
-            fromWrapperToExternalTableSchema(wrapperChildSchema.getChildSchema()));
-      }
-      thriftChildSchemas.add(thriftChildSchema);
-    }
-    return thriftChildSchemas;
   }
 
   private List<org.apache.carbondata.format.ParentColumnTableRelation> wrapperToThriftRelationList(
@@ -469,6 +424,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         return Encoding.DIRECT_COMPRESS_VARCHAR;
       case BIT_PACKED:
         return Encoding.BIT_PACKED;
+      case INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY:
+        return Encoding.INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY;
       case DIRECT_DICTIONARY:
         return Encoding.DIRECT_DICTIONARY;
       default:
@@ -552,6 +509,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     wrapperColumnSchema.setInvisible(externalColumnSchema.isInvisible());
     wrapperColumnSchema.setColumnReferenceId(externalColumnSchema.getColumnReferenceId());
     wrapperColumnSchema.setSchemaOrdinal(externalColumnSchema.getSchemaOrdinal());
+    wrapperColumnSchema.setIndexColumn(externalColumnSchema.isIndexColumn());
     wrapperColumnSchema.setSortColumn(false);
     Map<String, String> properties = externalColumnSchema.getColumnProperties();
     if (properties != null) {
@@ -578,15 +536,11 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     }
     switch (externalPartitionType) {
       case HASH:
-        return PartitionType.HASH;
       case LIST:
-        return PartitionType.LIST;
       case RANGE:
-        return PartitionType.RANGE;
       case RANGE_INTERVAL:
-        return PartitionType.RANGE_INTERVAL;
-      case NATIVE_HIVE:
-        return PartitionType.NATIVE_HIVE;
+        DeprecatedFeatureException.customPartitionNotSupported();
+        return null;
       default:
         return PartitionType.NATIVE_HIVE;
     }
@@ -599,15 +553,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         externalPartitionInfo.getPartition_columns()) {
       wrapperColumnSchema.add(fromExternalToWrapperColumnSchema(columnSchema));
     }
-    PartitionInfo wrapperPartitionInfo = new PartitionInfo(wrapperColumnSchema,
+    return new PartitionInfo(wrapperColumnSchema,
         fromExternalToWrapperPartitionType(externalPartitionInfo.getPartition_type()));
-    wrapperPartitionInfo.setListInfo(externalPartitionInfo.getList_info());
-    wrapperPartitionInfo.setRangeInfo(externalPartitionInfo.getRange_info());
-    wrapperPartitionInfo.setNumPartitions(externalPartitionInfo.getNum_partitions());
-    wrapperPartitionInfo.setPartitionIds(externalPartitionInfo
-        .getPartition_ids());
-    wrapperPartitionInfo.setMaxPartitionId(externalPartitionInfo.getMax_partition());
-    return wrapperPartitionInfo;
   }
 
   /* (non-Javadoc)
@@ -673,31 +620,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     wrapperTableInfo.setTableUniqueName(CarbonTable.buildUniqueName(dbName, tableName));
     wrapperTableInfo.setFactTable(
         fromExternalToWrapperTableSchema(externalTableInfo.getFact_table(), tableName));
-    if (null != externalTableInfo.getDataMapSchemas()) {
-      wrapperTableInfo.setDataMapSchemaList(
-          fromExternalToWrapperChildSchemaList(externalTableInfo.getDataMapSchemas()));
-    }
     wrapperTableInfo.setTablePath(tablePath);
     return wrapperTableInfo;
-  }
-
-  @Override
-  public DataMapSchema fromExternalToWrapperDataMapSchema(
-      org.apache.carbondata.format.DataMapSchema thriftDataMapSchema) {
-    DataMapSchema childSchema = new DataMapSchema(thriftDataMapSchema.getDataMapName(),
-        thriftDataMapSchema.getClassName());
-    childSchema.setProperties(thriftDataMapSchema.getProperties());
-    if (null != thriftDataMapSchema.getChildTableIdentifier()) {
-      RelationIdentifier relationIdentifier =
-          new RelationIdentifier(thriftDataMapSchema.getChildTableIdentifier().getDatabaseName(),
-              thriftDataMapSchema.getChildTableIdentifier().getTableName(),
-              thriftDataMapSchema.getChildTableIdentifier().getTableId());
-      childSchema.setRelationIdentifier(relationIdentifier);
-      childSchema.setChildSchema(
-          fromExternalToWrapperTableSchema(thriftDataMapSchema.getChildTableSchema(),
-              relationIdentifier.getTableName()));
-    }
-    return childSchema;
   }
 
   private List<ParentColumnTableRelation> fromExternalToWrapperParentTableColumnRelations(
@@ -715,14 +639,5 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
       parentColumnTableRelationList.add(parentColumnTableRelation);
     }
     return parentColumnTableRelationList;
-  }
-
-  public List<DataMapSchema> fromExternalToWrapperChildSchemaList(
-      List<org.apache.carbondata.format.DataMapSchema> childSchemaList) {
-    List<DataMapSchema> childSchemas = new ArrayList<>();
-    for (org.apache.carbondata.format.DataMapSchema childSchemaThrift : childSchemaList) {
-      childSchemas.add(fromExternalToWrapperDataMapSchema(childSchemaThrift));
-    }
-    return childSchemas;
   }
 }

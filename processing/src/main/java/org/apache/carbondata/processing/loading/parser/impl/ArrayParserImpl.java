@@ -19,6 +19,7 @@ package org.apache.carbondata.processing.loading.parser.impl;
 
 import java.util.regex.Pattern;
 
+import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.util.CarbonUtil;
 import org.apache.carbondata.processing.loading.complexobjects.ArrayObject;
 import org.apache.carbondata.processing.loading.parser.ComplexParser;
@@ -48,7 +49,8 @@ public class ArrayParserImpl implements ComplexParser<ArrayObject> {
   public ArrayObject parse(Object data) {
     if (data != null) {
       String value = data.toString();
-      if (!value.isEmpty() && !value.equals(nullFormat)) {
+      if (!value.isEmpty() && !value.equals(nullFormat)
+          && !value.equals(CarbonCommonConstants.SIZE_ZERO_DATA_RETURN)) {
         String[] split = pattern.split(value, -1);
         if (ArrayUtils.isNotEmpty(split)) {
           Object[] array = new Object[split.length];
@@ -61,9 +63,18 @@ public class ArrayParserImpl implements ComplexParser<ArrayObject> {
         Object[] array = new Object[1];
         array[0] = child.parse(value);
         return new ArrayObject(array);
+      } else if (value.equals(CarbonCommonConstants.SIZE_ZERO_DATA_RETURN)) {
+        // When the data is not array('') but array(), an array with zero size should be returned.
+        Object[] array = new Object[0];
+        return new ArrayObject(array);
       }
     }
     return null;
+  }
+
+  @Override
+  public ArrayObject parseRaw(Object data) {
+    return new ArrayObject((Object[]) data);
   }
 
   @Override

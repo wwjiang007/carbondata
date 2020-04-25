@@ -22,8 +22,6 @@ import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.ExpressionResult;
 import org.apache.carbondata.core.scan.expression.LiteralExpression;
 import org.apache.carbondata.core.scan.expression.conditional.BinaryConditionalExpression;
-import org.apache.carbondata.core.scan.expression.exception.FilterIllegalMemberException;
-import org.apache.carbondata.core.scan.expression.exception.FilterUnsupportedException;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
 import org.apache.carbondata.core.scan.filter.intf.RowIntf;
 
@@ -35,7 +33,7 @@ public class FalseExpression  extends BinaryConditionalExpression {
   private static final long serialVersionUID = -8390184061336799370L;
 
   public FalseExpression(Expression child1) {
-    super(child1, new LiteralExpression(null,null));
+    super(child1, new LiteralExpression(null, null));
   }
 
   /**
@@ -44,13 +42,10 @@ public class FalseExpression  extends BinaryConditionalExpression {
    * eg: columnName NOT IN('Java',NULL)
    * @param value
    * @return
-   * @throws FilterUnsupportedException
-   * @throws FilterIllegalMemberException
    */
   @Override
-  public ExpressionResult evaluate(RowIntf value)
-      throws FilterUnsupportedException, FilterIllegalMemberException {
-    return new ExpressionResult(DataTypes.BOOLEAN,false);
+  public ExpressionResult evaluate(RowIntf value) {
+    return new ExpressionResult(DataTypes.BOOLEAN, false);
   }
 
   /**

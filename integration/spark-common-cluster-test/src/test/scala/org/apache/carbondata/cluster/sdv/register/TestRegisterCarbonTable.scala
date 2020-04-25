@@ -81,7 +81,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
       backUpData(dbLocationCustom, "carbontable")
@@ -97,7 +97,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
       backUpData(dbLocationCustom, "carbontable")
@@ -109,78 +109,11 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     checkAnswer(sql("select c1 from carbontable"), Seq(Row("a")))
   }
 
-   test("register pre aggregate tables test") {
-    sql("drop database if exists carbon cascade")
-    sql(s"create database carbon location '$dbLocationCustom'")
-    sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
-    sql("insert into carbontable select 'a',1,'aa','aaa'")
-    sql("insert into carbontable select 'b',1,'aa','aaa'")
-    sql("insert into carbontable select 'a',10,'aa','aaa'")
-    sql("create datamap preagg1 on table carbontable using 'preaggregate' as select c1,sum(c2) from carbontable group by c1")
-    if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
-      backUpData(dbLocationCustom, "carbontable")
-      backUpData(dbLocationCustom, "carbontable_preagg1")
-      sql("drop table carbontable")
-      restoreData(dbLocationCustom, "carbontable")
-      restoreData(dbLocationCustom, "carbontable_preagg1")
-      sql("refresh table carbontable")
-    }
-     checkAnswer(sql("select count(*) from carbontable"), Row(3))
-     checkAnswer(sql("select c1 from carbontable"), Seq(Row("a"), Row("b"), Row("a")))
-     checkAnswer(sql("select count(*) from carbontable_preagg1"), Row(2))
-     checkAnswer(sql("select carbontable_c1 from carbontable_preagg1"), Seq(Row("a"), Row("b")))
-   }
-
-  test("register pre aggregate table test") {
-    sql("drop database if exists carbon cascade")
-    sql(s"create database carbon location '$dbLocationCustom'")
-    sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
-    sql("insert into carbontable select 'a',1,'aa','aaa'")
-    sql("insert into carbontable select 'b',1,'aa','aaa'")
-    sql("insert into carbontable select 'a',10,'aa','aaa'")
-    sql("create datamap preagg1 on table carbontable using 'preaggregate' as select c1,sum(c2) from carbontable group by c1")
-    if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
-      backUpData(dbLocationCustom, "carbontable")
-      backUpData(dbLocationCustom, "carbontable_preagg1")
-      sql("drop table carbontable")
-      restoreData(dbLocationCustom, "carbontable")
-      restoreData(dbLocationCustom, "carbontable_preagg1")
-      sql("refresh table carbontable")
-    }
-    checkAnswer(sql("select count(*) from carbontable"), Row(3))
-    checkAnswer(sql("select c1 from carbontable"), Seq(Row("a"), Row("b"), Row("a")))
-    checkAnswer(sql("select count(*) from carbontable_preagg1"), Row(2))
-    checkAnswer(sql("select carbontable_c1 from carbontable_preagg1"), Seq(Row("a"), Row("b")))
-  }
-
-  test("register pre aggregate table should fail if the aggregate table not copied") {
-    sql("drop database if exists carbon cascade")
-    sql(s"create database carbon location '$dbLocationCustom'")
-    sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
-    sql("insert into carbontable select 'a',1,'aa','aaa'")
-    sql("insert into carbontable select 'b',1,'aa','aaa'")
-    sql("insert into carbontable select 'a',10,'aa','aaa'")
-    sql("create datamap preagg1 on table carbontable using 'preaggregate' as select c1,sum(c2) from carbontable group by c1")
-    if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
-      backUpData(dbLocationCustom, "carbontable")
-      backUpData(dbLocationCustom, "carbontable_preagg1")
-      sql("drop table carbontable")
-      restoreData(dbLocationCustom, "carbontable")
-      intercept[ProcessMetaDataException] {
-        sql("refresh table carbontable")
-      }
-      restoreData(dbLocationCustom, "carbontable_preagg1")
-    }
-  }
-
   test("Update operation on carbon table should pass after registration or refresh") {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     sql("insert into carbontable select 'b',1,'bb','bbb'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
@@ -202,7 +135,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     sql("insert into carbontable select 'b',1,'bb','bbb'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
@@ -224,7 +157,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     sql("insert into carbontable select 'b',1,'bb','bbb'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
@@ -234,7 +167,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
       sql("refresh table carbontable")
     }
     sql("Alter table carbontable add columns(c4 string) " +
-        "TBLPROPERTIES('DICTIONARY_EXCLUDE'='c4', 'DEFAULT.VALUE.c4'='def')")
+        "TBLPROPERTIES('DEFAULT.VALUE.c4'='def')")
     checkAnswer(
       sql("""select c1,c2,c3,c5,c4 from carbon.carbontable"""),
       Seq(Row("a", 1, "aa", "aaa", "def"), Row("b", 1, "bb", "bbb", "def"))
@@ -246,7 +179,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     sql("insert into carbontable select 'b',1,'bb','bbb'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {
@@ -267,7 +200,7 @@ class TestRegisterCarbonTable extends QueryTest with BeforeAndAfterAll {
     sql("drop database if exists carbon cascade")
     sql(s"create database carbon location '$dbLocationCustom'")
     sql("use carbon")
-    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED BY 'org.apache.carbondata.format'""")
+    sql("""create table carbon.carbontable (c1 string,c2 int,c3 string,c5 string) STORED AS carbondata""")
     sql("insert into carbontable select 'a',1,'aa','aaa'")
     sql("insert into carbontable select 'b',1,'bb','bbb'")
     if (!CarbonEnv.getInstance(sqlContext.sparkSession).carbonMetaStore.isReadFromHiveMetaStore) {

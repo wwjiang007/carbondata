@@ -25,22 +25,32 @@ import java.util.UUID;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.exception.InvalidConfigurationException;
+import org.apache.carbondata.core.index.IndexFilter;
+import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.SchemaReader;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
+import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.model.QueryModel;
 import org.apache.carbondata.core.scan.model.QueryModelBuilder;
 import org.apache.carbondata.core.util.DataTypeConverterImpl;
 import org.apache.carbondata.core.util.ObjectSerializationUtil;
+import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.hadoop.CarbonInputSplit;
+import org.apache.carbondata.hadoop.api.CarbonFileInputFormat;
+import org.apache.carbondata.hadoop.api.CarbonInputFormat;
 import org.apache.carbondata.hadoop.api.CarbonTableInputFormat;
 import org.apache.carbondata.hadoop.readsupport.CarbonReadSupport;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.InvalidPathException;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.ql.exec.SerializationUtilities;
 import org.apache.hadoop.hive.ql.io.CombineHiveInputFormat;
+import org.apache.hadoop.hive.ql.plan.ExprNodeGenericFuncDesc;
+import org.apache.hadoop.hive.ql.plan.TableScanDesc;
 import org.apache.hadoop.io.ArrayWritable;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hadoop.mapred.InputSplit;
@@ -48,7 +58,7 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.util.StringUtils;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.log4j.Logger;
 
 public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritable>
@@ -59,35 +69,29 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
       LogServiceFactory.getLogService(MapredCarbonInputFormat.class.getCanonicalName());
 
   /**
-   * this method will read the schema from the physical file and populate into CARBON_TABLE
-   *
-   * @param configuration
-   * @throws IOException
+   * This method will read the schema from the physical file and populate into CARBON_TABLE
    */
   private static void populateCarbonTable(Configuration configuration, String paths)
       throws IOException, InvalidConfigurationException {
-    String dirs = configuration.get(INPUT_DIR, "");
-    String[] inputPaths = StringUtils.split(dirs);
-    String validInputPath = null;
-    if (inputPaths.length == 0) {
-      throw new InvalidPathException("No input paths specified in job");
-    } else {
-      if (paths != null) {
-        for (String inputPath : inputPaths) {
-          inputPath = inputPath.replace("file:", "");
-          if (FileFactory.isFileExist(inputPath)) {
-            validInputPath = inputPath;
-            break;
-          }
-        }
-      }
-    }
-    if (null != validInputPath) {
-      AbsoluteTableIdentifier absoluteTableIdentifier = AbsoluteTableIdentifier
-          .from(validInputPath, getDatabaseName(configuration), getTableName(configuration));
+    if (null != paths) {
       // read the schema file to get the absoluteTableIdentifier having the correct table id
       // persisted in the schema
-      CarbonTable carbonTable = SchemaReader.readCarbonTableFromStore(absoluteTableIdentifier);
+      CarbonTable carbonTable;
+      AbsoluteTableIdentifier absoluteTableIdentifier = AbsoluteTableIdentifier
+          .from(configuration.get(hive_metastoreConstants.META_TABLE_LOCATION),
+              getDatabaseName(configuration), getTableName(configuration));
+      String schemaPath =
+          CarbonTablePath.getSchemaFilePath(absoluteTableIdentifier.getTablePath(), configuration);
+      if (FileFactory.getCarbonFile(schemaPath).exists()) {
+        // read the schema file to get the absoluteTableIdentifier having the correct table id
+        // persisted in the schema
+        carbonTable = SchemaReader.readCarbonTableFromStore(absoluteTableIdentifier);
+      } else {
+        // InferSchema from data file
+        carbonTable = CarbonTable.buildFromTableInfo(SchemaReader
+            .inferSchema(absoluteTableIdentifier, false));
+        carbonTable.setTransactionalTable(false);
+      }
       configuration.set(CARBON_TABLE, ObjectSerializationUtil.convertObjectToString(carbonTable));
       setTableInfo(configuration, carbonTable.getTableInfo());
     } else {
@@ -108,20 +112,70 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
     jobConf.set(DATABASE_NAME, "_dummyDb_" + UUID.randomUUID().toString());
     jobConf.set(TABLE_NAME, "_dummyTable_" + UUID.randomUUID().toString());
     org.apache.hadoop.mapreduce.JobContext jobContext = Job.getInstance(jobConf);
-    CarbonTableInputFormat carbonTableInputFormat = new CarbonTableInputFormat();
+    CarbonTable carbonTable;
+    try {
+      carbonTable = getCarbonTable(jobContext.getConfiguration(),
+          jobContext.getConfiguration().get(hive_metastoreConstants.META_TABLE_LOCATION));
+    } catch (Exception e) {
+      throw new IOException("Unable read Carbon Schema: ", e);
+    }
+    List<String> partitionNames = new ArrayList<>();
+    if (carbonTable.isHivePartitionTable()) {
+      String partitionPath =
+          FileFactory.getCarbonFile(jobContext.getConfiguration().get(FileInputFormat.INPUT_DIR))
+              .getAbsolutePath();
+      partitionNames.add(partitionPath.substring(carbonTable.getTablePath().length()));
+      List<PartitionSpec> partitionSpec = new ArrayList<>();
+      partitionSpec.add(new PartitionSpec(partitionNames, partitionPath));
+      setPartitionsToPrune(jobContext.getConfiguration(), partitionSpec);
+    }
+    try {
+      setFilterPredicates(jobContext.getConfiguration(), carbonTable);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+    CarbonInputFormat<Void> carbonInputFormat;
+    if (carbonTable.isTransactionalTable()) {
+      carbonInputFormat = new CarbonTableInputFormat<>();
+      jobContext.getConfiguration().set(CARBON_TRANSACTIONAL_TABLE, "true");
+    } else {
+      carbonInputFormat = new CarbonFileInputFormat<>();
+    }
     List<org.apache.hadoop.mapreduce.InputSplit> splitList =
-        carbonTableInputFormat.getSplits(jobContext);
+        carbonInputFormat.getSplits(jobContext);
     InputSplit[] splits = new InputSplit[splitList.size()];
     CarbonInputSplit split;
     for (int i = 0; i < splitList.size(); i++) {
       split = (CarbonInputSplit) splitList.get(i);
       CarbonHiveInputSplit inputSplit = new CarbonHiveInputSplit(split.getSegmentId(),
-              split.getPath(), split.getStart(), split.getLength(),
-              split.getLocations(), split.getNumberOfBlocklets(),
-              split.getVersion(), split.getBlockStorageIdMap(), split.getDetailInfo());
+          split.getPath(), split.getStart(), split.getLength(),
+          split.getLocations(), split.getNumberOfBlocklets(),
+          split.getVersion(), split.getBlockStorageIdMap(), split.getDetailInfo());
       splits[i] = inputSplit;
     }
     return splits;
+  }
+
+  protected void setFilterPredicates(Configuration configuration, CarbonTable carbonTable) {
+    try {
+      String expr = configuration.get(TableScanDesc.FILTER_EXPR_CONF_STR);
+      if (expr == null) {
+        return;
+      }
+      ExprNodeGenericFuncDesc exprNodeGenericFuncDesc =
+          SerializationUtilities.deserializeObject(expr, ExprNodeGenericFuncDesc.class);
+      LOGGER.debug("hive expression:" + exprNodeGenericFuncDesc.getGenericUDF());
+      LOGGER.debug("hive expression string:" + exprNodeGenericFuncDesc.getExprString());
+      Expression expression = Hive2CarbonExpression.convertExprHive2Carbon(exprNodeGenericFuncDesc);
+      if (expression == null) {
+        return;
+      }
+      LOGGER.debug("carbon expression:" + expression.getString());
+      IndexFilter filter = new IndexFilter(carbonTable, expression, true);
+      CarbonInputFormat.setFilterPredicates(configuration, filter);
+    } catch (Exception e) {
+      throw new RuntimeException("Error while reading filter expression", e);
+    }
   }
 
   @Override
@@ -131,7 +185,7 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
     if (inputSplit instanceof CarbonHiveInputSplit) {
       path = ((CarbonHiveInputSplit) inputSplit).getPath().toString();
     }
-    QueryModel queryModel = null;
+    QueryModel queryModel;
     try {
       jobConf.set(DATABASE_NAME, "_dummyDb_" + UUID.randomUUID().toString());
       jobConf.set(TABLE_NAME, "_dummyTable_" + UUID.randomUUID().toString());
@@ -140,37 +194,26 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
       LOGGER.error("Failed to create record reader: " + e.getMessage(), e);
       return null;
     }
-    CarbonReadSupport<ArrayWritable> readSupport = new CarbonDictionaryDecodeReadSupport<>();
+    CarbonReadSupport<ArrayWritable> readSupport = new WritableReadSupport<>();
     return new CarbonHiveRecordReader(queryModel, readSupport, inputSplit, jobConf);
   }
 
   private QueryModel getQueryModel(Configuration configuration, String path)
       throws IOException, InvalidConfigurationException {
     CarbonTable carbonTable = getCarbonTable(configuration, path);
-    AbsoluteTableIdentifier identifier = carbonTable.getAbsoluteTableIdentifier();
-    String projectionString = getProjection(configuration, carbonTable,
-        identifier.getCarbonTableIdentifier().getTableName());
+    String projectionString = getProjection(configuration, carbonTable);
     String[] projectionColumns = projectionString.split(",");
-    QueryModel queryModel =
-        new QueryModelBuilder(carbonTable)
-            .projectColumns(projectionColumns)
-            .filterExpression(getFilterPredicates(configuration))
-            .dataConverter(new DataTypeConverterImpl())
-            .build();
-
-    return queryModel;
+    return new QueryModelBuilder(carbonTable)
+        .projectColumns(projectionColumns)
+        .filterExpression(getFilterPredicates(configuration))
+        .dataConverter(new DataTypeConverterImpl())
+        .build();
   }
 
   /**
    * Return the Projection for the CarbonQuery.
-   *
-   * @param configuration
-   * @param carbonTable
-   * @param tableName
-   * @return
    */
-  private String getProjection(Configuration configuration, CarbonTable carbonTable,
-      String tableName) {
+  private String getProjection(Configuration configuration, CarbonTable carbonTable) {
     // query plan includes projection column
     String projection = getColumnProjection(configuration);
     if (projection == null) {
@@ -182,7 +225,7 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
     StringBuilder projectionColumns = new StringBuilder();
     for (CarbonColumn column : carbonColumns) {
       carbonColumnNames.add(column.getColName().toLowerCase());
-      allColumns.append(column.getColName() + ",");
+      allColumns.append(column.getColName()).append(",");
     }
 
     if (null != projection && !projection.equals("")) {
@@ -191,7 +234,7 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
       for (String col : columnNames) {
         //show columns command will return these data
         if (carbonColumnNames.contains(col.toLowerCase())) {
-          projectionColumns.append(col + ",");
+          projectionColumns.append(col).append(",");
         }
       }
       return projectionColumns.substring(0, projectionColumns.lastIndexOf(","));
@@ -201,7 +244,7 @@ public class MapredCarbonInputFormat extends CarbonTableInputFormat<ArrayWritabl
   }
 
   @Override
-  public boolean shouldSkipCombine(Path path, Configuration conf) throws IOException {
+  public boolean shouldSkipCombine(Path path, Configuration conf) {
     return true;
   }
 }

@@ -19,14 +19,8 @@ package org.apache.carbondata.core.scan.complextypes;
 
 import java.nio.ByteBuffer;
 
-import org.apache.carbondata.core.cache.dictionary.ColumnDictionaryInfo;
-import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.cache.dictionary.ForwardDictionary;
-import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryGenerator;
-import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
 import org.apache.carbondata.core.keygenerator.mdkey.Bits;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
-import org.apache.carbondata.core.util.DataTypeUtil;
 
 import mockit.Mock;
 import mockit.MockUp;
@@ -36,11 +30,7 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 
 public class PrimitiveQueryTypeTest {
-  private static PrimitiveQueryType primitiveQueryType, primitiveQueryTypeForInt,
-      primitiveQueryTypeForLong, primitiveQueryTypeForDouble, primitiveQueryTypeForBoolean,
-      primitiveQueryTypeForTimeStamp, primitiveQueryTypeForTimeStampForIsDictionaryFalse;
-  private static Dictionary dictionary;
-  private boolean isDirectDictionary = false;
+  private static PrimitiveQueryType primitiveQueryTypeForDate;
 
   @BeforeClass public static void setUp() {
     String name = "test";
@@ -48,78 +38,18 @@ public class PrimitiveQueryTypeTest {
     int blockIndex = 1;
     int keySize = 1;
     boolean isDirectDictionary = true;
-    primitiveQueryType =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.STRING, keySize, dictionary,
-            isDirectDictionary);
-    primitiveQueryTypeForInt =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.INT, keySize, dictionary,
-            isDirectDictionary);
-    primitiveQueryTypeForDouble =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.DOUBLE, keySize, dictionary,
-            isDirectDictionary);
-    primitiveQueryTypeForLong =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.LONG, keySize, dictionary,
-            isDirectDictionary);
-    primitiveQueryTypeForBoolean =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.BOOLEAN, keySize, dictionary,
-            isDirectDictionary);
-    primitiveQueryTypeForTimeStamp =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.TIMESTAMP, keySize,
-            dictionary, isDirectDictionary);
-    ColumnDictionaryInfo columnDictionaryInfo = new ColumnDictionaryInfo(DataTypes.STRING);
-    ForwardDictionary forwardDictionary = new ForwardDictionary(columnDictionaryInfo);
-    primitiveQueryTypeForTimeStampForIsDictionaryFalse =
-        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.TIMESTAMP, keySize,
-            forwardDictionary, false);
-
+   primitiveQueryTypeForDate =
+        new PrimitiveQueryType(name, parentName, blockIndex, DataTypes.DATE, true);
   }
 
   @Test public void testGetDataBasedOnDataTypeFromSurrogates() {
     ByteBuffer surrogateData = ByteBuffer.allocate(10);
     surrogateData.put(3, (byte) 1);
-    new MockUp<Bits>() {
-      @Mock public long[] getKeyArray(byte[] key, int offset) {
-        return new long[] { 1313045L };
-      }
-    };
-    Object expectedValue = 1313043000000L;
+    Object expectedValue = 1;
 
     Object actualValue =
-        primitiveQueryTypeForTimeStamp.getDataBasedOnDataType(surrogateData);
+        primitiveQueryTypeForDate.getDataBasedOnDataType(surrogateData);
     assertEquals(expectedValue, actualValue);
-  }
-
-  @Test public void testGetDataBasedOnDataTypeFromSurrogatesWhenIsDictionaryFalse() {
-    ByteBuffer surrogateData = ByteBuffer.allocate(10);
-    surrogateData.put(3, (byte) 1);
-    new MockUp<ForwardDictionary>() {
-      @Mock public String getDictionaryValueForKey(int surrogateKey) {
-        return "2015-10-20 12:30:01";
-      }
-    };
-    Object expectedValue = primitiveQueryTypeForTimeStampForIsDictionaryFalse
-        .getDataBasedOnDataType(surrogateData);
-    Object actualValue = primitiveQueryTypeForTimeStampForIsDictionaryFalse
-        .getDataBasedOnDataType(surrogateData);
-    assertEquals(expectedValue, actualValue);
-  }
-
-  public Object getDataBasedOnDataTypeFromSurrogates(ByteBuffer surrogateData) {
-    int keySize = 2;
-    byte[] data = new byte[keySize];
-    surrogateData.get(data);
-    Bits bit = new Bits(new int[] { keySize * 8 });
-    int surrgateValue = (int) bit.getKeyArray(data, 0)[0];
-    Object actualData = null;
-    if (isDirectDictionary) {
-      DirectDictionaryGenerator directDictionaryGenerator =
-          DirectDictionaryKeyGeneratorFactory.getDirectDictionaryGenerator(DataTypes.TIMESTAMP);
-      actualData = directDictionaryGenerator.getValueFromSurrogate(surrgateValue);
-    } else {
-      String dictionaryValueForKey = dictionary.getDictionaryValueForKey(surrgateValue);
-      actualData = DataTypeUtil.getDataBasedOnDataType(dictionaryValueForKey, DataTypes.TIMESTAMP);
-    }
-    return actualData;
   }
 
 }

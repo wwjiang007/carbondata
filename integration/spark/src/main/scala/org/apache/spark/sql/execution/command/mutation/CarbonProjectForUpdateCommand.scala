@@ -17,8 +17,6 @@
 
 package org.apache.spark.sql.execution.command.mutation
 
-import scala.collection.JavaConverters._
-
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
@@ -29,14 +27,15 @@ import org.apache.spark.sql.execution.strategy.MixedFormatHandler
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{ArrayType, LongType}
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.AlterTableUtil
+import scala.collection.JavaConverters._
 
 import org.apache.carbondata.common.exceptions.sql.MalformedCarbonCommandException
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.exception.ConcurrentOperationException
 import org.apache.carbondata.core.features.TableOperation
-import org.apache.carbondata.core.index.{IndexStoreManager, Segment}
-import org.apache.carbondata.core.index.status.IndexStatusManager
+import org.apache.carbondata.core.index.Segment
 import org.apache.carbondata.core.locks.{CarbonLockFactory, CarbonLockUtil, LockUsage}
 import org.apache.carbondata.core.mutate.CarbonUpdateUtil
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager
@@ -73,6 +72,8 @@ private[sql] case class CarbonProjectForUpdateCommand(
     val carbonTable = CarbonEnv.getCarbonTable(databaseNameOp, tableName)(sparkSession)
     setAuditTable(carbonTable)
     setAuditInfo(Map("plan" -> plan.simpleString))
+    // Do not allow spatial index and its source columns to be updated.
+    AlterTableUtil.validateColumnsWithSpatialIndexProperties(carbonTable, columns)
     columns.foreach { col =>
       val dataType = carbonTable.getColumnByName(col).getColumnSchema.getDataType
       if (dataType.isComplexType) {
@@ -123,7 +124,7 @@ private[sql] case class CarbonProjectForUpdateCommand(
         logInfo("Successfully able to get the table metadata file lock")
       }
       else {
-        throw new Exception("Table is locked for updation. Please try after some time")
+        throw new Exception("Table is locked for update. Please try after some time")
       }
 
       val executionErrors = new ExecutionErrors(FailureCauses.NONE, "")
@@ -183,7 +184,7 @@ private[sql] case class CarbonProjectForUpdateCommand(
             executionErrors,
             segmentsToBeDeleted)
 
-          // prepriming for update command
+          // pre-priming for update command
           DeleteExecution.reloadDistributedSegmentCache(carbonTable,
             segmentsToBeDeleted, operationContext)(sparkSession)
 

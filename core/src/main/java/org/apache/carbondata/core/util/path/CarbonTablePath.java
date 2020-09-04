@@ -41,10 +41,10 @@ public class CarbonTablePath {
   private static final String DICTIONARY_EXT = ".dict";
   public static final String SCHEMA_FILE = "schema";
   private static final String FACT_DIR = "Fact";
-  private static final String SEGMENT_PREFIX = "Segment_";
+  public static final String SEGMENT_PREFIX = "Segment_";
   private static final String PARTITION_PREFIX = "Part";
   private static final String DATA_PART_PREFIX = "part-";
-  private static final String BATCH_PREFIX = "_batchno";
+  public static final String BATCH_PREFIX = "_batchno";
   private static final String LOCK_DIR = "LockFiles";
 
   public static final String TABLE_STATUS_FILE = "tablestatus";
@@ -59,8 +59,11 @@ public class CarbonTablePath {
   private static final String STREAMING_CHECKPOINT_DIR = "checkpoint";
   private static final String STAGE_DIR = "stage";
   private static final String STAGE_DATA_DIR = "stage_data";
-  public static final String  SUCCESS_FILE_SUBFIX = ".success";
+  public static final String SUCCESS_FILE_SUFFIX = ".success";
+  public static final String LOADING_FILE_SUFFIX = ".loading";
   private static final String SNAPSHOT_FILE_NAME = "snapshot";
+
+  public static final String SYSTEM_FOLDER_DIR = "_system";
 
   /**
    * This class provides static utility only.
@@ -270,12 +273,12 @@ public class CarbonTablePath {
   }
 
   private static String getCarbonIndexFileName(String taskNo, int bucketNumber,
-      String factUpdatedtimeStamp, String segmentNo) {
+      String factUpdatedTimestamp, String segmentNo) {
     if (bucketNumber == -1) {
       return new StringBuilder()
           .append(taskNo).append(DASH)
           .append(segmentNo).append(DASH)
-          .append(factUpdatedtimeStamp)
+          .append(factUpdatedTimestamp)
           .append(INDEX_FILE_EXT)
           .toString();
     } else {
@@ -283,7 +286,7 @@ public class CarbonTablePath {
           .append(taskNo).append(DASH)
           .append(bucketNumber).append(DASH)
           .append(segmentNo).append(DASH)
-          .append(factUpdatedtimeStamp)
+          .append(factUpdatedTimestamp)
           .append(INDEX_FILE_EXT)
           .toString();
     }
@@ -395,7 +398,7 @@ public class CarbonTablePath {
   /**
    * Return store path for index based on the indexName,
    *
-   * @return store path based on indexname
+   * @return store path based on index name
    */
   public static String getIndexesStorePath(String tablePath, String segmentId,
       String indexName) {
@@ -554,22 +557,22 @@ public class CarbonTablePath {
     public static String getFileName(String dataFilePath) {
       int endIndex = dataFilePath.lastIndexOf(CarbonCommonConstants.FILE_SEPARATOR);
       if (endIndex > -1) {
-        return dataFilePath.substring(endIndex + 1, dataFilePath.length());
+        return dataFilePath.substring(endIndex + 1);
       } else {
         return dataFilePath;
       }
     }
 
     /**
-     * gets segement id from given absolute data file path
+     * gets segment id from given absolute data file path
      */
     public static String getSegmentIdFromPath(String dataFileAbsolutePath) {
       // find segment id from last of data file path
-      String tempdataFileAbsolutePath = dataFileAbsolutePath.replace(
+      String tempDataFileAbsolutePath = dataFileAbsolutePath.replace(
           CarbonCommonConstants.WINDOWS_FILE_SEPARATOR, CarbonCommonConstants.FILE_SEPARATOR);
-      int endIndex = tempdataFileAbsolutePath.lastIndexOf(CarbonCommonConstants.FILE_SEPARATOR);
+      int endIndex = tempDataFileAbsolutePath.lastIndexOf(CarbonCommonConstants.FILE_SEPARATOR);
       // + 1 for size of "/"
-      int startIndex = tempdataFileAbsolutePath.lastIndexOf(
+      int startIndex = tempDataFileAbsolutePath.lastIndexOf(
           CarbonCommonConstants.FILE_SEPARATOR, endIndex - 1) + 1;
       String segmentDirStr = dataFileAbsolutePath.substring(startIndex, endIndex);
       //identify id in segment_<id>
@@ -632,10 +635,23 @@ public class CarbonTablePath {
    * @return shortBlockId
    */
   public static String getShortBlockId(String blockId) {
-    return blockId.replace(PARTITION_PREFIX, "")
-            .replace(SEGMENT_PREFIX, "")
-            .replace(DATA_PART_PREFIX, "")
-            .replace(CARBON_DATA_EXT, "");
+    String blockIdWithCompressorName =
+        blockId.replace(PARTITION_PREFIX + "0" + CarbonCommonConstants.FILE_SEPARATOR, "")
+            .replace(SEGMENT_PREFIX, "").replace(BATCH_PREFIX, CarbonCommonConstants.UNDERSCORE)
+            .replace(DATA_PART_PREFIX, "").replace(CARBON_DATA_EXT, "");
+    // to remove compressor name
+    if (!blockId.equalsIgnoreCase(blockIdWithCompressorName)) {
+      int index = blockIdWithCompressorName.lastIndexOf(".");
+      if (index != -1) {
+        String replace =
+            blockIdWithCompressorName.replace(blockIdWithCompressorName.substring(index), "");
+        return replace;
+      } else {
+        return blockIdWithCompressorName;
+      }
+    } else {
+      return blockIdWithCompressorName;
+    }
   }
 
   /**
@@ -645,8 +661,19 @@ public class CarbonTablePath {
    * @return shortBlockId
    */
   public static String getShortBlockIdForPartitionTable(String blockId) {
-    return blockId.replace(DATA_PART_PREFIX, "")
-        .replace(CARBON_DATA_EXT, "");
+    String blockIdWithCompressorName = blockId.replace(DATA_PART_PREFIX, "")
+        .replace(BATCH_PREFIX, CarbonCommonConstants.UNDERSCORE).replace(CARBON_DATA_EXT, "");
+    // to remove compressor name
+    if (!blockId.equalsIgnoreCase(blockIdWithCompressorName)) {
+      int index = blockIdWithCompressorName.lastIndexOf(POINT);
+      if (index != -1) {
+        return blockIdWithCompressorName.replace(blockIdWithCompressorName.substring(index), "");
+      } else {
+        return blockIdWithCompressorName;
+      }
+    } else {
+      return blockIdWithCompressorName;
+    }
   }
 
   /**

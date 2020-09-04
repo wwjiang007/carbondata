@@ -33,7 +33,7 @@ import org.apache.log4j.Logger;
 
 /**
  * This class handles the file locking in the local file system.
- * This will be handled using the file channel lock API.
+ * This will be handled by using the file channel lock API.
  */
 public class LocalFileLock extends AbstractCarbonLock {
   /**
@@ -89,11 +89,7 @@ public class LocalFileLock extends AbstractCarbonLock {
       } catch (OverlappingFileLockException e) {
         return false;
       }
-      if (null != fileLock) {
-        return true;
-      } else {
-        return false;
-      }
+      return null != fileLock;
     } catch (IOException e) {
       LOGGER.info(e.getMessage());
       return false;

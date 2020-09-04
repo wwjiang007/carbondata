@@ -29,7 +29,7 @@ import org.apache.carbondata.core.datastore.chunk.impl.MeasureRawColumnChunk;
 import org.apache.carbondata.core.datastore.page.ColumnPage;
 import org.apache.carbondata.core.scan.executor.infos.BlockExecutionInfo;
 import org.apache.carbondata.core.scan.expression.exception.FilterUnsupportedException;
-import org.apache.carbondata.core.scan.filter.executer.FilterExecuter;
+import org.apache.carbondata.core.scan.filter.executer.FilterExecutor;
 import org.apache.carbondata.core.scan.filter.executer.ImplicitColumnFilterExecutor;
 import org.apache.carbondata.core.scan.processor.RawBlockletColumnChunks;
 import org.apache.carbondata.core.scan.result.BlockletScannedResult;
@@ -50,9 +50,9 @@ import org.apache.carbondata.core.util.CarbonUtil;
 public class BlockletFilterScanner extends BlockletFullScanner {
 
   /**
-   * filter executer to evaluate filter condition
+   * filter executor to evaluate filter condition
    */
-  private FilterExecuter filterExecuter;
+  private FilterExecutor filterExecutor;
   /**
    * this will be used to apply min max
    * this will be useful for dimension column which is on the right side
@@ -79,7 +79,7 @@ public class BlockletFilterScanner extends BlockletFullScanner {
       isMinMaxEnabled = Boolean.parseBoolean(minMaxEnableValue);
     }
     // get the filter tree
-    this.filterExecuter = blockExecutionInfo.getFilterExecuterTree();
+    this.filterExecutor = blockExecutionInfo.getFilterExecutorTree();
     this.queryStatisticsModel = queryStatisticsModel;
 
     String useBitSetPipeLine = CarbonProperties.getInstance()
@@ -125,15 +125,15 @@ public class BlockletFilterScanner extends BlockletFullScanner {
       }
       BitSet bitSet = null;
       // check for implicit include filter instance
-      if (filterExecuter instanceof ImplicitColumnFilterExecutor) {
+      if (filterExecutor instanceof ImplicitColumnFilterExecutor) {
         String blockletId = blockExecutionInfo.getBlockIdString() +
             CarbonCommonConstants.FILE_SEPARATOR + dataBlock.blockletIndex();
-        bitSet = ((ImplicitColumnFilterExecutor) filterExecuter)
+        bitSet = ((ImplicitColumnFilterExecutor) filterExecutor)
             .isFilterValuesPresentInBlockOrBlocklet(
                 dataBlock.getColumnsMaxValue(),
                 dataBlock.getColumnsMinValue(), blockletId, dataBlock.minMaxFlagArray());
       } else {
-        bitSet = this.filterExecuter
+        bitSet = this.filterExecutor
             .isScanRequired(dataBlock.getColumnsMaxValue(),
                 dataBlock.getColumnsMinValue(), dataBlock.minMaxFlagArray());
       }
@@ -145,7 +145,7 @@ public class BlockletFilterScanner extends BlockletFullScanner {
   @Override
   public void readBlocklet(RawBlockletColumnChunks rawBlockletColumnChunks) throws IOException {
     long startTime = System.currentTimeMillis();
-    this.filterExecuter.readColumnChunks(rawBlockletColumnChunks);
+    this.filterExecutor.readColumnChunks(rawBlockletColumnChunks);
     // adding statistics for carbon read time
     QueryStatistic readTime = queryStatisticsModel.getStatisticsTypeAndObjMap()
         .get(QueryStatisticsConstants.READ_BLOCKlET_TIME);
@@ -172,31 +172,17 @@ public class BlockletFilterScanner extends BlockletFullScanner {
   private BlockletScannedResult executeFilter(RawBlockletColumnChunks rawBlockletColumnChunks)
       throws FilterUnsupportedException, IOException {
     long startTime = System.currentTimeMillis();
-    // set the indexed data if it has any during fgindex pruning.
+    // set the indexed data if it has any during fgIndex pruning.
     BitSetGroup fgBitSetGroup = rawBlockletColumnChunks.getDataBlock().getIndexedData();
     rawBlockletColumnChunks.setBitSetGroup(fgBitSetGroup);
     // apply filter on actual data, for each page
-    BitSetGroup bitSetGroup = this.filterExecuter.applyFilter(rawBlockletColumnChunks,
+    BitSetGroup bitSetGroup = this.filterExecutor.applyFilter(rawBlockletColumnChunks,
         useBitSetPipeLine);
     // if filter result is empty then return with empty result
     if (bitSetGroup.isEmpty()) {
       CarbonUtil.freeMemory(rawBlockletColumnChunks.getDimensionRawColumnChunks(),
           rawBlockletColumnChunks.getMeasureRawColumnChunks());
-
-      QueryStatistic scanTime = queryStatisticsModel.getStatisticsTypeAndObjMap()
-          .get(QueryStatisticsConstants.SCAN_BLOCKlET_TIME);
-      scanTime.addCountStatistic(QueryStatisticsConstants.SCAN_BLOCKlET_TIME,
-          scanTime.getCount() + (System.currentTimeMillis() - startTime));
-
-      QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
-          .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
-      scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
-          scannedBlocklets.getCount() + 1);
-
-      QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
-          .get(QueryStatisticsConstants.PAGE_SCANNED);
-      scannedPages.addCountStatistic(QueryStatisticsConstants.PAGE_SCANNED,
-          scannedPages.getCount() + bitSetGroup.getScannedPages());
+      addQueryStatistic(startTime, bitSetGroup.getScannedPages());
       return createEmptyResult();
     }
 
@@ -266,7 +252,7 @@ public class BlockletFilterScanner extends BlockletFullScanner {
           columnIndexRange[1] + 1 - columnIndexRange[0]);
     }
 
-    /**
+    /*
      * Below code is to read the dimension which is not read as part of filter or projection
      * for example in case of or filter if first filter matches all the rows then it will not read
      * second filter column and if it is present as part of projection, so needs to be read
@@ -307,7 +293,7 @@ public class BlockletFilterScanner extends BlockletFullScanner {
       System.arraycopy(projectionListMeasureChunk, columnIndexRange[0], measureRawColumnChunks,
           columnIndexRange[0], columnIndexRange[1] + 1 - columnIndexRange[0]);
     }
-    /**
+    /*
      * Below code is to read the measure which is not read as part of filter or projection
      * for example in case of or filter if first filter matches all the rows then it will not read
      * second filter column and if it is present as part of projection, so needs to be read
@@ -362,26 +348,12 @@ public class BlockletFilterScanner extends BlockletFullScanner {
       throws FilterUnsupportedException, IOException {
     long startTime = System.currentTimeMillis();
     // apply filter on actual data, for each page
-    BitSet pages = this.filterExecuter.prunePages(rawBlockletColumnChunks);
+    BitSet pages = this.filterExecutor.prunePages(rawBlockletColumnChunks);
     // if filter result is empty then return with empty result
     if (pages.isEmpty()) {
       CarbonUtil.freeMemory(rawBlockletColumnChunks.getDimensionRawColumnChunks(),
           rawBlockletColumnChunks.getMeasureRawColumnChunks());
-
-      QueryStatistic scanTime = queryStatisticsModel.getStatisticsTypeAndObjMap()
-          .get(QueryStatisticsConstants.SCAN_BLOCKlET_TIME);
-      scanTime.addCountStatistic(QueryStatisticsConstants.SCAN_BLOCKlET_TIME,
-          scanTime.getCount() + (System.currentTimeMillis() - startTime));
-
-      QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
-          .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
-      scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
-          scannedBlocklets.getCount() + 1);
-
-      QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
-          .get(QueryStatisticsConstants.PAGE_SCANNED);
-      scannedPages
-          .addCountStatistic(QueryStatisticsConstants.PAGE_SCANNED, scannedPages.getCount());
+      addQueryStatistic(startTime, 0L);
       return createEmptyResult();
     }
 
@@ -460,5 +432,22 @@ public class BlockletFilterScanner extends BlockletFullScanner {
         scanTime.getCount() + (System.currentTimeMillis() - startTime));
 
     return scannedResult;
+  }
+
+  private void addQueryStatistic(long startTime, long numberOfPages) {
+    QueryStatistic scanTime = queryStatisticsModel.getStatisticsTypeAndObjMap()
+        .get(QueryStatisticsConstants.SCAN_BLOCKlET_TIME);
+    scanTime.addCountStatistic(QueryStatisticsConstants.SCAN_BLOCKlET_TIME,
+        scanTime.getCount() + (System.currentTimeMillis() - startTime));
+
+    QueryStatistic scannedBlocklets = queryStatisticsModel.getStatisticsTypeAndObjMap()
+        .get(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM);
+    scannedBlocklets.addCountStatistic(QueryStatisticsConstants.BLOCKLET_SCANNED_NUM,
+        scannedBlocklets.getCount() + 1);
+
+    QueryStatistic scannedPages = queryStatisticsModel.getStatisticsTypeAndObjMap()
+        .get(QueryStatisticsConstants.PAGE_SCANNED);
+    scannedPages.addCountStatistic(QueryStatisticsConstants.PAGE_SCANNED,
+        scannedPages.getCount() + numberOfPages);
   }
 }

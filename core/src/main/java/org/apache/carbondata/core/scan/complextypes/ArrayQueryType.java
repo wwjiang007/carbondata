@@ -97,21 +97,39 @@ public class ArrayQueryType extends ComplexQueryType implements GenericQueryType
 
   @Override
   public Object getDataBasedOnDataType(ByteBuffer dataBuffer) {
-    Object[] data = fillData(dataBuffer);
+    Object[] data = fillData(dataBuffer, false);
     if (data == null) {
       return null;
     }
     return DataTypeUtil.getDataTypeConverter().wrapWithGenericArrayData(data);
   }
 
-  protected Object[] fillData(ByteBuffer dataBuffer) {
+  @Override
+  public Object[] getObjectArrayDataBasedOnDataType(ByteBuffer dataBuffer) {
+    return fillData(dataBuffer, true);
+  }
+
+  @Override
+  public Object getObjectDataBasedOnDataType(ByteBuffer dataBuffer) {
+    Object[] data = fillData(dataBuffer, true);
+    if (data == null) {
+      return null;
+    }
+    return DataTypeUtil.getDataTypeConverter().wrapWithGenericArrayData(data);
+  }
+
+  protected Object[] fillData(ByteBuffer dataBuffer, boolean getBytesData) {
     int dataLength = dataBuffer.getInt();
     if (dataLength == -1) {
       return null;
     }
     Object[] data = new Object[dataLength];
     for (int i = 0; i < dataLength; i++) {
-      data[i] = children.getDataBasedOnDataType(dataBuffer);
+      if (getBytesData) {
+        data[i] = children.getObjectDataBasedOnDataType(dataBuffer);
+      } else {
+        data[i] = children.getDataBasedOnDataType(dataBuffer);
+      }
     }
     return data;
   }
@@ -126,6 +144,33 @@ public class ArrayQueryType extends ComplexQueryType implements GenericQueryType
   public Object getDataBasedOnColumnList(Map<CarbonDimension, ByteBuffer> childBuffer,
       CarbonDimension presentColumn) {
     throw new UnsupportedOperationException("Operation Unsupported for ArrayType");
+  }
+
+  public int[][] getNumberOfChild(DimensionRawColumnChunk[] rawColumnChunks,
+      DimensionColumnPage[][] dimensionColumnPages, int numberOfRows, int pageNumber) {
+    DimensionColumnPage page =
+        getDecodedDimensionPage(dimensionColumnPages, rawColumnChunks[columnIndex], pageNumber);
+    int[][] numberOfChild = new int[numberOfRows][2];
+    for (int i = 0; i < numberOfRows; i++) {
+      byte[] input = page.getChunkData(i);
+      ByteBuffer wrap = ByteBuffer.wrap(input);
+      int[] metadata = new int[2];
+      metadata[0] = wrap.getInt();
+      if (metadata[0] > 0) {
+        metadata[1] = wrap.getInt();
+      }
+      numberOfChild[i] = metadata;
+    }
+    return numberOfChild;
+  }
+
+  public DimensionColumnPage parseBlockAndReturnChildData(DimensionRawColumnChunk[] rawColumnChunks,
+      DimensionColumnPage[][] dimensionColumnPages, int pageNumber) {
+    PrimitiveQueryType queryType = (PrimitiveQueryType) children;
+    return queryType.getDecodedDimensionPage(
+        dimensionColumnPages,
+        rawColumnChunks[queryType.columnIndex],
+        pageNumber);
   }
 
 }

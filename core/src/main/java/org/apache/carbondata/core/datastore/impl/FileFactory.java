@@ -95,13 +95,13 @@ public final class FileFactory {
   public static FileReader getFileHolder(FileFactory.FileType fileType,
       Configuration configuration) {
     switch (fileType) {
-      case LOCAL:
-        return new FileReaderImpl();
       case HDFS:
       case ALLUXIO:
       case VIEWFS:
       case S3:
+      case HDFS_LOCAL:
         return new DFSFileReaderImpl(configuration);
+      case LOCAL:
       default:
         return new FileReaderImpl();
     }
@@ -131,19 +131,7 @@ public final class FileFactory {
   }
 
   private static FileType getFileTypeWithLowerCase(String path) {
-    String lowerCase = path.toLowerCase();
-    if (lowerCase.startsWith(CarbonCommonConstants.HDFSURL_PREFIX)) {
-      return FileType.HDFS;
-    } else if (lowerCase.startsWith(CarbonCommonConstants.ALLUXIOURL_PREFIX)) {
-      return FileType.ALLUXIO;
-    } else if (lowerCase.startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX)) {
-      return FileType.VIEWFS;
-    } else if (lowerCase.startsWith(CarbonCommonConstants.S3N_PREFIX) || lowerCase
-        .startsWith(CarbonCommonConstants.S3A_PREFIX) || lowerCase
-        .startsWith(CarbonCommonConstants.S3_PREFIX)) {
-      return FileType.S3;
-    }
-    return null;
+    return getFileTypeWithActualPath(path.toLowerCase());
   }
 
   private static FileType getFileTypeWithActualPath(String path) {
@@ -157,6 +145,10 @@ public final class FileFactory {
         .startsWith(CarbonCommonConstants.S3A_PREFIX) || path
         .startsWith(CarbonCommonConstants.S3_PREFIX)) {
       return FileType.S3;
+    } else if (path.startsWith(CarbonCommonConstants.LOCAL_FILE_PREFIX) && !configuration
+        .get(CarbonCommonConstants.FS_DEFAULT_FS)
+        .equalsIgnoreCase(CarbonCommonConstants.LOCAL_FS_URI)) {
+      return FileType.HDFS_LOCAL;
     }
     return null;
   }
@@ -166,7 +158,7 @@ public final class FileFactory {
   }
 
   /**
-   * Need carbonfile object path because depends on file format implementation
+   * Need carbon file object path because depends on file format implementation
    * path will be formatted.
    */
   public static String getFormattedPath(String path) {
@@ -215,7 +207,7 @@ public final class FileFactory {
   }
 
   /**
-   * return the datainputStream which is seek to the offset of file
+   * return the DataInputStream which is seek to the offset of file
    *
    * @param path
    * @param bufferSize
@@ -345,7 +337,7 @@ public final class FileFactory {
   }
 
   /**
-   * for getting the dataoutput stream using the hdfs filesystem append API.
+   * for getting the DataOutputStream using the hdfs filesystem append API.
    *
    * @param path
    * @return
@@ -408,7 +400,6 @@ public final class FileFactory {
             fileChannel.close();
           }
         }
-        return;
     }
   }
 
@@ -425,7 +416,7 @@ public final class FileFactory {
   }
 
   public enum FileType {
-    LOCAL, HDFS, ALLUXIO, VIEWFS, S3, CUSTOM
+    LOCAL, HDFS, ALLUXIO, VIEWFS, S3, CUSTOM, HDFS_LOCAL
   }
 
   /**
@@ -447,6 +438,7 @@ public final class FileFactory {
       case VIEWFS:
       case S3:
       case CUSTOM:
+      case HDFS_LOCAL:
       default:
         return filePath;
     }
@@ -466,6 +458,7 @@ public final class FileFactory {
       case VIEWFS:
       case S3:
       case CUSTOM:
+      case HDFS_LOCAL:
         return filePath;
       case ALLUXIO:
         return StringUtils.startsWith(filePath, "alluxio") ? filePath : "alluxio:///" + filePath;
@@ -505,6 +498,7 @@ public final class FileFactory {
       case VIEWFS:
       case S3:
       case CUSTOM:
+      case HDFS_LOCAL:
         Path path = new Path(filePath);
         FileSystem fs = path.getFileSystem(getConfiguration());
         return fs.getContentSummary(path).getLength();
@@ -546,6 +540,7 @@ public final class FileFactory {
       case ALLUXIO:
       case VIEWFS:
       case CUSTOM:
+      case HDFS_LOCAL:
         try {
           Path path = new Path(directoryPath);
           FileSystem fs = path.getFileSystem(getConfiguration());
@@ -584,7 +579,8 @@ public final class FileFactory {
         .startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX) || lowerPath
         .startsWith(CarbonCommonConstants.S3N_PREFIX) || lowerPath
         .startsWith(CarbonCommonConstants.S3A_PREFIX) || lowerPath
-        .startsWith(CarbonCommonConstants.S3_PREFIX)) {
+        .startsWith(CarbonCommonConstants.S3_PREFIX) || lowerPath
+        .startsWith(CarbonCommonConstants.LOCAL_FILE_PREFIX)) {
       return path;
     } else if (defaultFs != null) {
       return defaultFs + CarbonCommonConstants.FILE_SEPARATOR + path;
@@ -606,8 +602,9 @@ public final class FileFactory {
     }
 
     final String lowerPath = path.toLowerCase(Locale.getDefault());
-    return lowerPath.contains("://") || lowerPath.startsWith(CarbonCommonConstants.HDFSURL_PREFIX)
-        || lowerPath.startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX) || lowerPath
+    return lowerPath.contains("file:/") || lowerPath.contains("://") || lowerPath
+        .startsWith(CarbonCommonConstants.HDFSURL_PREFIX) || lowerPath
+        .startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX) || lowerPath
         .startsWith(CarbonCommonConstants.LOCAL_FILE_PREFIX) || lowerPath
         .startsWith(CarbonCommonConstants.ALLUXIOURL_PREFIX) || lowerPath
         .startsWith(CarbonCommonConstants.S3N_PREFIX) || lowerPath
@@ -722,6 +719,16 @@ public final class FileFactory {
     }
     touchDirectory(directory.getParentFile(), permission);
     FileFactory.createDirectoryAndSetPermission(directory.getCanonicalPath(), permission);
+  }
+
+  /**
+   * get the carbon folder list
+   *
+   * @param path folder path
+   * @throws IOException if error occurs
+   */
+  public static List<CarbonFile> getFolderList(String path) throws IOException {
+    return getCarbonFile(path, getConfiguration()).listDirs();
   }
 
 }

@@ -25,7 +25,7 @@ import org.apache.carbondata.core.scan.result.vector.CarbonColumnVector;
 import org.apache.carbondata.core.scan.result.vector.CarbonDictionary;
 import org.apache.carbondata.core.scan.result.vector.ColumnVectorInfo;
 import org.apache.carbondata.core.scan.result.vector.impl.directread.ColumnarVectorWrapperDirectFactory;
-import org.apache.carbondata.core.scan.result.vector.impl.directread.ConvertableVector;
+import org.apache.carbondata.core.scan.result.vector.impl.directread.ConvertibleVector;
 import org.apache.carbondata.core.util.CarbonUtil;
 
 /**
@@ -48,7 +48,7 @@ public class LocalDictDimensionDataChunkStore implements DimensionDataChunkStore
   }
 
   /**
-   * Below method will be used to put the rows and its metadata in offheap
+   * Below method will be used to put the rows and its metadata in off-heap
    *
    * @param invertedIndex        inverted index to be stored
    * @param invertedIndexReverse inverted index reverse to be stored
@@ -70,11 +70,11 @@ public class LocalDictDimensionDataChunkStore implements DimensionDataChunkStore
     }
     BitSet nullBitset = new BitSet();
     CarbonColumnVector dictionaryVector = ColumnarVectorWrapperDirectFactory
-        .getDirectVectorWrapperFactory(vector.getDictionaryVector(), invertedIndex, nullBitset,
-            vectorInfo.deletedRows, false, true);
+        .getDirectVectorWrapperFactory(vectorInfo, vector.getDictionaryVector(), invertedIndex,
+            nullBitset, vectorInfo.deletedRows, false, true);
     vector = ColumnarVectorWrapperDirectFactory
-        .getDirectVectorWrapperFactory(vector, invertedIndex, nullBitset, vectorInfo.deletedRows,
-            false, false);
+        .getDirectVectorWrapperFactory(vectorInfo, vector, invertedIndex, nullBitset,
+            vectorInfo.deletedRows, false, false);
     for (int i = 0; i < rowsNum; i++) {
       int surrogate = CarbonUtil.getSurrogateInternal(data, i * columnValueSize, columnValueSize);
       if (surrogate == CarbonCommonConstants.MEMBER_DEFAULT_VAL_SURROGATE_KEY) {
@@ -87,8 +87,8 @@ public class LocalDictDimensionDataChunkStore implements DimensionDataChunkStore
         dictionaryVector.putInt(i, surrogate);
       }
     }
-    if (dictionaryVector instanceof ConvertableVector) {
-      ((ConvertableVector) dictionaryVector).convert();
+    if (dictionaryVector instanceof ConvertibleVector) {
+      ((ConvertibleVector) dictionaryVector).convert();
     }
   }
 

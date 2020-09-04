@@ -24,18 +24,19 @@ import org.apache.carbondata.core.indexstore.BlockletIndexWrapper;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 
 /**
  * Distributable index job to execute the #IndexInputFormat in cluster. it prunes the
- * indexes distributably and returns the final blocklet list
+ * indexes distributed and returns the final blocklet list
  */
 public interface IndexJob extends Serializable {
 
   void execute(CarbonTable carbonTable, FileInputFormat<Void, BlockletIndexWrapper> format);
 
-  List<ExtendedBlocklet> execute(IndexInputFormat indexInputFormat);
+  List<ExtendedBlocklet> execute(IndexInputFormat indexInputFormat, Configuration configuration);
 
-  Long executeCountJob(IndexInputFormat indexInputFormat);
+  Long executeCountJob(IndexInputFormat indexInputFormat, Configuration configuration);
 
 }

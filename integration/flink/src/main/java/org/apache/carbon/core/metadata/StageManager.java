@@ -67,7 +67,7 @@ public final class StageManager {
     }
 
     try {
-      writeSuccessFile(stageInputPath + CarbonTablePath.SUCCESS_FILE_SUBFIX);
+      writeSuccessFile(stageInputPath + CarbonTablePath.SUCCESS_FILE_SUFFIX);
     } catch (Throwable exception) {
       try {
         CarbonUtil.deleteFoldersAndFiles(FileFactory.getCarbonFile(stageInputPath));
@@ -81,7 +81,7 @@ public final class StageManager {
   private static void writeSuccessFile(final String successFilePath) throws IOException {
     final DataOutputStream segmentStatusSuccessOutputStream =
         FileFactory.getDataOutputStream(successFilePath,
-            CarbonCommonConstants.BYTEBUFFER_SIZE, 1024);
+            CarbonCommonConstants.BYTEBUFFER_SIZE, 1024 * 1024 * 2);
     try {
       IOUtils.copyBytes(
           new ByteArrayInputStream(new byte[0]),

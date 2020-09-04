@@ -23,24 +23,21 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.Try
 
-import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.types._
-import org.apache.spark.sql.CarbonContainsWith
-import org.apache.spark.sql.CarbonEndsWith
+import org.apache.spark.sql.{CarbonContainsWith, CarbonEndsWith, _}
 import org.apache.spark.sql.carbondata.execution.datasources.CarbonSparkDataSourceUtil
 import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.hive.{CarbonHiveIndexMetadataUtil, CarbonSessionCatalogUtil}
-import org.apache.spark.util.{CarbonReflectionUtils, SparkUtil}
+import org.apache.spark.sql.types._
+import org.apache.spark.util.CarbonReflectionUtils
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.indexstore.PartitionSpec
 import org.apache.carbondata.core.metadata.datatype.{DataTypes => CarbonDataTypes}
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
-import org.apache.carbondata.core.scan.expression.{ColumnExpression => CarbonColumnExpression, Expression => CarbonExpression, LiteralExpression => CarbonLiteralExpression}
+import org.apache.carbondata.core.scan.expression.{ColumnExpression => CarbonColumnExpression, Expression => CarbonExpression, LiteralExpression => CarbonLiteralExpression, MatchExpression}
 import org.apache.carbondata.core.scan.expression.conditional._
 import org.apache.carbondata.core.scan.expression.logical.{AndExpression, FalseExpression, OrExpression}
-import org.apache.carbondata.core.scan.expression.MatchExpression
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType
 import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.carbondata.geo.{GeoUtils, InPolygon}
@@ -59,7 +56,12 @@ object CarbonFilters {
   def createCarbonFilter(schema: StructType,
       predicate: sources.Filter,
       tableProperties: mutable.Map[String, String]): Option[CarbonExpression] = {
-    val dataTypeOf = schema.map(f => f.name -> f.dataType).toMap
+    val dataTypeOf = schema.map { f =>
+      f.dataType match {
+        case arrayType: ArrayType => f.name -> arrayType.elementType
+        case _ => f.name -> f.dataType
+      }
+    }.toMap
 
     def createFilter(predicate: sources.Filter): Option[CarbonExpression] = {
       predicate match {
@@ -123,19 +125,9 @@ object CarbonFilters {
           Some(new StartsWithExpression(getCarbonExpression(name),
             getCarbonLiteralExpression(name, value)))
         case CarbonEndsWith(expr: Expression) =>
-          Some(new SparkUnknownExpression(expr.transform {
-            case AttributeReference(name, dataType, _, _) =>
-              CarbonBoundReference(new CarbonColumnExpression(name.toString,
-                CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(dataType)),
-                dataType, expr.nullable)
-          }, ExpressionType.ENDSWITH))
+          Some(getSparkUnknownExpression(expr, ExpressionType.ENDSWITH))
         case CarbonContainsWith(expr: Expression) =>
-          Some(new SparkUnknownExpression(expr.transform {
-            case AttributeReference(name, dataType, _, _) =>
-              CarbonBoundReference(new CarbonColumnExpression(name.toString,
-                CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(dataType)),
-                dataType, expr.nullable)
-          }, ExpressionType.CONTAINSWITH))
+          Some(getSparkUnknownExpression(expr, ExpressionType.CONTAINSWITH))
         case CastExpr(expr: Expression) =>
           Some(transformExpression(expr))
         case FalseExpr() =>
@@ -145,20 +137,22 @@ object CarbonFilters {
         case TextMatchLimit(queryString, maxDoc) =>
           Some(new MatchExpression(queryString, Try(maxDoc.toInt).getOrElse(Integer.MAX_VALUE)))
         case InPolygon(queryString) =>
-          val (columnName, handler) = GeoUtils.getGeoHashHandler(tableProperties)
-          Some(new CarbonPolygonExpression(queryString, columnName, handler))
+          val (columnName, instance) = GeoUtils.getGeoHashHandler(tableProperties)
+          Some(new CarbonPolygonExpression(queryString, columnName, instance))
         case _ => None
       }
     }
 
     def getCarbonExpression(name: String) = {
+      var sparkDatatype = dataTypeOf(name)
       new CarbonColumnExpression(name,
-        CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(dataTypeOf(name)))
+        CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(sparkDatatype))
     }
 
     def getCarbonLiteralExpression(name: String, value: Any): CarbonExpression = {
+      var sparkDatatype = dataTypeOf(name)
       val dataTypeOfAttribute =
-        CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(dataTypeOf(name))
+        CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(sparkDatatype)
       val dataType = if (Option(value).isDefined
                          && dataTypeOfAttribute == CarbonDataTypes.STRING
                          && value.isInstanceOf[Double]) {
@@ -176,6 +170,16 @@ object CarbonFilters {
     }
 
     createFilter(predicate)
+  }
+
+  private def getSparkUnknownExpression(expr: Expression,
+      exprType: ExpressionType = ExpressionType.UNKNOWN) = {
+    new SparkUnknownExpression(expr.transform {
+      case AttributeReference(name, dataType, _, _) =>
+        CarbonBoundReference(new CarbonColumnExpression(name,
+          CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(dataType)),
+          dataType, expr.nullable)
+    }, exprType)
   }
 
   /**
@@ -298,14 +302,7 @@ object CarbonFilters {
         new AndExpression(l, r)
       case strTrim: StringTrim if isStringTrimCompatibleWithCarbon(strTrim) =>
         transformExpression(strTrim)
-      case _ =>
-        new SparkUnknownExpression(expr.transform {
-          case AttributeReference(name, dataType, _, _) =>
-            CarbonBoundReference(new CarbonColumnExpression(name.toString,
-              CarbonSparkDataSourceUtil.convertSparkToCarbonDataType(dataType)),
-              dataType, expr.nullable)
-        }
-        )
+      case _ => getSparkUnknownExpression(expr)
     }
   }
 

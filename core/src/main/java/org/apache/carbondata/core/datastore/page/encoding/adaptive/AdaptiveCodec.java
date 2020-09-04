@@ -162,15 +162,22 @@ public abstract class AdaptiveCodec implements ColumnPageCodec {
     ByteArrayOutputStream stream = new ByteArrayOutputStream();
     DataOutputStream out = new DataOutputStream(stream);
     if (null != indexStorage) {
-      out.write(result.array(), 0, result.position());
+      if (result.isDirect()) {
+        // cannot apply result.array() on direct buffers
+        for (int i = result.position(); i < result.limit(); i++) {
+          out.writeByte(result.get(i));
+        }
+      } else {
+        out.write(result.array(), result.position(), result.limit());
+      }
       if (indexStorage.getRowIdPageLengthInBytes() > 0) {
         out.writeInt(indexStorage.getRowIdPageLengthInBytes());
-        short[] rowIdPage = (short[]) indexStorage.getRowIdPage();
+        short[] rowIdPage = indexStorage.getRowIdPage();
         for (short rowId : rowIdPage) {
           out.writeShort(rowId);
         }
         if (indexStorage.getRowIdRlePageLengthInBytes() > 0) {
-          short[] rowIdRlePage = (short[]) indexStorage.getRowIdRlePage();
+          short[] rowIdRlePage = indexStorage.getRowIdRlePage();
           for (short rowIdRle : rowIdRlePage) {
             out.writeShort(rowIdRle);
           }

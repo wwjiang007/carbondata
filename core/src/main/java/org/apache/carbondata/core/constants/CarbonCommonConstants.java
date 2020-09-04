@@ -352,12 +352,6 @@ public final class CarbonCommonConstants {
    */
   public static final String CARBON_INVISIBLE_SEGMENTS_PRESERVE_COUNT_DEFAULT = "200";
 
-  /**
-   * System older location to store system level data like index schema and status files.
-   */
-  @CarbonProperty
-  public static final String CARBON_SYSTEM_FOLDER_LOCATION = "carbon.system.folder.location";
-
   @CarbonProperty
   public static final String CARBON_INDEX_SCHEMA_STORAGE = "carbon.index.schema.storage";
 
@@ -466,14 +460,15 @@ public final class CarbonCommonConstants {
   public static final String INDEX_COLUMNS = "INDEX_COLUMNS";
 
   /**
-   * Index handler table property. It allows user to create a new sort column from the set of
-   * existing schema columns. And can generate value for the new column after parsing each row
-   * through custom handler.
+   * Spatial index table property. It allows user to create a new index column implicitly from the
+   * set of existing table schema columns(specified with the sourcecolumns sub-property). Newly
+   * created column is implicitly treated as a sort column. Row value for the new column is
+   * generated from the corresponding row values of its sourcecolumns during the data load process.
+   * CarbonCore provides an abstract class {@link org.apache.carbondata.core.util.CustomIndex} such
+   * that different types of index implementations adhere to the contracts and still have their
+   * customized behavior.
    */
-  public static final String INDEX_HANDLER = "index_handler";
-
-  // GeoHash index handler type
-  public static final String GEOHASH = "geohash";
+  public static final String SPATIAL_INDEX = "spatial_index";
 
   public static final String SORT_COLUMNS = "sort_columns";
   public static final String SORT_SCOPE = "sort_scope";
@@ -959,11 +954,6 @@ public final class CarbonCommonConstants {
   public static final String ENABLE_OFFHEAP_SORT_DEFAULT = "true";
 
   @CarbonProperty
-  public static final String ENABLE_INMEMORY_MERGE_SORT = "enable.inmemory.merge.sort";
-
-  public static final String ENABLE_INMEMORY_MERGE_SORT_DEFAULT = "false";
-
-  @CarbonProperty
   public static final String OFFHEAP_SORT_CHUNK_SIZE_IN_MB = "offheap.sort.chunk.size.inmb";
 
   public static final String OFFHEAP_SORT_CHUNK_SIZE_IN_MB_DEFAULT = "64";
@@ -1200,10 +1190,10 @@ public final class CarbonCommonConstants {
 
   public static final String CARBON_ENABLE_RANGE_COMPACTION_DEFAULT = "true";
 
-  @CarbonProperty
   /**
    * size based threshold for local dictionary in mb.
    */
+  @CarbonProperty
   public static final String CARBON_LOCAL_DICTIONARY_SIZE_THRESHOLD_IN_MB =
       "carbon.local.dictionary.size.threshold.inmb";
 
@@ -1228,6 +1218,14 @@ public final class CarbonCommonConstants {
    */
   @CarbonProperty(dynamicConfigurable = true)
   public static final String CARBON_INPUT_SEGMENTS = "carbon.input.segments.";
+
+  /**
+   * Materialized view thread context properties
+   */
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String CARBON_ENABLE_MV = "carbon.enable.mv";
+
+  public static final String CARBON_ENABLE_MV_DEFAULT = "true";
 
   /**
    * ENABLE_QUERY_STATISTICS
@@ -1303,6 +1301,18 @@ public final class CarbonCommonConstants {
    */
   public static final String MIN_MAX_DEFAULT_VALUE = "true";
 
+  /**
+   * max SDK pagination lru cache size in MB upto which lru cache will be loaded in memory
+   */
+  @CarbonProperty
+  public static final String CARBON_MAX_PAGINATION_LRU_CACHE_SIZE_IN_MB =
+      "carbon.max.pagination.lru.cache.size.in.mb";
+
+  /**
+   * max SDK lru cache size default value in MB
+   */
+  public static final String CARBON_MAX_PAGINATION_LRU_CACHE_SIZE_IN_MB_DEFAULT = "-1";
+
   @CarbonProperty(dynamicConfigurable = true)
   public static final String ENABLE_VECTOR_READER = "carbon.enable.vector.reader";
 
@@ -1314,7 +1324,7 @@ public final class CarbonCommonConstants {
    * if process crashed when overwriting the table status file.
    * To protect from file corruption, user can enable this property.
    */
-  @CarbonProperty(dynamicConfigurable = true)
+  @CarbonProperty
   public static final String ENABLE_TABLE_STATUS_BACKUP = "carbon.enable.tablestatus.backup";
 
   public static final String ENABLE_TABLE_STATUS_BACKUP_DEFAULT = "false";
@@ -1531,6 +1541,16 @@ public final class CarbonCommonConstants {
 
   public static final String CARBON_QUERY_STAGE_INPUT_DEFAULT = "false";
 
+  /**
+   * MAX_TIMEOUT_FOR_INSERTSTAGE_JOB
+   */
+  public static final String CARBON_INSERT_STAGE_TIMEOUT = "carbon.insert.stage.timeout";
+
+  /**
+   * DFAULT_MAX_TIMEOUT_FOR_INSERTSTAGE_JOB: 8 hour
+   */
+  public static final long CARBON_INSERT_STAGE_TIMEOUT_DEFAULT = 28800000;
+
   //////////////////////////////////////////////////////////////////////////////////////////
   // Index parameter start here
   //////////////////////////////////////////////////////////////////////////////////////////
@@ -1561,6 +1581,9 @@ public final class CarbonCommonConstants {
   @CarbonProperty(dynamicConfigurable = true)
   public static final String CARBON_LOAD_INDEXES_PARALLEL = "carbon.load.indexes.parallel.";
 
+  // Default value for parallel index loading
+  public static final String CARBON_LOAD_INDEXES_PARALLEL_DEFAULT = "false";
+
   // by default lucene will not store or create index for stop words like "is","the", if this
   // property is set to true lucene will index for stop words also and gives result for the filter
   // with stop words(example: TEXT_MATCH('description':'the'))
@@ -1568,6 +1591,16 @@ public final class CarbonCommonConstants {
   public static final String CARBON_LUCENE_INDEX_STOP_WORDS = "carbon.lucene.index.stop.words";
 
   public static final String CARBON_LUCENE_INDEX_STOP_WORDS_DEFAULT = "false";
+
+  // Property to enable parsing the timestamp/date data with setLenient = true in load
+  // flow if it fails with parse invalid timestamp data. (example: 1941-03-15 00:00:00
+  // is valid time in Asia/Calcutta zone and is invalid and will fail to parse in Asia/Shanghai
+  // zone as DST is observed and clocks were turned forward 1 hour to 1941-03-15 01:00:00)
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String
+      CARBON_LOAD_DATEFORMAT_SETLENIENT_ENABLE = "carbon.load.dateformat.setlenient.enable";
+
+  public static final String CARBON_LOAD_DATEFORMAT_SETLENIENT_ENABLE_DEFAULT = "false";
 
   //////////////////////////////////////////////////////////////////////////////////////////
   // Constant value start here
@@ -1620,7 +1653,7 @@ public final class CarbonCommonConstants {
 
   public static final String HDFSURL_PREFIX = "hdfs://";
 
-  public static final String LOCAL_FILE_PREFIX = "file://";
+  public static final String LOCAL_FILE_PREFIX = "file:/";
 
   public static final String VIEWFSURL_PREFIX = "viewfs://";
 
@@ -1631,6 +1664,8 @@ public final class CarbonCommonConstants {
   public static final String S3N_PREFIX = "s3n://";
 
   public static final String S3A_PREFIX = "s3a://";
+
+  public static final String LOCAL_FS_URI = "file:///";
 
   /**
    * Access Key for s3n
@@ -2238,21 +2273,31 @@ public final class CarbonCommonConstants {
       500;
 
   /**
+   * Configured property to enable/disable load failed segments in SI table during
+   * load/insert command.
+   */
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String CARBON_LOAD_SI_REPAIR =  "carbon.load.si.repair";
+
+  /**
+   * Default value for load failed segments in SI table during
+   * load/insert command.
+   */
+  public static final String CARBON_LOAD_SI_REPAIR_DEFAULT = "true";
+
+  /**
+   * Property to give a limit to the number of segments that are reloaded in the
+   * SI table in the FailedSegments listener.
+   */
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String CARBON_SI_REPAIR_LIMIT =  "carbon.si.repair.limit";
+
+  /**
    * Set it to true to enable audit
    */
   public static final String CARBON_ENABLE_AUDIT = "carbon.audit.enabled";
 
   public static final String CARBON_ENABLE_AUDIT_DEFAULT = "true";
-
-  /**
-   * This property will be used to store mv name
-   */
-  public static final String MV_NAME = "mv_name";
-
-  /**
-   * This property will be used to store parentable name's associated with mv
-   */
-  public static final String PARENT_TABLES = "parent_tables";
 
   /**
    * This property will be used to store table name's related with mv
@@ -2264,14 +2309,13 @@ public final class CarbonCommonConstants {
   public static final String CARBON_INDEX_SERVER_JOBNAME_LENGTH =
           "carbon.index.server.max.jobname.length";
 
-  public static final String CARBON_INDEX_SERVER_JOBNAME_LENGTH_DEFAULT =
-          "50";
+  public static final String CARBON_INDEX_SERVER_JOBNAME_LENGTH_DEFAULT = "50";
 
-  @CarbonProperty
   /**
    * Max in memory serialization size after reaching threshold data will
    * be written to file
    */
+  @CarbonProperty
   public static final String CARBON_INDEX_SERVER_SERIALIZATION_THRESHOLD =
       "carbon.index.server.inmemory.serialization.threshold.inKB";
 
@@ -2439,8 +2483,33 @@ public final class CarbonCommonConstants {
   public static final String INDEX_STATUS = "index_status";
 
   /**
-   * Materialized view thread context properties
+   * property which defines the insert stage flow
+   */
+  public static final String IS_INSERT_STAGE = "is_insert_stage";
+
+  /**
+   * index server temp folder aging period
    */
   @CarbonProperty
-  public static final String DISABLE_SQL_REWRITE = "disable_sql_rewrite";
+  public static final String CARBON_INDEXSERVER_TEMPFOLDER_DELETETIME =
+          "carbon.indexserver.tempfolder.deletetime";
+
+  /**
+   * index server temp folder aging period default value 3hours.
+   */
+  public static final String CARBON_INDEXSERVER_TEMPFOLDER_DELETETIME_DEFAULT = "10800000";
+
+  public static final String STRING_LENGTH_EXCEEDED_MESSAGE =
+      "Record %s of column %s exceeded " + MAX_CHARS_PER_COLUMN_DEFAULT +
+          " characters. Please consider long string data type.";
+
+  /**
+   * property which defines the presto query
+   */
+  @CarbonProperty public static final String IS_QUERY_FROM_PRESTO = "is_query_from_presto";
+
+  /**
+   * property which defines the presto query default value
+   */
+  public static final String IS_QUERY_FROM_PRESTO_DEFAULT = "false";
 }

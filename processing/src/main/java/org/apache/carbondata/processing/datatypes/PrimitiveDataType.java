@@ -40,7 +40,6 @@ import org.apache.carbondata.core.util.DataTypeUtil;
 import org.apache.carbondata.processing.loading.converter.BadRecordLogHolder;
 import org.apache.carbondata.processing.loading.converter.impl.binary.BinaryDecoder;
 import org.apache.carbondata.processing.loading.dictionary.DirectDictionary;
-import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException;
 import org.apache.carbondata.processing.util.CarbonDataProcessorUtil;
 
 /**
@@ -241,16 +240,17 @@ public class PrimitiveDataType implements GenericDataType<Object> {
       BadRecordLogHolder logHolder, Boolean isWithoutConverter) throws IOException {
     String parsedValue = null;
     // write null value
-    if (null == input ||
-        (this.carbonDimension.getDataType() == DataTypes.STRING && input.equals(nullFormat))) {
+    if (null == input || ((this.carbonDimension.getDataType() == DataTypes.STRING
+        || this.carbonDimension.getDataType() == DataTypes.VARCHAR) && input.equals(nullFormat))) {
       updateNullValue(dataOutputStream, logHolder);
       return;
     }
     // write null value after converter
     if (!isWithoutConverter) {
       parsedValue = DataTypeUtil.parseValue(input.toString(), carbonDimension);
-      if (null == parsedValue || (this.carbonDimension.getDataType() == DataTypes.STRING
-          && parsedValue.equals(nullFormat))) {
+      if (null == parsedValue || ((this.carbonDimension.getDataType() == DataTypes.STRING
+          || this.carbonDimension.getDataType() == DataTypes.VARCHAR) && parsedValue
+          .equals(nullFormat))) {
         updateNullValue(dataOutputStream, logHolder);
         return;
       }
@@ -301,8 +301,10 @@ public class PrimitiveDataType implements GenericDataType<Object> {
           }
           if (this.carbonDimension.getDataType() == DataTypes.STRING
               && value.length > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
-            throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
-                + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+            logHolder.setReason(String.format(CarbonCommonConstants.STRING_LENGTH_EXCEEDED_MESSAGE,
+                input.toString(), this.carbonDimension.getColName()));
+            updateNullValue(dataOutputStream, logHolder);
+            return;
           }
         }
         updateValueToByteStream(dataOutputStream, value);
@@ -336,15 +338,19 @@ public class PrimitiveDataType implements GenericDataType<Object> {
     if (isWithoutConverter) {
       if (this.carbonDimension.getDataType() == DataTypes.STRING && input instanceof String
           && ((String)input).length() > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
-        throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
-            + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+        logHolder.setReason(String.format(CarbonCommonConstants.STRING_LENGTH_EXCEEDED_MESSAGE,
+            input.toString(), this.carbonDimension.getColName()));
+        updateNullValue(dataOutputStream, logHolder);
+        return;
       }
       updateValueToByteStream(dataOutputStream, value);
     } else {
       if (this.carbonDimension.getDataType() == DataTypes.STRING
           && value.length > CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT) {
-        throw new CarbonDataLoadingException("Dataload failed, String size cannot exceed "
-            + CarbonCommonConstants.MAX_CHARS_PER_COLUMN_DEFAULT + " bytes");
+        logHolder.setReason(String.format(CarbonCommonConstants.STRING_LENGTH_EXCEEDED_MESSAGE,
+            input.toString(), this.carbonDimension.getColName()));
+        updateNullValue(dataOutputStream, logHolder);
+        return;
       }
       if (parsedValue.length() > 0) {
         updateValueToByteStream(dataOutputStream,
@@ -408,7 +414,8 @@ public class PrimitiveDataType implements GenericDataType<Object> {
 
   private void updateNullValue(DataOutputStream dataOutputStream, BadRecordLogHolder logHolder)
       throws IOException {
-    if (this.carbonDimension.getDataType() == DataTypes.STRING) {
+    if (this.carbonDimension.getDataType() == DataTypes.STRING
+        || this.carbonDimension.getDataType() == DataTypes.VARCHAR) {
       if (DataTypeUtil.isByteArrayComplexChildColumn(dataType)) {
         dataOutputStream.writeInt(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY.length);
       } else {

@@ -18,7 +18,7 @@ package org.apache.carbondata.spark.testsuite.standardpartition
 
 import java.io.{File, FileWriter, IOException}
 import java.util
-import java.util.concurrent.{Callable, Executors, ExecutorService}
+import java.util.concurrent.{Callable, ExecutorService, Executors}
 
 import org.apache.commons.io.FileUtils
 import org.apache.hadoop.conf.Configuration
@@ -519,6 +519,72 @@ class StandardPartitionTableLoadingTestCase extends QueryTest with BeforeAndAfte
     sql("drop table origin_csv")
   }
 
+  test("test partition column case insensitive: insert into") {
+    sql(
+      """create table cs_insert_p
+        |(id int, Name string)
+        |stored as carbondata
+        |partitioned by (c1 int, c2 int, C3 string)""".stripMargin)
+    sql("alter table cs_insert_p drop if exists partition(C1=1, C2=111, c3='2019-11-18')")
+    sql("alter table cs_insert_p add if not exists partition(C1=1, c2=111, C3='2019-11-18')")
+    sql(
+      """insert into table cs_insert_p
+        | partition(c1=3, C2=111, c3='2019-11-18')
+        | select 200, 'cc'""".stripMargin)
+    checkAnswer(sql("select count(*) from cs_insert_p"), Seq(Row(1)))
+    sql("alter table cs_insert_p drop if exists partition(C1=3, C2=111, c3='2019-11-18')")
+    checkAnswer(sql("select count(*) from cs_insert_p"), Seq(Row(0)))
+  }
+
+  test("test partition column case insensitive: load data") {
+    sql(
+      """
+        | CREATE TABLE cs_load_p (doj Timestamp,
+        |  workgroupcategory int, workgroupcategoryname String, deptno int, deptname String,
+        |  projectcode int, projectjoindate Timestamp, projectenddate Timestamp,attendance int,
+        |  utilization int,salary int)
+        | PARTITIONED BY (empnO int, empnAme String, designaTion String)
+        | STORED AS carbondata
+      """.stripMargin)
+    sql(s"""LOAD DATA local inpath '$resourcesPath/data.csv' INTO TABLE cs_load_p PARTITION(empNo='99', empName='ravi', Designation='xx')""")
+    sql(s"""LOAD DATA local inpath '$resourcesPath/data.csv' INTO TABLE cs_load_p PARTITION(empno='100', emPname='indra', designation='yy')""")
+    checkAnswer(sql("show partitions cs_load_p"), Seq(
+      Row("empno=100/empname=indra/designation=yy"),
+      Row("empno=99/empname=ravi/designation=xx")))
+  }
+
+  test("test create partition table with all the columns as partition columns") {
+    sql("drop table if exists partitionall_columns")
+    val ex = intercept[AnalysisException] {
+      sql(
+        """
+          | CREATE TABLE partitionall_columns
+          | PARTITIONED BY (empno int,empname String, designation String)
+          | STORED AS carbondata
+      """.stripMargin)
+    }
+    assert(ex.getMessage().equalsIgnoreCase("Cannot use all columns for partition columns;"))
+  }
+
+  test("test partition without merge index files for segment") {
+    try {
+      sql("DROP TABLE IF EXISTS new_par")
+      CarbonProperties.getInstance()
+        .addProperty(CarbonCommonConstants.CARBON_MERGE_INDEX_IN_SEGMENT, "false")
+      sql(
+        s"""CREATE TABLE new_par (a INT, b INT) PARTITIONED BY (country STRING) STORED AS
+           |carbondata""".stripMargin)
+      sql("INSERT INTO new_par PARTITION(country='India') SELECT 1,2")
+      sql("INSERT INTO new_par PARTITION(country='India') SELECT 3,4")
+      sql("INSERT INTO new_par PARTITION(country='China') SELECT 5,6")
+      sql("INSERT INTO new_par PARTITION(country='China') SELECT 7,8")
+      checkAnswer(sql("SELECT COUNT(*) FROM new_par"), Seq(Row(4)))
+    } finally {
+      CarbonProperties.getInstance()
+        .removeProperty(CarbonCommonConstants.CARBON_MERGE_INDEX_IN_SEGMENT)
+    }
+  }
+
   def verifyInsertForPartitionTable(tableName: String, sort_scope: String): Unit = {
     sql(s"drop table if exists $tableName")
     sql(
@@ -628,6 +694,8 @@ class StandardPartitionTableLoadingTestCase extends QueryTest with BeforeAndAfte
     sql("drop table if exists restorepartition")
     sql("drop table if exists casesensitivepartition")
     sql("drop table if exists new_par")
+    sql("drop table if exists cs_insert_p")
+    sql("drop table if exists cs_load_p")
   }
 
 }

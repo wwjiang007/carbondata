@@ -31,6 +31,7 @@ import org.apache.spark.internal.io.FileCommitProtocol.TaskCommitMessage
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.{QueryExecution, SQLExecution}
+import org.apache.spark.sql.execution.command.management.CommonLoadUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
@@ -47,10 +48,9 @@ import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.events.{OperationContext, OperationListenerBus}
 import org.apache.carbondata.hadoop.util.CarbonInputFormatUtil
 import org.apache.carbondata.processing.loading.constants.DataLoadProcessorConstants
-import org.apache.carbondata.processing.loading.events.LoadEvents.{LoadTablePostExecutionEvent, LoadTablePreExecutionEvent}
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel
 import org.apache.carbondata.spark.rdd.StreamHandoffRDD
-import org.apache.carbondata.spark.util.CommonUtil
+import org.apache.carbondata.spark.util.{CarbonSparkUtil, CommonUtil}
 import org.apache.carbondata.streaming.{CarbonStreamException, CarbonStreamOutputFormat}
 import org.apache.carbondata.streaming.index.StreamFileIndex
 import org.apache.carbondata.streaming.parser.CarbonStreamParser
@@ -126,16 +126,16 @@ class CarbonAppendableStreamSink(
 
       // fire pre event on every batch add
       // in case of streaming options and optionsFinal can be same
-      val loadTablePreExecutionEvent = new LoadTablePreExecutionEvent(
-        carbonTable.getCarbonTableIdentifier,
+      val (tableIndexes, indexOperationContext) = CommonLoadUtils.firePreLoadEvents(sparkSession,
         carbonLoadModel,
+        "",
         carbonLoadModel.getFactFilePath,
+        parameters.asJava,
+        parameters.asJava,
         false,
-        parameters.asJava,
-        parameters.asJava,
-        false
-      )
-      OperationListenerBus.getInstance().fireEvent(loadTablePreExecutionEvent, operationContext)
+        false,
+        None,
+        operationContext)
       checkOrHandOffSegment()
 
       // committer will record how this spark job commit its output
@@ -162,11 +162,12 @@ class CarbonAppendableStreamSink(
         carbonLoadModel,
         msrDataTypes)
       // fire post event on every batch add
-      val loadTablePostExecutionEvent = new LoadTablePostExecutionEvent(
-        carbonTable.getCarbonTableIdentifier,
-        carbonLoadModel
-      )
-      OperationListenerBus.getInstance().fireEvent(loadTablePostExecutionEvent, operationContext)
+      CommonLoadUtils.firePostLoadEvents(sparkSession,
+        carbonLoadModel,
+        tableIndexes,
+        indexOperationContext,
+        carbonTable,
+        operationContext)
 
       statistic.addStatistics(s"add batch: $batchId", System.currentTimeMillis())
       CarbonAppendableStreamSink.LOGGER.info(
@@ -239,10 +240,10 @@ object CarbonAppendableStreamSink {
       msrDataTypes: Array[DataType]): Unit = {
 
     // create job
-    val job = Job.getInstance(hadoopConf)
+    val job = CarbonSparkUtil.createHadoopJob(hadoopConf)
     job.setOutputKeyClass(classOf[Void])
     job.setOutputValueClass(classOf[InternalRow])
-    val jobId = CarbonInputFormatUtil.getJobId(new Date, batchId.toInt)
+    val jobId = CarbonInputFormatUtil.getJobId(batchId.toInt)
     job.setJobID(jobId)
 
     val description = WriteDataFileJobDescription(
@@ -316,7 +317,7 @@ object CarbonAppendableStreamSink {
       rowSchema: StructType,
       isVarcharTypeMapping: Array[Boolean]): (TaskCommitMessage, StreamFileIndex) = {
 
-    val jobId = CarbonInputFormatUtil.getJobId(new Date, sparkStageId)
+    val jobId = CarbonInputFormatUtil.getJobId(sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
     val taskAttemptId = new TaskAttemptID(taskId, sparkAttemptNumber)
 

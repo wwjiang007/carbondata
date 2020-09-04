@@ -48,7 +48,7 @@ public abstract class BinaryLogicalExpression extends BinaryExpression {
     return listOfExp;
   }
 
-  // Will get the column informations involved in the expressions by
+  // Will get the column information involved in the expressions by
   // traversing the tree
   public List<ColumnExpression> getColumnList() {
     // TODO
@@ -84,10 +84,8 @@ public abstract class BinaryLogicalExpression extends BinaryExpression {
     List<ColumnExpression> listOfExp =
         new ArrayList<ColumnExpression>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     getColumnList(this, listOfExp);
-    if (listOfExp.size() == 1 && (listOfExp.get(0).isDimension() || listOfExp.get(0).isMeasure())) {
-      return true;
-    }
-    return false;
+    return listOfExp.size() == 1 && (listOfExp.get(0).isDimension() || listOfExp.get(0)
+        .isMeasure());
 
   }
 

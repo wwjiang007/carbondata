@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.sun.xml.internal.messaging.saaj.util.ByteOutputStream
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.test.util.QueryTest
 import org.scalatest.BeforeAndAfterAll
 
@@ -40,11 +41,11 @@ import org.apache.carbondata.core.datastore.page.ColumnPage
 import org.apache.carbondata.core.features.TableOperation
 import org.apache.carbondata.core.indexstore.blockletindex.BlockletIndexInputSplit
 import org.apache.carbondata.core.indexstore.{Blocklet, PartitionSpec}
-import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, IndexSchema, DiskBasedIndexSchemaStorageProvider}
-import org.apache.carbondata.core.metadata.{AbsoluteTableIdentifier, CarbonMetadata}
+import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier
+import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, IndexSchema}
 import org.apache.carbondata.core.scan.expression.Expression
 import org.apache.carbondata.core.scan.expression.conditional.EqualToExpression
-import org.apache.carbondata.core.scan.filter.executer.FilterExecuter
+import org.apache.carbondata.core.scan.filter.executer.FilterExecutor
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf
 import org.apache.carbondata.core.util.{ByteUtil, CarbonProperties}
@@ -160,7 +161,7 @@ class CGIndexFactory(
    * Get the indexSchema for segmentId and partitionSpecs
    */
   override def getIndexes(segment: Segment,
-      partitions: java.util.List[PartitionSpec]): java.util.List[CoarseGrainIndex] = {
+      partitionLocations: java.util.Set[Path]): java.util.List[CoarseGrainIndex] = {
     getIndexes(segment);
   }
 }
@@ -174,7 +175,7 @@ class CGIndex extends CoarseGrainIndex {
   var shardName: String = _
 
   /**
-   * It is called to load the data map to memory or to initialize it.
+   * It is called to load the index to memory or to initialize it.
    */
   override def init(indexModel: IndexModel): Unit = {
     val indexPath = FileFactory.getPath(indexModel.getFilePath)
@@ -201,8 +202,7 @@ class CGIndex extends CoarseGrainIndex {
   override def prune(
       filterExp: FilterResolverIntf,
       segmentProperties: SegmentProperties,
-      partitions: java.util.List[PartitionSpec],
-      filterExecuter: FilterExecuter,
+      filterExecuter: FilterExecutor,
       carbonTable: CarbonTable): java.util.List[Blocklet] = {
     val buffer: ArrayBuffer[Expression] = new ArrayBuffer[Expression]()
     val expression = filterExp.getFilterExpression
@@ -361,7 +361,6 @@ class CGIndexWriter(
 class CGIndexTestCase extends QueryTest with BeforeAndAfterAll {
 
   val file2 = resourcesPath + "/compaction/fil2.csv"
-  val systemFolderStoreLocation = CarbonProperties.getInstance().getSystemFolderLocation
 
   override protected def beforeAll(): Unit = {
     //n should be about 5000000 of reset if size is default 1024

@@ -34,6 +34,7 @@ import org.apache.carbondata.core.datastore.page.ColumnPage;
 import org.apache.carbondata.core.datastore.page.encoding.bool.BooleanConvert;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryGenerator;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
+import org.apache.carbondata.core.keygenerator.directdictionary.timestamp.DateDirectDictionaryGenerator;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
@@ -51,7 +52,7 @@ public final class DataTypeUtil {
   private static final Logger LOGGER =
       LogServiceFactory.getLogService(DataTypeUtil.class.getName());
 
-  private static final ThreadLocal<DateFormat> timeStampformatter = new ThreadLocal<DateFormat>() {
+  private static final ThreadLocal<DateFormat> timestampFormatter = new ThreadLocal<DateFormat>() {
     @Override
     protected DateFormat initialValue() {
       DateFormat dateFormat = new SimpleDateFormat(CarbonProperties.getInstance()
@@ -62,7 +63,7 @@ public final class DataTypeUtil {
     }
   };
 
-  private static final ThreadLocal<DateFormat> dateformatter = new ThreadLocal<DateFormat>() {
+  private static final ThreadLocal<DateFormat> dateFormatter = new ThreadLocal<DateFormat>() {
     @Override
     protected DateFormat initialValue() {
       return new SimpleDateFormat(CarbonProperties.getInstance()
@@ -119,7 +120,7 @@ public final class DataTypeUtil {
     } else if (dataType == DataTypes.BYTE) {
       return Byte.parseByte(msrValue);
     } else {
-      Double parsedValue = Double.valueOf(msrValue);
+      double parsedValue = Double.parseDouble(msrValue);
       if (Double.isInfinite(parsedValue) || Double.isNaN(parsedValue)) {
         return null;
       }
@@ -157,22 +158,9 @@ public final class DataTypeUtil {
     } else if (dataType == DataTypes.BYTE) {
       return Byte.parseByte(dimValue);
     } else if (dataType == DataTypes.TIMESTAMP) {
-      Date dateToStr = null;
-      DateFormat dateFormatter = null;
-      try {
-        if (null != timeStampFormat && !timeStampFormat.trim().isEmpty()) {
-          dateFormatter = new SimpleDateFormat(timeStampFormat);
-          dateFormatter.setLenient(false);
-        } else {
-          dateFormatter = timeStampformatter.get();
-        }
-        dateToStr = dateFormatter.parse(dimValue);
-        return dateToStr.getTime();
-      } catch (ParseException e) {
-        throw new NumberFormatException(e.getMessage());
-      }
+      return parseTimestamp(dimValue, timeStampFormat);
     } else {
-      Double parsedValue = Double.valueOf(dimValue);
+      double parsedValue = Double.parseDouble(dimValue);
       if (Double.isInfinite(parsedValue) || Double.isNaN(parsedValue)) {
         return null;
       }
@@ -257,11 +245,11 @@ public final class DataTypeUtil {
   public static byte[] bigDecimalToByte(BigDecimal num) {
     BigInteger sig = new BigInteger(num.unscaledValue().toString());
     int scale = num.scale();
-    byte[] bscale = { (byte) (scale) };
+    byte[] scaleBytes = { (byte) (scale) };
     byte[] buff = sig.toByteArray();
-    byte[] completeArr = new byte[buff.length + bscale.length];
-    System.arraycopy(bscale, 0, completeArr, 0, bscale.length);
-    System.arraycopy(buff, 0, completeArr, bscale.length, buff.length);
+    byte[] completeArr = new byte[buff.length + scaleBytes.length];
+    System.arraycopy(scaleBytes, 0, completeArr, 0, scaleBytes.length);
+    System.arraycopy(buff, 0, completeArr, scaleBytes.length, buff.length);
     return completeArr;
   }
 
@@ -273,9 +261,9 @@ public final class DataTypeUtil {
    */
   public static BigDecimal byteToBigDecimal(byte[] raw) {
     int scale = (raw[0] & 0xFF);
-    byte[] unscale = new byte[raw.length - 1];
-    System.arraycopy(raw, 1, unscale, 0, unscale.length);
-    BigInteger sig = new BigInteger(unscale);
+    byte[] value = new byte[raw.length - 1];
+    System.arraycopy(raw, 1, value, 0, value.length);
+    BigInteger sig = new BigInteger(value);
     return new BigDecimal(sig, scale);
   }
 
@@ -287,9 +275,9 @@ public final class DataTypeUtil {
    */
   public static BigDecimal byteToBigDecimal(byte[] raw, int offset, int length) {
     int scale = (raw[offset] & 0xFF);
-    byte[] unscale = new byte[length - 1];
-    System.arraycopy(raw, offset + 1, unscale, 0, unscale.length);
-    BigInteger sig = new BigInteger(unscale);
+    byte[] value = new byte[length - 1];
+    System.arraycopy(raw, offset + 1, value, 0, value.length);
+    BigInteger sig = new BigInteger(value);
     return new BigDecimal(sig, scale);
   }
 
@@ -354,7 +342,7 @@ public final class DataTypeUtil {
           return null;
         }
         try {
-          Date dateToStr = dateformatter.get().parse(data);
+          Date dateToStr = dateFormatter.get().parse(data);
           return dateToStr.getTime() * 1000;
         } catch (ParseException e) {
           LOGGER.error("Cannot convert value to Time/Long type value" + e.getMessage(), e);
@@ -365,7 +353,7 @@ public final class DataTypeUtil {
           return null;
         }
         try {
-          Date dateToStr = timeStampformatter.get().parse(data);
+          Date dateToStr = timestampFormatter.get().parse(data);
           return dateToStr.getTime() * 1000;
         } catch (ParseException e) {
           LOGGER.error("Cannot convert value to Time/Long type value" + e.getMessage(), e);
@@ -411,7 +399,7 @@ public final class DataTypeUtil {
           dateFormatter = new SimpleDateFormat(dateFormat);
           dateFormatter.setLenient(false);
         } else {
-          dateFormatter = timeStampformatter.get();
+          dateFormatter = timestampFormatter.get();
         }
         dateToStr = dateFormatter.parse(dimensionValue);
         return ByteUtil.toXorBytes(dateToStr.getTime());
@@ -439,23 +427,59 @@ public final class DataTypeUtil {
     } else if (DataTypes.isDecimal(actualDataType)) {
       return new BigDecimal(dimensionValue);
     } else if (actualDataType == DataTypes.TIMESTAMP) {
-      Date dateToStr = null;
-      DateFormat dateFormatter = null;
-      try {
-        if (null != dateFormat && !dateFormat.trim().isEmpty()) {
-          dateFormatter = new SimpleDateFormat(dateFormat);
-          dateFormatter.setLenient(false);
-        } else {
-          dateFormatter = timeStampformatter.get();
-        }
-        dateToStr = dateFormatter.parse(dimensionValue);
-        return dateToStr.getTime();
-      } catch (ParseException e) {
-        throw new NumberFormatException(e.getMessage());
-      }
+      return parseTimestamp(dimensionValue, dateFormat);
     } else {
       // Default action for String/Varchar
       return converter.convertFromStringToUTF8String(dimensionValue);
+    }
+  }
+
+  private static Object parseTimestamp(String dimensionValue, String dateFormat) {
+    Date dateToStr;
+    DateFormat dateFormatter = null;
+    long timeValue;
+    try {
+      if (null != dateFormat && !dateFormat.trim().isEmpty()) {
+        dateFormatter = new SimpleDateFormat(dateFormat);
+        dateFormatter.setLenient(false);
+      } else {
+        dateFormatter = timestampFormatter.get();
+      }
+      dateToStr = dateFormatter.parse(dimensionValue);
+      timeValue = dateToStr.getTime();
+      validateTimeStampRange(timeValue);
+      return timeValue;
+    } catch (ParseException e) {
+      // If the parsing fails, try to parse again with setLenient to true if the property is set
+      // (example: 1941-03-15 00:00:00 is invalid data and will fail to parse in Asia/Shanghai zone
+      // as DST is observed and clocks were turned forward 1 hour to 1941-03-15 01:00:00)
+      if (CarbonProperties.getInstance().isSetLenientEnabled()) {
+        try {
+          dateFormatter.setLenient(true);
+          dateToStr = dateFormatter.parse(dimensionValue);
+          timeValue = dateToStr.getTime();
+          validateTimeStampRange(timeValue);
+          LOGGER.info("Parsed data with lenience as true, setting back to default mode");
+          return timeValue;
+        } catch (ParseException ex) {
+          LOGGER.info("Failed to parse data with lenience as true, setting back to default mode");
+          throw new NumberFormatException(ex.getMessage());
+        } finally {
+          dateFormatter.setLenient(false);
+        }
+      } else {
+        throw new NumberFormatException(e.getMessage());
+      }
+    }
+  }
+
+  private static void validateTimeStampRange(Long timeValue) {
+    if (timeValue < DateDirectDictionaryGenerator.MIN_VALUE
+        || timeValue > DateDirectDictionaryGenerator.MAX_VALUE) {
+      throw new NumberFormatException(
+          "timestamp column data value: " + timeValue + "is not in valid range of: "
+              + DateDirectDictionaryGenerator.MIN_VALUE + " and "
+              + DateDirectDictionaryGenerator.MAX_VALUE);
     }
   }
 
@@ -517,7 +541,7 @@ public final class DataTypeUtil {
       }
     }
     if (actualDataType == DataTypes.BOOLEAN) {
-      return ByteUtil.toBytes(Boolean.valueOf(ByteUtil.toBoolean((byte) dimensionValue)));
+      return ByteUtil.toBytes(ByteUtil.toBoolean((byte) dimensionValue));
     } else if (actualDataType == DataTypes.SHORT) {
       return ByteUtil.toXorBytes((Short) dimensionValue);
     } else if (actualDataType == DataTypes.INT) {
@@ -538,14 +562,16 @@ public final class DataTypeUtil {
    * @return
    */
   public static boolean isFixedSizeDataType(DataType dataType) {
-    if (dataType == DataTypes.STRING ||
-        dataType == DataTypes.VARCHAR ||
-        dataType == DataTypes.BINARY ||
-        DataTypes.isDecimal(dataType)) {
-      return false;
-    } else {
-      return true;
-    }
+    return dataType != DataTypes.STRING
+        && dataType != DataTypes.VARCHAR
+        && dataType != DataTypes.BINARY
+        && !DataTypes.isDecimal(dataType);
+  }
+
+  public static Object getDataBasedOnDataTypeForNoDictionaryColumn(byte[] dataInBytes,
+      DataType actualDataType, boolean isTimeStampConversion) {
+    return getDataBasedOnDataTypeForNoDictionaryColumn(dataInBytes, actualDataType,
+        isTimeStampConversion, false);
   }
 
   /**
@@ -557,7 +583,7 @@ public final class DataTypeUtil {
    */
   public static Object getDataBasedOnDataTypeForNoDictionaryColumn(byte[] dataInBytes,
       DataType actualDataType) {
-    return getDataBasedOnDataTypeForNoDictionaryColumn(dataInBytes, actualDataType, true);
+    return getDataBasedOnDataTypeForNoDictionaryColumn(dataInBytes, actualDataType, true, false);
   }
 
   /**
@@ -570,7 +596,7 @@ public final class DataTypeUtil {
    * @return actual data after conversion
    */
   public static Object getDataBasedOnDataTypeForNoDictionaryColumn(byte[] dataInBytes,
-      DataType actualDataType, boolean isTimeStampConversion) {
+      DataType actualDataType, boolean isTimeStampConversion, boolean getBytesData) {
     if (null == dataInBytes || Arrays
         .equals(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY, dataInBytes)) {
       return null;
@@ -627,6 +653,9 @@ public final class DataTypeUtil {
         }
         return dataInBytes;
       } else {
+        if (getBytesData) {
+          return dataInBytes;
+        }
         // Default action for String/Varchar
         return getDataTypeConverter().convertFromByteToUTF8String(dataInBytes);
       }
@@ -694,7 +723,7 @@ public final class DataTypeUtil {
           return null;
         }
         try {
-          Date dateToStr = dateformatter.get().parse(data5);
+          Date dateToStr = dateFormatter.get().parse(data5);
           return dateToStr.getTime() * 1000;
         } catch (ParseException e) {
           LOGGER.error("Cannot convert value to Time/Long type value" + e.getMessage(), e);
@@ -706,7 +735,7 @@ public final class DataTypeUtil {
           return null;
         }
         try {
-          Date dateToStr = timeStampformatter.get().parse(data6);
+          Date dateToStr = timestampFormatter.get().parse(data6);
           return dateToStr.getTime() * 1000;
         } catch (ParseException e) {
           LOGGER.error("Cannot convert value to Time/Long type value" + e.getMessage(), e);
@@ -739,7 +768,7 @@ public final class DataTypeUtil {
   }
 
   /**
-   * Below method will be used to basically to know whether any non parseable
+   * Below method will be used to basically to know whether any non parsable
    * data is present or not. if present then return null so that system can
    * process to default null member value.
    *
@@ -763,39 +792,6 @@ public final class DataTypeUtil {
       }
       return data;
     } catch (NumberFormatException ex) {
-      return null;
-    }
-  }
-
-  /**
-   * This method will parse a given string value corresponding to its data type
-   *
-   * @param value     value to parse
-   * @param dimension dimension to get data type and precision and scale in case of decimal
-   *                  data type
-   * @return
-   */
-  public static String normalizeColumnValueForItsDataType(String value, CarbonColumn dimension) {
-    try {
-      Object parsedValue = null;
-      // validation will not be done for timestamp datatype as for timestamp direct dictionary
-      // is generated. No dictionary file is created for timestamp datatype column
-      DataType dataType = dimension.getDataType();
-      if (DataTypes.isDecimal(dataType)) {
-        return parseStringToBigDecimal(value, dimension);
-      } else if (dataType == DataTypes.SHORT || dataType == DataTypes.INT ||
-          dataType == DataTypes.LONG) {
-        parsedValue = normalizeIntAndLongValues(value, dimension.getDataType());
-      } else if (dataType == DataTypes.DOUBLE) {
-        parsedValue = Double.parseDouble(value);
-      } else {
-        return value;
-      }
-      if (null != parsedValue) {
-        return value;
-      }
-      return null;
-    } catch (Exception e) {
       return null;
     }
   }
@@ -880,11 +876,11 @@ public final class DataTypeUtil {
       long parsedIntVal = 0;
       DataType dataType = columnSchema.getDataType();
       if (dataType == DataTypes.INT) {
-        parsedIntVal = (long) Integer.parseInt(data);
+        parsedIntVal = Integer.parseInt(data);
         return String.valueOf(parsedIntVal)
             .getBytes(Charset.forName(CarbonCommonConstants.DEFAULT_CHARSET));
       } else if (dataType == DataTypes.SHORT) {
-        parsedIntVal = (long) Short.parseShort(data);
+        parsedIntVal = Short.parseShort(data);
         return String.valueOf(parsedIntVal)
             .getBytes(Charset.forName(CarbonCommonConstants.DEFAULT_CHARSET));
       } else if (dataType == DataTypes.DOUBLE) {
@@ -908,8 +904,8 @@ public final class DataTypeUtil {
               .getBytes(Charset.forName(CarbonCommonConstants.DEFAULT_CHARSET));
         } else {
           try {
-            timeStampformatter.remove();
-            Date dateToStr = timeStampformatter.get().parse(data);
+            timestampFormatter.remove();
+            Date dateToStr = timestampFormatter.get().parse(data);
             return ByteUtil.toXorBytes(dateToStr.getTime());
           } catch (ParseException e) {
             LOGGER.error(
@@ -934,37 +930,6 @@ public final class DataTypeUtil {
     }
   }
 
-  /**
-   * This method will parse a given string value corresponding to its data type
-   *
-   * @param value        value to parse
-   * @param columnSchema dimension to get data type and precision and scale in case of decimal
-   *                     data type
-   * @return
-   */
-  public static String normalizeColumnValueForItsDataType(String value, ColumnSchema columnSchema) {
-    try {
-      Object parsedValue = null;
-      DataType dataType = columnSchema.getDataType();
-      if (DataTypes.isDecimal(dataType)) {
-        return parseStringToBigDecimal(value, columnSchema);
-      } else if (dataType == DataTypes.SHORT || dataType == DataTypes.INT ||
-          dataType == DataTypes.LONG) {
-        parsedValue = normalizeIntAndLongValues(value, columnSchema.getDataType());
-      } else if (dataType == DataTypes.DOUBLE) {
-        parsedValue = Double.parseDouble(value);
-      } else {
-        return value;
-      }
-      if (null != parsedValue) {
-        return value;
-      }
-      return null;
-    } catch (Exception e) {
-      return null;
-    }
-  }
-
   private static String parseStringToBigDecimal(String value, ColumnSchema columnSchema) {
     BigDecimal bigDecimal =
         new BigDecimal(value).setScale(columnSchema.getScale(), RoundingMode.HALF_UP);
@@ -983,8 +948,8 @@ public final class DataTypeUtil {
   public static void setDataTypeConverter(DataTypeConverter converterLocal) {
     if (converterLocal != null) {
       converter = converterLocal;
-      timeStampformatter.remove();
-      dateformatter.remove();
+      timestampFormatter.remove();
+      dateFormatter.remove();
     }
   }
 
@@ -992,8 +957,8 @@ public final class DataTypeUtil {
    * As each load can have it's own time format. Reset the thread local for each load.
    */
   public static void clearFormatter() {
-    timeStampformatter.remove();
-    dateformatter.remove();
+    timestampFormatter.remove();
+    dateFormatter.remove();
   }
 
   public static DataTypeConverter getDataTypeConverter() {
@@ -1087,13 +1052,15 @@ public final class DataTypeUtil {
    * @return
    */
   public static boolean isPrimitiveColumn(DataType dataType) {
-    if (dataType == DataTypes.BOOLEAN || dataType == DataTypes.BYTE || dataType == DataTypes.SHORT
-        || dataType == DataTypes.INT || dataType == DataTypes.LONG
-        || dataType == DataTypes.TIMESTAMP || DataTypes.isDecimal(dataType)
-        || dataType == DataTypes.FLOAT || dataType == DataTypes.DOUBLE) {
-      return true;
-    }
-    return false;
+    return dataType == DataTypes.BOOLEAN
+        || dataType == DataTypes.BYTE
+        || dataType == DataTypes.SHORT
+        || dataType == DataTypes.INT
+        || dataType == DataTypes.LONG
+        || dataType == DataTypes.TIMESTAMP
+        || DataTypes.isDecimal(dataType)
+        || dataType == DataTypes.FLOAT
+        || dataType == DataTypes.DOUBLE;
   }
 
   /**

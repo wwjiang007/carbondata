@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.analysis.{UnresolvedAttribute, UnresolvedRe
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.command.cache.{CarbonDropCacheCommand, CarbonShowCacheCommand}
-import org.apache.spark.sql.execution.command.index.{CarbonCreateIndexCommand, CarbonRefreshIndexCommand, DropIndexCommand, ShowIndexesCommand}
+import org.apache.spark.sql.execution.command.index.{CarbonCreateIndexCommand, CarbonRefreshIndexCommand, DropIndexCommand, IndexRepairCommand, ShowIndexesCommand}
 import org.apache.spark.sql.execution.command.management._
 import org.apache.spark.sql.execution.command.schema.CarbonAlterTableDropColumnCommand
 import org.apache.spark.sql.execution.command.stream.{CarbonCreateStreamCommand, CarbonDropStreamCommand, CarbonShowStreamsCommand}
@@ -60,15 +60,7 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
       phrase(start)(new lexical.Scanner(input)) match {
         case Success(plan, _) =>
           CarbonScalaUtil.cleanParserThreadLocals()
-          plan match {
-            case x: CarbonLoadDataCommand =>
-              x.inputSqlString = input
-              x
-            case x: CarbonAlterTableCompactionCommand =>
-              x.alterTableModel.alterSql = input
-              x
-            case logicalPlan => logicalPlan
-        }
+          plan
         case failureOrError =>
           CarbonScalaUtil.cleanParserThreadLocals()
           CarbonException.analysisException(failureOrError.toString)
@@ -105,7 +97,8 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
     createMV | dropMV | showMV | refreshMV
 
   protected lazy val indexCommands: Parser[LogicalPlan] =
-    createIndex | dropIndex | showIndexes | registerIndexes | refreshIndex
+    createIndex | dropIndex | showIndexes | registerIndexes | refreshIndex | repairIndex |
+      repairIndexDatabase
 
   protected lazy val alterTable: Parser[LogicalPlan] =
     ALTER ~> TABLE ~> (ident <~ ".").? ~ ident ~ (COMPACT ~ stringLit) ~
@@ -113,7 +106,7 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
       opt(";") ^^ {
       case dbName ~ table ~ (compact ~ compactType) ~ segs =>
         val alterTableModel = AlterTableModel(CarbonParserUtil.convertDbNameToLowerCase(dbName),
-          table, None, compactType, Some(System.currentTimeMillis()), null, segs)
+          table, None, compactType, Some(System.currentTimeMillis()), segs)
         CarbonAlterTableCompactionCommand(alterTableModel)
     }
 
@@ -194,9 +187,9 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
           // validate for supported table properties
           validateTableProperties(properties)
           // validate column_meta_cache property if defined
-          validateColumnMetaCacheAndCacheLevelProeprties(
+          validateColumnMetaCacheAndCacheLevelProperties(
             table.database, indexName.toLowerCase, tableColumns, properties)
-          validateColumnCompressorProperty(
+          CarbonSparkSqlParserUtil.validateColumnCompressorProperty(
             properties.getOrElse(CarbonCommonConstants.COMPRESSOR, null))
           CarbonCreateSecondaryIndexCommand(
             indexModel,
@@ -275,8 +268,8 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
           }
           if (isJoinWithMainTable && isLimitPresent) {
             throw new UnsupportedOperationException(
-              "Update subquery has join with maintable and limit leads to multiple join for each " +
-              "limit for each row")
+              "Update subquery has join with main table and limit leads to multiple join for " +
+              "each limit for each row")
           }
           if (!isJoinWithMainTable) {
             // Should go as value update, not as join update. So execute the sub query.
@@ -461,8 +454,8 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
     DELETE ~> FROM ~ TABLE ~> (ident <~ ".").? ~ ident ~
     (WHERE ~> (SEGMENT ~ "." ~ ID) ~> IN ~> "(" ~> repsep(segmentId, ",")) <~ ")" ~
     opt(";") ^^ {
-      case dbName ~ tableName ~ loadids =>
-        CarbonDeleteLoadByIdCommand(loadids, dbName, tableName.toLowerCase())
+      case dbName ~ tableName ~ loadIds =>
+        CarbonDeleteLoadByIdCommand(loadIds, dbName, tableName.toLowerCase())
     }
 
   protected lazy val deleteSegmentByLoadDate: Parser[LogicalPlan] =
@@ -541,19 +534,23 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
    */
   protected lazy val showSegments: Parser[LogicalPlan] =
     (SHOW ~> opt(HISTORY) <~ SEGMENTS <~ ((FOR <~ TABLE) | ON)) ~ (ident <~ ".").? ~ ident ~
-    (AS  ~> restInput).? <~ opt(";") ^^ {
-      case showHistory ~ databaseName ~ tableName ~ queryOp =>
+      opt(WITH <~ STAGE) ~ (LIMIT ~> numericLit).? ~ (AS  ~> restInput).? <~ opt(";") ^^ {
+      case showHistory ~ databaseName ~ tableName ~ withStage ~ limit ~ queryOp =>
         if (queryOp.isEmpty) {
           CarbonShowSegmentsCommand(
             CarbonParserUtil.convertDbNameToLowerCase(databaseName),
             tableName.toLowerCase(),
-            showHistory.isDefined)
+            if (limit.isDefined) Some(Integer.valueOf(limit.get)) else None,
+            showHistory.isDefined,
+            withStage.isDefined)
         } else {
           CarbonShowSegmentsAsSelectCommand(
             CarbonParserUtil.convertDbNameToLowerCase(databaseName),
             tableName.toLowerCase(),
             queryOp.get,
-            showHistory.isDefined)
+            if (limit.isDefined) Some(Integer.valueOf(limit.get)) else None,
+            showHistory.isDefined,
+            withStage.isDefined)
         }
     }
 
@@ -614,7 +611,7 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
         CarbonAlterTableDropColumnCommand(alterTableDropColumnModel)
     }
 
-  private def validateColumnMetaCacheAndCacheLevelProeprties(dbName: Option[String],
+  private def validateColumnMetaCacheAndCacheLevelProperties(dbName: Option[String],
       tableName: String,
       tableColumns: Seq[String],
       tableProperties: scala.collection.mutable.Map[String, String]): Unit = {
@@ -632,18 +629,6 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
       CommonUtil.validateCacheLevel(
         tableProperties(CarbonCommonConstants.CACHE_LEVEL),
         tableProperties)
-    }
-  }
-
-  private def validateColumnCompressorProperty(columnCompressor: String): Unit = {
-    // Add validatation for column compressor when creating index table
-    try {
-      if (null != columnCompressor) {
-        CompressorFactory.getInstance().getCompressor(columnCompressor)
-      }
-    } catch {
-      case ex: UnsupportedOperationException =>
-        throw new InvalidConfigurationException(ex.getMessage)
     }
   }
 
@@ -671,8 +656,8 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
   protected lazy val dropIndex: Parser[LogicalPlan] =
     DROP ~> INDEX ~> opt(IF ~> EXISTS) ~ ident ~
     ontable <~ opt(";") ^^ {
-      case ifexist ~ indexName ~ table =>
-        DropIndexCommand(ifexist.isDefined, table.database, table.table, indexName.toLowerCase)
+      case ifExist ~ indexName ~ table =>
+        DropIndexCommand(ifExist.isDefined, table.database, table.table, indexName.toLowerCase)
     }
 
   /**
@@ -684,6 +669,34 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
         ShowIndexesCommand(table.database, table.table)
     }
 
+  /**
+   * REINDEX INDEX TABLE index_name
+   * ON [db_name.]table_name
+   * [WHERE SEGMENT.ID IN (segment_id, ...)] or
+   *
+   * REINDEX ON [db_name.]table_name
+   * [WHERE SEGMENT.ID IN (segment_id, ...)]
+   */
+  protected lazy val repairIndex: Parser[LogicalPlan] =
+    REINDEX ~> opt(INDEX ~> TABLE ~> ident)  ~ ontable ~
+      (WHERE ~> (SEGMENT ~ "." ~ ID) ~> IN ~> "(" ~> repsep(segmentId, ",") <~ ")").? <~
+    opt(";") ^^ {
+      case indexName ~ tableIdent ~ segments =>
+        IndexRepairCommand(indexName, tableIdent, null, segments)
+    }
+
+  /**
+   * REINDEX DATABASEON db_name
+   * [WHERE SEGMENT.ID IN (segment_id, ...)]
+   */
+  protected lazy val repairIndexDatabase: Parser[LogicalPlan] =
+    REINDEX ~> DATABASE ~> ident ~
+      (WHERE ~> (SEGMENT ~ "." ~ ID) ~> IN ~> "(" ~> repsep(segmentId, ",") <~ ")").? <~
+      opt(";") ^^ {
+      case dbName ~ segments =>
+        IndexRepairCommand(None, null, dbName, segments)
+    }
+
   protected lazy val registerIndexes: Parser[LogicalPlan] =
     REGISTER ~> INDEX ~> TABLE ~> ident ~ ontable <~ opt(";") ^^ {
       case indexTable ~ table =>
@@ -692,7 +705,7 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
 
   /**
    * REFRESH INDEX index_name
-   * ON [db_name.]table_ame
+   * ON [db_name.]table_name
    * [WHERE SEGMENT.ID IN (segment_id, ...)]
    */
   protected lazy val refreshIndex: Parser[LogicalPlan] =
@@ -709,7 +722,7 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
       var columnComment: String = ""
       var plainComment: String = ""
       if (col.getComment().isDefined) {
-        columnComment = " comment \"" + col.getComment().get + "\""
+        columnComment = " comment '" + col.getComment().get + "'"
         plainComment = col.getComment().get
       }
       // external table use float data type
@@ -762,13 +775,12 @@ class CarbonSpark2SqlParser extends CarbonDDLSqlParser {
       throw new MalformedCarbonCommandException("Invalid table properties")
     }
     if (options.isBucketingEnabled) {
-      if (options.bucketNumber.toString.contains("-") ||
-          options.bucketNumber.toString.contains("+") ||  options.bucketNumber == 0) {
+      if (options.bucketNumber.isEmpty || options.bucketNumber.get <= 0) {
         throw new MalformedCarbonCommandException("INVALID NUMBER OF BUCKETS SPECIFIED")
       }
       else {
         Some(BucketFields(options.bucketColumns.toLowerCase.split(",").map(_.trim),
-          options.bucketNumber))
+          options.bucketNumber.get))
       }
     } else {
       None

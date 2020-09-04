@@ -20,7 +20,6 @@ package org.apache.carbondata.core.index;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -123,7 +122,7 @@ public class IndexUtil {
         new IndexInputFormat(carbonTable, validAndInvalidSegmentsInfo.getValidSegments(),
             invalidSegment, true, indexToClear);
     try {
-      indexJob.execute(indexInputFormat);
+      indexJob.execute(indexInputFormat, null);
     } catch (Exception e) {
       // Consider a scenario where clear index job is called from drop table
       // and index server crashes, in this no exception should be thrown and
@@ -187,36 +186,27 @@ public class IndexUtil {
    @param carbonTable
    @param indexExprWrapper
    @param validSegments
-   @param partitionsToPrune
-   @throws IOException
    */
   public static void loadIndexes(CarbonTable carbonTable, IndexExprWrapper indexExprWrapper,
-      List<Segment> validSegments, List<PartitionSpec> partitionsToPrune) throws IOException {
+      List<Segment> validSegments) {
     if (!CarbonProperties.getInstance()
         .isDistributedPruningEnabled(carbonTable.getDatabaseName(), carbonTable.getTableName())
         && BlockletIndexUtil.loadIndexesParallel(carbonTable)) {
-      String clsName = "org.apache.spark.sql.secondaryindex.Jobs.SparkBlockletIndexLoaderJob";
+      String clsName = "org.apache.spark.sql.secondaryindex.jobs.SparkBlockletIndexLoaderJob";
       IndexJob indexJob = (IndexJob) createIndexJob(clsName);
-      String className = "org.apache.spark.sql.secondaryindex.Jobs.BlockletIndexInputFormat";
-      SegmentStatusManager.ValidAndInvalidSegmentsInfo validAndInvalidSegmentsInfo =
-          getValidAndInvalidSegments(carbonTable, FileFactory.getConfiguration());
-      List<Segment> invalidSegments = validAndInvalidSegmentsInfo.getInvalidSegments();
+      String className = "org.apache.spark.sql.secondaryindex.jobs.BlockletIndexInputFormat";
       FileInputFormat indexFormat =
-          createIndexJob(carbonTable, indexExprWrapper, validSegments, invalidSegments,
-              partitionsToPrune, className, false);
+          createIndexJob(carbonTable, indexExprWrapper, validSegments, className);
       indexJob.execute(carbonTable, indexFormat);
     }
   }
 
   private static FileInputFormat createIndexJob(CarbonTable carbonTable,
-      IndexExprWrapper indexExprWrapper, List<Segment> validsegments,
-      List<Segment> invalidSegments, List<PartitionSpec> partitionsToPrune, String clsName,
-      boolean isJobToClearIndexes) {
+      IndexExprWrapper indexExprWrapper, List<Segment> validSegments, String clsName) {
     try {
       Constructor<?> cons = Class.forName(clsName).getDeclaredConstructors()[0];
       return (FileInputFormat) cons
-          .newInstance(carbonTable, indexExprWrapper, validsegments, invalidSegments,
-              partitionsToPrune, isJobToClearIndexes);
+          .newInstance(carbonTable, indexExprWrapper, validSegments);
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
@@ -254,21 +244,21 @@ public class IndexUtil {
         TableIndex index = IndexStoreManager.getInstance()
             .getIndex(table, wrapper.getDistributable().getIndexSchema());
         List<Index> indices = index.getTableIndexes(wrapper.getDistributable());
-        List<ExtendedBlocklet> prunnedBlocklet = new ArrayList<>();
+        List<ExtendedBlocklet> prunedBlocklet = new ArrayList<>();
         if (table.isTransactionalTable()) {
-          prunnedBlocklet.addAll(index.prune(indices, wrapper.getDistributable(),
+          prunedBlocklet.addAll(index.prune(indices, wrapper.getDistributable(),
               indexExprWrapper.getFilterResolverIntf(wrapper.getUniqueId()), partitions));
         } else {
-          prunnedBlocklet
+          prunedBlocklet
               .addAll(index.prune(segmentsToLoad, new IndexFilter(filterResolverIntf),
                   partitions));
         }
         // For all blocklets initialize the detail info so that it can be serialized to the driver.
-        for (ExtendedBlocklet blocklet : prunnedBlocklet) {
+        for (ExtendedBlocklet blocklet : prunedBlocklet) {
           blocklet.getDetailInfo();
           blocklet.setIndexUniqueId(wrapper.getUniqueId());
         }
-        extendedBlocklets.addAll(prunnedBlocklet);
+        extendedBlocklets.addAll(prunedBlocklet);
       }
       return indexExprWrapper.pruneBlocklets(extendedBlocklets);
     }
@@ -283,9 +273,10 @@ public class IndexUtil {
   public static List<ExtendedBlocklet> executeIndexJob(CarbonTable carbonTable,
       FilterResolverIntf resolver, IndexJob indexJob, List<PartitionSpec> partitionsToPrune,
       List<Segment> validSegments, List<Segment> invalidSegments, IndexLevel level,
-      List<String> segmentsToBeRefreshed) {
+      List<String> segmentsToBeRefreshed, Configuration configuration) {
     return executeIndexJob(carbonTable, resolver, indexJob, partitionsToPrune, validSegments,
-        invalidSegments, level, false, segmentsToBeRefreshed, false);
+        invalidSegments, level, false, segmentsToBeRefreshed, false,
+        configuration);
   }
 
   /**
@@ -296,7 +287,8 @@ public class IndexUtil {
   public static List<ExtendedBlocklet> executeIndexJob(CarbonTable carbonTable,
       FilterResolverIntf resolver, IndexJob indexJob, List<PartitionSpec> partitionsToPrune,
       List<Segment> validSegments, List<Segment> invalidSegments, IndexLevel level,
-      Boolean isFallbackJob, List<String> segmentsToBeRefreshed, boolean isCountJob) {
+      Boolean isFallbackJob, List<String> segmentsToBeRefreshed, boolean isCountJob,
+      Configuration configuration) {
     List<String> invalidSegmentNo = new ArrayList<>();
     for (Segment segment : invalidSegments) {
       invalidSegmentNo.add(segment.getSegmentNo());
@@ -309,7 +301,7 @@ public class IndexUtil {
       indexInputFormat.setCountStarJob();
       indexInputFormat.setIsWriteToFile(false);
     }
-    return indexJob.execute(indexInputFormat);
+    return indexJob.execute(indexInputFormat, configuration);
   }
 
   public static SegmentStatusManager.ValidAndInvalidSegmentsInfo getValidAndInvalidSegments(
@@ -337,20 +329,4 @@ public class IndexUtil {
     }
     return segmentList;
   }
-
-  public static String getMaxSegmentID(List<String> segmentList) {
-    double[] segment = new double[segmentList.size()];
-    int i = 0;
-    for (String id : segmentList) {
-      segment[i] = Double.parseDouble(id);
-      i++;
-    }
-    Arrays.sort(segment);
-    String maxId = Double.toString(segment[segmentList.size() - 1]);
-    if (maxId.endsWith(".0")) {
-      maxId = maxId.substring(0, maxId.indexOf("."));
-    }
-    return maxId;
-  }
-
 }

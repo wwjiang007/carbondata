@@ -332,7 +332,7 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
         while (internalHasNext() && count < batchSize) {
           CarbonRow carbonRow =
               new CarbonRow(convertToNoDictionaryToBytes(currentIterator.next(), dataFields));
-          if (configuration.isIndexColumnsPresent()) {
+          if (configuration.isNonSchemaColumnsPresent()) {
             carbonRow = converter.convert(carbonRow);
           }
           if (isBucketColumnEnabled) {
@@ -346,7 +346,7 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
         while (internalHasNext() && count < batchSize) {
           CarbonRow carbonRow = new CarbonRow(
               convertToNoDictionaryToBytesWithoutReArrange(currentIterator.next(), dataFields));
-          if (configuration.isIndexColumnsPresent()) {
+          if (configuration.isNonSchemaColumnsPresent()) {
             carbonRow = converter.convert(carbonRow);
           }
           if (isBucketColumnEnabled) {
@@ -366,8 +366,13 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
 
     private Object[] convertToNoDictionaryToBytes(Object[] data, DataField[] dataFields) {
       Object[] newData = new Object[dataFields.length];
+      Map<String, String> properties =
+          configuration.getTableSpec().getCarbonTable().getTableInfo().getFactTable()
+              .getTableProperties();
+      String spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX);
       for (int i = 0; i < dataFields.length; i++) {
-        if (dataFields[i].getColumn().isIndexColumn()) {
+        if (spatialProperty != null && dataFields[i].getColumn().getColName()
+            .equalsIgnoreCase(spatialProperty.trim())) {
           continue;
         }
         if (i < noDictionaryMapping.length && noDictionaryMapping[i]) {
@@ -409,10 +414,15 @@ public class InputProcessorStepWithNoConverterImpl extends AbstractDataLoadProce
 
     private Object[] convertToNoDictionaryToBytesWithoutReArrange(Object[] data,
         DataField[] dataFields) {
-      Object[] newData = new Object[data.length];
+      Object[] newData = new Object[dataFields.length];
+      Map<String, String> properties =
+          configuration.getTableSpec().getCarbonTable().getTableInfo().getFactTable()
+              .getTableProperties();
+      String spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX);
       // now dictionary is removed, no need of no dictionary mapping
-      for (int i = 0; i < data.length; i++) {
-        if (dataFields[i].getColumn().isIndexColumn()) {
+      for (int i = 0; i < dataFields.length; i++) {
+        if (spatialProperty != null && dataFields[i].getColumn().getColName()
+            .equalsIgnoreCase(spatialProperty.trim())) {
           continue;
         }
         if (DataTypeUtil.isPrimitiveColumn(dataTypes[i])) {

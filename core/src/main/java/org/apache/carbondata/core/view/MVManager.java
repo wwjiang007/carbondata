@@ -48,8 +48,7 @@ public abstract class MVManager {
   private static final Logger LOGGER =
       LogServiceFactory.getLogService(MVManager.class.getName());
 
-  private final MVProvider schemaProvider =
-      MVProvider.get();
+  private final MVProvider schemaProvider = new MVProvider();
 
   private volatile MVCatalog<?> catalog;
 
@@ -60,6 +59,8 @@ public abstract class MVManager {
   }
 
   public abstract List<String> getDatabases();
+
+  public abstract String getDatabaseLocation(String databaseName);
 
   public boolean hasSchemaOnTable(CarbonTable table) throws IOException {
     List<MVSchema> schemas = getSchemas();
@@ -142,10 +143,10 @@ public abstract class MVManager {
   /**
    * Drops the mv schema from storage
    *
-   * @param viewName data map name
+   * @param viewName mv name
    */
   public void deleteSchema(String databaseName, String viewName) throws IOException {
-    schemaProvider.dropSchema(databaseName, viewName);
+    schemaProvider.dropSchema(this, databaseName, viewName);
   }
 
   /**
@@ -239,8 +240,7 @@ public abstract class MVManager {
    */
   List<MVStatusDetail> getEnabledStatusDetails(String databaseName)
       throws IOException {
-    List<MVStatusDetail> statusDetails =
-        schemaProvider.getStatusDetails(databaseName);
+    List<MVStatusDetail> statusDetails = schemaProvider.getStatusDetails(this, databaseName);
     List<MVStatusDetail> enabledStatusDetails = new ArrayList<>(statusDetails.size());
     for (MVStatusDetail statusDetail : statusDetails) {
       if (statusDetail.getStatus() == MVStatus.ENABLED) {
@@ -255,14 +255,14 @@ public abstract class MVManager {
     MVSchema schema = getSchema(
         viewIdentifier.getDatabaseName(), viewIdentifier.getTableName());
     if (schema != null) {
-      schemaProvider.updateStatus(Collections.singletonList(schema), viewStatus);
+      schemaProvider.updateStatus(this, Collections.singletonList(schema), viewStatus);
     }
   }
 
   public void setStatus(List<MVSchema> viewSchemas, MVStatus viewStatus)
       throws IOException {
     if (viewSchemas != null && !viewSchemas.isEmpty()) {
-      schemaProvider.updateStatus(viewSchemas, viewStatus);
+      schemaProvider.updateStatus(this, viewSchemas, viewStatus);
     }
   }
 
@@ -271,7 +271,7 @@ public abstract class MVManager {
     MVSchema viewSchema = getSchema(databaseName, viewName);
     if (viewSchema != null) {
       schemaProvider.updateStatus(
-          Collections.singletonList(viewSchema), MVStatus.DROPPED);
+          this, Collections.singletonList(viewSchema), MVStatus.DROPPED);
     }
   }
 
@@ -296,7 +296,7 @@ public abstract class MVManager {
       try {
         if (carbonLock.lockWithRetries()) {
           LOGGER.info("Acquired lock for table" + relationIdentifier.getDatabaseName() + "."
-              + relationIdentifier.getTableName() + " for table status updation");
+              + relationIdentifier.getTableName() + " for table status update");
           String metaDataPath =
               CarbonTablePath.getMetadataPath(relationIdentifier.getTablePath());
           LoadMetadataDetails[] loadMetadataDetails =
@@ -308,20 +308,20 @@ public abstract class MVManager {
               CarbonTablePath.getTableStatusFilePath(relationIdentifier.getTablePath()),
               loadMetadataDetails);
         } else {
-          LOGGER.error("Not able to acquire the lock for Table status updation for table "
+          LOGGER.error("Not able to acquire the lock for Table status update for table "
               + relationIdentifier.getDatabaseName() + "." + relationIdentifier
               .getTableName());
         }
       } finally {
         if (carbonLock.unlock()) {
           LOGGER.info(
-              "Table unlocked successfully after table status updation" + relationIdentifier
+              "Table unlocked successfully after table status update" + relationIdentifier
                   .getDatabaseName() + "." + relationIdentifier.getTableName());
         } else {
           LOGGER.error(
               "Unable to unlock Table lock for table" + relationIdentifier.getDatabaseName()
                   + "." + relationIdentifier.getTableName()
-                  + " during table status updation");
+                  + " during table status update");
         }
       }
     }

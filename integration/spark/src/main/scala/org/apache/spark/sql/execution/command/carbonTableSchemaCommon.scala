@@ -23,6 +23,7 @@ import java.util.UUID
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import org.apache.commons.lang3.StringUtils
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -56,9 +57,9 @@ case class TableModel(
     msrCols: Seq[Field],
     sortKeyDims: Option[Seq[String]],
     varcharCols: Option[Seq[String]],
-    highcardinalitydims: Option[Seq[String]],
+    highCardinalityDims: Option[Seq[String]],
     noInvertedIdxCols: Option[Seq[String]],
-    innvertedIdxCols: Option[Seq[String]],
+    invertedIdxCols: Option[Seq[String]],
     colProps: Option[util.Map[String, util.List[ColumnProperty]]] = None,
     bucketFields: Option[BucketFields],
     partitionInfo: Option[PartitionInfo],
@@ -69,7 +70,7 @@ case class Field(column: String, var dataType: Option[String], name: Option[Stri
     storeType: Option[String] = Some("columnar"),
     var schemaOrdinal: Int = -1,
     var precision: Int = 0, var scale: Int = 0, var rawSchema: String = "",
-    var columnComment: String = "", var index: Boolean = false) {
+    var columnComment: String = null, var spatialIndex: Boolean = false) {
   override def equals(o: Any) : Boolean = o match {
     case that: Field =>
       that.column.equalsIgnoreCase(this.column)
@@ -100,7 +101,7 @@ case class CarbonMergerMapping(
     factTableName: String,
     validSegments: Array[Segment],
     tableId: String,
-    campactionType: CompactionType,
+    compactionType: CompactionType,
     // maxSegmentColumnSchemaList is list of column schema of last segment of compaction
     var maxSegmentColumnSchemaList: List[ColumnSchema],
     @transient currentPartitions: Option[Seq[PartitionSpec]])
@@ -113,7 +114,6 @@ case class AlterTableModel(
     segmentUpdateStatusManager: Option[SegmentUpdateStatusManager],
     compactionType: String,
     factTimeStamp: Option[Long],
-    var alterSql: String,
     customSegmentIds: Option[List[String]] = None)
 
 case class UpdateTableModel(
@@ -226,6 +226,13 @@ class AlterTableColumnSchemaGenerator(
     }
   }
 
+  private def isSupportedByLocalDict(dataType: DataType): Boolean = {
+    dataType.equals(DataTypes.STRING) ||
+    dataType.equals(DataTypes.VARCHAR) ||
+    dataType.toString.equals("ARRAY") ||
+    dataType.toString.equals("STRUCT")
+  }
+
   def process: Seq[ColumnSchema] = {
     val tableSchema = tableInfo.getFactTable
     val tableCols = tableSchema.getListOfColumns.asScala
@@ -238,11 +245,11 @@ class AlterTableColumnSchemaGenerator(
       (x.isDimensionColumn && !x.getDataType.isComplexType()
           && x.getSchemaOrdinal != -1 && (x.getDataType != DataTypes.VARCHAR)))
     var newCols = Seq[ColumnSchema]()
-    var invertedIndxCols: Array[String] = Array[String]()
-    if (alterTableModel.tableProperties.get(CarbonCommonConstants.INVERTED_INDEX).isDefined) {
-      invertedIndxCols = alterTableModel.tableProperties(CarbonCommonConstants.INVERTED_INDEX)
-        .split(',').map(_.trim)
-    }
+    val invertedIndexCols: Array[String] = alterTableModel
+      .tableProperties
+      .get(CarbonCommonConstants.INVERTED_INDEX)
+      .map(_.split(',').map(_.trim))
+      .getOrElse(Array.empty[String])
 
     // add new dimension columns
     alterTableModel.dimCols.foreach(field => {
@@ -294,9 +301,9 @@ class AlterTableColumnSchemaGenerator(
       newCols ++= Seq(columnSchema)
     })
 
-    if (invertedIndxCols.nonEmpty) {
+    if (invertedIndexCols.nonEmpty) {
       for (column <- newCols) {
-        if (invertedIndxCols.contains(column.getColumnName) && column.isDimensionColumn) {
+        if (invertedIndexCols.contains(column.getColumnName) && column.isDimensionColumn) {
           column.setUseInvertedIndex(true)
         }
       }
@@ -324,35 +331,22 @@ class AlterTableColumnSchemaGenerator(
       allColumns = allColumns.filterNot(b => par.contains(b)) ++= par.asScala
     }
 
-    def getLocalDictColumnList(tableProperties: scala.collection.mutable.Map[String, String],
-        columns: scala.collection.mutable.ListBuffer[ColumnSchema]): (scala.collection.mutable
-    .ListBuffer[ColumnSchema], scala.collection.mutable.ListBuffer[ColumnSchema]) = {
-      val includeColumns = new scala.collection.mutable.ListBuffer[ColumnSchema]
-      val excludeColumns = new scala.collection.mutable.ListBuffer[ColumnSchema]
-      val localDictIncludeColumns = if (tableProperties
-        .get(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE).isDefined) {
-        tableProperties(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE)
-      } else {
-        null
-      }
-      val localDictExcludeColumns = if (tableProperties
-        .get(CarbonCommonConstants.LOCAL_DICTIONARY_EXCLUDE).isDefined) {
-        tableProperties(CarbonCommonConstants.LOCAL_DICTIONARY_EXCLUDE)
-      } else {
-        null
-      }
+    def getLocalDictColumnList(tableProperties: mutable.Map[String, String],
+        columns: mutable.ListBuffer[ColumnSchema]): (mutable.ListBuffer[ColumnSchema],
+      mutable.ListBuffer[ColumnSchema]) = {
+      val includeColumns = new mutable.ListBuffer[ColumnSchema]
+      val excludeColumns = new mutable.ListBuffer[ColumnSchema]
+      val localDictIncludeColumns =
+        tableProperties.getOrElse(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE, null)
+      val localDictExcludeColumns =
+        tableProperties.getOrElse(CarbonCommonConstants.LOCAL_DICTIONARY_EXCLUDE, null)
       if (null != localDictIncludeColumns) {
         if (null == localDictExcludeColumns) {
           columns.foreach { column =>
             if (localDictIncludeColumns.contains(column.getColumnName)) {
               includeColumns.append(column)
-            } else {
-              if (column.getDataType.equals(DataTypes.STRING) ||
-                  column.getDataType.equals(DataTypes.VARCHAR) ||
-                  column.getDataType.toString.equals("ARRAY") ||
-                  column.getDataType.toString.equals("STRUCT")) {
-                excludeColumns.append(column)
-              }
+            } else if (isSupportedByLocalDict(column.getDataType)) {
+              excludeColumns.append(column)
             }
           }
         } else {
@@ -368,20 +362,14 @@ class AlterTableColumnSchemaGenerator(
       } else {
         if (null == localDictExcludeColumns) {
           columns.foreach { column =>
-            if (column.getDataType.equals(DataTypes.STRING) ||
-                column.getDataType.equals(DataTypes.VARCHAR) ||
-                column.getDataType.toString.equals("ARRAY") ||
-                column.getDataType.toString.equals("STRUCT")) {
+            if (isSupportedByLocalDict(column.getDataType)) {
               includeColumns.append(column)
             }
           }
         } else {
           columns.foreach { column =>
             if (!localDictExcludeColumns.contains(column.getColumnName) &&
-                (column.getDataType.equals(DataTypes.STRING) ||
-                 column.getDataType.equals(DataTypes.VARCHAR) ||
-                 column.getDataType.toString.equals("ARRAY") ||
-                 column.getDataType.toString.equals("STRUCT"))) {
+                isSupportedByLocalDict(column.getDataType)) {
               includeColumns.append(column)
             } else if (localDictExcludeColumns.contains(column.getColumnName)) {
               excludeColumns.append(column)
@@ -393,7 +381,7 @@ class AlterTableColumnSchemaGenerator(
       (includeColumns, excludeColumns)
     }
 
-    val columnsWithoutNewCols = new scala.collection.mutable.ListBuffer[ColumnSchema]
+    val columnsWithoutNewCols = new mutable.ListBuffer[ColumnSchema]
     allColumns.foreach { column =>
       if (!newCols.exists(x => x.getColumnName.equalsIgnoreCase(column.getColumnName))) {
         columnsWithoutNewCols += column
@@ -403,45 +391,31 @@ class AlterTableColumnSchemaGenerator(
     val isLocalDictEnabledForMainTable = tableSchema.getTableProperties
       .get(CarbonCommonConstants.LOCAL_DICTIONARY_ENABLE)
 
-    val alterMutableTblProperties: scala.collection.mutable.Map[String, String] = mutable
+    val alterMutableTblProperties: mutable.Map[String, String] = mutable
       .Map(alterTableModel.tableProperties.toSeq: _*)
 
     // if local dictionary is enabled, then validate include and exclude columns if defined
     if (null != isLocalDictEnabledForMainTable && isLocalDictEnabledForMainTable.toBoolean) {
-      var localDictIncludeColumns: Seq[String] = Seq[String]()
-      var localDictExcludeColumns: Seq[String] = Seq[String]()
-      // validate local dictionary include columns if defined
-      if (alterTableModel.tableProperties.get(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE)
-        .isDefined) {
-        localDictIncludeColumns =
-          alterTableModel.tableProperties(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE).split(",")
-            .map(_.trim)
-        CarbonScalaUtil
-          .validateLocalDictionaryColumns(alterMutableTblProperties, localDictIncludeColumns)
-        CarbonScalaUtil
-          .validateLocalConfiguredDictionaryColumns(
-            alterTableModel.dimCols ++ alterTableModel.msrCols,
-            alterMutableTblProperties,
-            localDictIncludeColumns)
+
+      def validateDictColumns(columns: String): Unit = {
+        val columnList = columns.split(",").map(_.trim)
+        CarbonScalaUtil.validateLocalDictionaryColumns(alterMutableTblProperties, columnList)
+        CarbonScalaUtil.validateLocalConfiguredDictionaryColumns(
+          alterTableModel.dimCols ++ alterTableModel.msrCols, alterMutableTblProperties, columnList)
       }
+
+      // validate local dictionary include/exclude columns if defined
+      alterTableModel.tableProperties
+        .get(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE)
+        .foreach(validateDictColumns)
 
       // validate local dictionary exclude columns if defined
-      if (alterTableModel.tableProperties.get(CarbonCommonConstants.LOCAL_DICTIONARY_EXCLUDE)
-        .isDefined) {
-        localDictExcludeColumns =
-          alterTableModel.tableProperties(CarbonCommonConstants.LOCAL_DICTIONARY_EXCLUDE).split(",")
-            .map(_.trim)
-        CarbonScalaUtil
-          .validateLocalDictionaryColumns(alterMutableTblProperties, localDictExcludeColumns)
-        CarbonScalaUtil
-          .validateLocalConfiguredDictionaryColumns(
-            alterTableModel.dimCols ++ alterTableModel.msrCols,
-            alterMutableTblProperties,
-            localDictExcludeColumns)
-      }
+      alterTableModel.tableProperties
+        .get(CarbonCommonConstants.LOCAL_DICTIONARY_EXCLUDE)
+        .foreach(validateDictColumns)
 
       // validate if both local dictionary include and exclude contains same column
-      CarbonScalaUtil.validateDuplicateLocalDictIncludeExcludeColmns(alterMutableTblProperties)
+      CarbonScalaUtil.validateDuplicateColumnsForLocalDict(alterMutableTblProperties)
 
       CarbonUtil
         .setLocalDictColumnsToWrapperSchema(newCols.asJava,
@@ -627,7 +601,7 @@ class TableNewProcessor(cm: TableModel) {
     val columnSchema = new ColumnSchema()
     columnSchema.setDataType(dataType)
     columnSchema.setColumnName(colName)
-    val highCardinalityDims = cm.highcardinalitydims.getOrElse(Seq())
+    val highCardinalityDims = cm.highCardinalityDims.getOrElse(Seq())
     if (highCardinalityDims.contains(colName)) {
       encoders.remove(Encoding.DICTIONARY)
     }
@@ -648,13 +622,10 @@ class TableNewProcessor(cm: TableModel) {
     columnSchema.setScale(field.scale)
     columnSchema.setSchemaOrdinal(field.schemaOrdinal)
     columnSchema.setSortColumn(false)
-    columnSchema.setIndexColumn(field.index)
     if (isVarcharColumn(colName)) {
       columnSchema.setDataType(DataTypes.VARCHAR)
     }
-    // TODO: Need to fill RowGroupID, converted type
-    // & Number of Children after DDL finalization
-    if (field.columnComment.nonEmpty) {
+    if (field.columnComment != null) {
       var columnProperties = columnSchema.getColumnProperties
       if (columnProperties == null) {
         columnProperties = new util.HashMap[String, String]()
@@ -719,10 +690,10 @@ class TableNewProcessor(cm: TableModel) {
           cm.tableProperties(CarbonCommonConstants.LOCAL_DICTIONARY_ENABLE))
     }
     cm.msrCols.foreach { field =>
-      // if aggregate function is defined in case of preaggregate and agg function is sum or avg
+      // if aggregate function is defined in case of pre-aggregate and agg function is sum or avg
       // then it can be stored as measure
       var isAggFunPresent = false
-      // getting the encoder from maintable so whatever encoding is applied in maintable
+      // getting the encoder from main table so whatever encoding is applied in main table
       // same encoder can be applied on aggregate table
       val encoders = new java.util.ArrayList[Encoding]()
 
@@ -750,7 +721,7 @@ class TableNewProcessor(cm: TableModel) {
       }
     }
 
-    val invertedIndexCols = cm.innvertedIdxCols.getOrElse(Seq())
+    val invertedIndexCols = cm.invertedIdxCols.getOrElse(Seq())
     for (column <- allColumns) {
       // When the column is measure or the specified no inverted index column in DDL,
       // set useInvertedIndex to false, otherwise true.
@@ -863,12 +834,12 @@ class TableNewProcessor(cm: TableModel) {
   }
 
   //  For checking if the specified col group columns are specified in fields list.
-  protected def checkColGroupsValidity(colGrps: Seq[String],
+  protected def checkColGroupsValidity(columnGroups: Seq[String],
       allCols: Seq[ColumnSchema],
       highCardCols: Seq[String]): Unit = {
-    if (null != colGrps) {
-      colGrps.foreach(columngroup => {
-        val rowCols = columngroup.split(",")
+    if (null != columnGroups) {
+      columnGroups.foreach(columnGroup => {
+        val rowCols = columnGroup.split(",")
         rowCols.foreach(colForGrouping => {
           var found: Boolean = false
           // check for dimensions + measures
@@ -877,7 +848,7 @@ class TableNewProcessor(cm: TableModel) {
               found = true
             }
           })
-          // check for No Dicitonary dimensions
+          // check for No Dictionary dimensions
           highCardCols.foreach(noDicCol => {
             if (colForGrouping.trim.equalsIgnoreCase(noDicCol)) {
               found = true

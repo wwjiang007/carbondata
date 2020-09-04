@@ -31,10 +31,10 @@ import java.util.stream.Collectors;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
-import org.apache.carbondata.core.index.IndexFilter;
-import org.apache.carbondata.core.index.IndexStoreManager;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.impl.FileFactory;
+import org.apache.carbondata.core.index.IndexFilter;
+import org.apache.carbondata.core.index.IndexStoreManager;
 import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.CarbonMetadata;
@@ -99,6 +99,11 @@ public class CarbonTableReader {
    * unique query id used for query statistics
    */
   private String queryId;
+
+  /**
+   * presto cli query id
+   */
+  private String prestoQueryId;
 
   /**
    * Logger instance
@@ -254,6 +259,7 @@ public class CarbonTableReader {
     List<CarbonLocalMultiBlockSplit> multiBlockSplitList = new ArrayList<>();
     CarbonTable carbonTable = tableCacheModel.getCarbonTable();
     TableInfo tableInfo = tableCacheModel.getCarbonTable().getTableInfo();
+    config.set("presto.cli.query.id", prestoQueryId);
     config.set(CarbonTableInputFormat.INPUT_SEGMENT_NUMBERS, "");
     String carbonTablePath = carbonTable.getAbsoluteTableIdentifier().getTablePath();
     config.set(CarbonTableInputFormat.INPUT_DIR, carbonTablePath);
@@ -395,4 +401,9 @@ public class CarbonTableReader {
   public void setQueryId(String queryId) {
     this.queryId = queryId;
   }
+
+  public void setPrestoQueryId(String prestoQueryId) {
+    this.prestoQueryId = prestoQueryId;
+  }
+
 }

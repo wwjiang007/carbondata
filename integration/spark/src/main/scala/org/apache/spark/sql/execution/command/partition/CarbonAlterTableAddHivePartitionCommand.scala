@@ -33,7 +33,7 @@ import org.apache.carbondata.core.datastore.compression.CompressorFactory
 import org.apache.carbondata.core.indexstore.PartitionSpec
 import org.apache.carbondata.core.metadata.SegmentFileStore
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
-import org.apache.carbondata.core.statusmanager.SegmentStatus
+import org.apache.carbondata.core.statusmanager.{FileFormat, SegmentStatus}
 import org.apache.carbondata.core.util.CarbonUtil
 import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.events.{AlterTableMergeIndexEvent, OperationContext, OperationListenerBus, PostAlterTableHivePartitionCommandEvent, PreAlterTableHivePartitionCommandEvent}
@@ -115,11 +115,11 @@ case class CarbonAlterTableAddHivePartitionCommand(
         partitionSpecsAndLocsTobeAdded)
       if (segmentFile != null) {
         val indexToSchemas = SegmentFileStore.getSchemaFiles(segmentFile, table.getTablePath)
-        val tableColums = table.getTableInfo.getFactTable.getListOfColumns.asScala
+        val tableColumns = table.getTableInfo.getFactTable.getListOfColumns.asScala
         val isSameSchema = indexToSchemas.asScala.exists{ case(key, columnSchemas) =>
           columnSchemas.asScala.exists { col =>
-            tableColums.exists(p => p.getColumnUniqueId.equals(col.getColumnUniqueId))
-          } && columnSchemas.size() == tableColums.length
+            tableColumns.exists(p => p.getColumnUniqueId.equals(col.getColumnUniqueId))
+          } && columnSchemas.size() == tableColumns.length
         }
         if (!isSameSchema) {
           throw new UnsupportedOperationException(
@@ -160,14 +160,20 @@ case class CarbonAlterTableAddHivePartitionCommand(
         // carbon index files, and it is not good for query performance since all index files
         // need to be read to spark driver.
         // So, here trigger to merge the index files by sending an event
+        val customSegmentIds = if (loadModel.getCurrentLoadMetadataDetail
+          .getFileFormat
+          .equals(FileFormat.ROW_V1)) {
+          Some(Seq("").toList)
+        } else {
+          Some(Seq(loadModel.getSegmentId).toList)
+        }
         val alterTableModel = AlterTableModel(
           dbName = Some(table.getDatabaseName),
           tableName = table.getTableName,
           segmentUpdateStatusManager = None,
           compactionType = "", // to trigger index merge, this is not required
           factTimeStamp = Some(System.currentTimeMillis()),
-          alterSql = null,
-          customSegmentIds = Some(Seq(loadModel.getSegmentId).toList))
+          customSegmentIds = customSegmentIds)
         val mergeIndexEvent = AlterTableMergeIndexEvent(sparkSession, table, alterTableModel)
         OperationListenerBus.getInstance.fireEvent(mergeIndexEvent, new OperationContext)
       }

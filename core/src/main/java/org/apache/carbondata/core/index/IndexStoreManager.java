@@ -20,7 +20,6 @@ package org.apache.carbondata.core.index;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,7 +27,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.carbondata.common.annotations.InterfaceAudience;
 import org.apache.carbondata.common.exceptions.MetadataProcessException;
 import org.apache.carbondata.common.exceptions.sql.MalformedIndexCommandException;
-import org.apache.carbondata.common.exceptions.sql.NoSuchIndexException;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.block.SegmentPropertiesAndSchemaHolder;
@@ -43,8 +41,6 @@ import org.apache.carbondata.core.metadata.index.IndexType;
 import org.apache.carbondata.core.metadata.schema.indextable.IndexMetadata;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.IndexSchema;
-import org.apache.carbondata.core.metadata.schema.table.IndexSchemaFactory;
-import org.apache.carbondata.core.metadata.schema.table.IndexSchemaStorageProvider;
 import org.apache.carbondata.core.mutate.UpdateVO;
 import org.apache.carbondata.core.statusmanager.SegmentRefreshInfo;
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager;
@@ -75,24 +71,14 @@ public final class IndexStoreManager {
   private Map<String, List<TableIndex>> allIndexes = new ConcurrentHashMap<>();
 
   /**
-   * Contains the table name to the tablepath mapping.
+   * Contains the table name to the table path mapping.
    */
   private Map<String, String> tablePathMap = new ConcurrentHashMap<>();
 
-  /**
-   * Contains the mv catalog for each mv provider.
-   */
-  private Map<String, MVCatalog> mvCatalogMap = null;
-
   private Map<String, TableSegmentRefresher> segmentRefreshMap = new ConcurrentHashMap<>();
-
-  private IndexSchemaStorageProvider provider =
-      IndexSchemaFactory.getIndexSchemaStorageProvider();
 
   private static final Logger LOGGER =
       LogServiceFactory.getLogService(IndexStoreManager.class.getName());
-
-  private final Object lockObject = new Object();
 
   private IndexStoreManager() {
 
@@ -126,140 +112,6 @@ public final class IndexStoreManager {
   }
 
   /**
-   * It gives all index schemas of a given table.
-   *
-   */
-  public List<IndexSchema> getIndexSchemasOfTable(CarbonTable carbonTable) throws IOException {
-    return provider.retrieveSchemas(carbonTable);
-  }
-
-  /**
-   * It gives all index schemas from store.
-   */
-  public List<IndexSchema> getAllIndexSchemas() throws IOException {
-    return provider.retrieveAllSchemas();
-  }
-
-  public IndexSchema getIndexSchema(String indexName) throws IOException, NoSuchIndexException {
-    return provider.retrieveSchema(indexName);
-  }
-
-  /**
-   * Saves the index schema to storage
-   * @param indexSchema
-   */
-  public void saveIndexSchema(IndexSchema indexSchema) throws IOException {
-    provider.saveSchema(indexSchema);
-  }
-
-  /**
-   * Drops the index schema from storage
-   * @param indexName
-   */
-  public void dropIndexSchema(String indexName) throws IOException {
-    provider.dropSchema(indexName);
-  }
-
-  /**
-   * Register MV catalog for the MV provider
-   * @param indexProvider
-   * @param indexSchema
-   */
-  public synchronized void registerMVCatalog(
-      org.apache.carbondata.core.index.CarbonIndexProvider indexProvider,
-      IndexSchema indexSchema, boolean clearCatalogs) throws IOException {
-    // this check is added to check if when registering the datamapCatalog, if the catalog map has
-    // datasets with old session, then need to clear and reload the map, else error can be thrown
-    // if the databases are different in both the sessions
-    if (clearCatalogs) {
-      mvCatalogMap = null;
-    }
-    initializeMVCatalogs(indexProvider);
-    String name = indexSchema.getProviderName().toLowerCase();
-    MVCatalog mvCatalog = mvCatalogMap.get(name);
-    if (mvCatalog == null) {
-      mvCatalog = indexProvider.createMVCatalog();
-      // If MVDataMapProvider, then createMVCatalog will return summaryDatasetCatalog
-      // instance, which needs to be added to dataMapCatalogs.
-      // For other datamaps, createMVCatalog will return null, so no need to register
-      if (mvCatalog != null) {
-        mvCatalogMap.put(name, mvCatalog);
-        mvCatalog.registerSchema(indexSchema);
-      }
-    } else {
-      if (!mvCatalog.isMVExists(indexSchema.getIndexName())) {
-        mvCatalog.registerSchema(indexSchema);
-      }
-    }
-  }
-
-  /**
-   * Unregister index.
-   * @param indexSchema
-   */
-  public synchronized void unRegisterIndex(IndexSchema indexSchema) {
-    if (mvCatalogMap == null) {
-      return;
-    }
-    String name = indexSchema.getProviderName().toLowerCase();
-    MVCatalog MVCatalog = mvCatalogMap.get(name);
-    if (MVCatalog != null) {
-      MVCatalog.unregisterSchema(indexSchema.getIndexName());
-    }
-  }
-
-  /**
-   * Get the MV catalog for provider.
-   * @param providerName
-   * @return
-   */
-  public synchronized MVCatalog getMVCatalog(
-      org.apache.carbondata.core.index.CarbonIndexProvider indexProvider,
-      String providerName,
-      boolean clearCatalogs) throws IOException {
-    // This method removes the datamapCatalog for the corresponding provider if the session gets
-    // refreshed or updated
-    if (clearCatalogs) {
-      mvCatalogMap = null;
-    }
-    initializeMVCatalogs(indexProvider);
-    return mvCatalogMap.get(providerName.toLowerCase());
-  }
-
-  /**
-   * Initialize by reading all datamaps from store and re register it
-   * @param indexProvider
-   */
-  private synchronized void initializeMVCatalogs(
-      org.apache.carbondata.core.index.CarbonIndexProvider indexProvider)
-      throws IOException {
-    if (mvCatalogMap == null) {
-      mvCatalogMap = new ConcurrentHashMap<>();
-      List<IndexSchema> indexSchemas = getAllIndexSchemas();
-      for (IndexSchema schema : indexSchemas) {
-        if (schema.getProviderName()
-            .equalsIgnoreCase(indexProvider.getIndexSchema().getProviderName())) {
-          MVCatalog MVCatalog =
-              mvCatalogMap.get(schema.getProviderName().toLowerCase());
-          if (MVCatalog == null) {
-            MVCatalog = indexProvider.createMVCatalog();
-            if (null == MVCatalog) {
-              throw new RuntimeException("Internal Error.");
-            }
-            mvCatalogMap.put(schema.getProviderName().toLowerCase(), MVCatalog);
-          }
-          try {
-            MVCatalog.registerSchema(schema);
-          } catch (Exception e) {
-            // Ignore the schema
-            LOGGER.error("Error while registering schema", e);
-          }
-        }
-      }
-    }
-  }
-
-  /**
    * It gives the default index of the table. Default index of any table is BlockletIndex
    *
    * @param table
@@ -283,7 +135,7 @@ public final class IndexStoreManager {
         tableIndices = allIndexes.get(tableId);
       }
     }
-    // in case of fileformat or sdk, when table is dropped or schema is changed the indexes are
+    // in case of file format or sdk, when table is dropped or schema is changed the indexes are
     // not cleared, they need to be cleared by using API, so compare the columns, if not same, clear
     // the indexes on that table
     if (allIndexes.size() > 0 && !CollectionUtils.isEmpty(allIndexes.get(tableId))
@@ -663,11 +515,16 @@ public final class IndexStoreManager {
         UpdateVO updateVO =
             SegmentUpdateStatusManager.getInvalidTimestampRange(segment.getLoadMetadataDetails());
         SegmentRefreshInfo segmentRefreshInfo;
-        if (updateVO != null && updateVO.getLatestUpdateTimestamp() != null
+        if ((updateVO != null && updateVO.getLatestUpdateTimestamp() != null)
             || segment.getSegmentFileName() != null) {
-          long segmentFileTimeStamp = FileFactory.getCarbonFile(CarbonTablePath
-              .getSegmentFilePath(table.getTablePath(), segment.getSegmentFileName()))
-              .getLastModifiedTime();
+          long segmentFileTimeStamp;
+          if (null != segment.getLoadMetadataDetails()) {
+            segmentFileTimeStamp = segment.getLoadMetadataDetails().getLastModifiedTime();
+          } else {
+            segmentFileTimeStamp = FileFactory.getCarbonFile(CarbonTablePath
+                .getSegmentFilePath(table.getTablePath(), segment.getSegmentFileName()))
+                .getLastModifiedTime();
+          }
           segmentRefreshInfo =
               new SegmentRefreshInfo(updateVO.getLatestUpdateTimestamp(), 0, segmentFileTimeStamp);
         } else {
@@ -716,11 +573,9 @@ public final class IndexStoreManager {
     List<TableIndex> indexes = getAllCGAndFGIndexes(carbonTable);
     List<TableIndex> remainingIndexes = new ArrayList<>();
     if (StringUtils.isNotEmpty(indexToClear)) {
-      Iterator<TableIndex> indexIterator = indexes.iterator();
-      while (indexIterator.hasNext()) {
-        TableIndex tableIndex = indexIterator.next();
+      for (TableIndex tableIndex : indexes) {
         if (indexToClear.equalsIgnoreCase(tableIndex.getIndexSchema().getIndexName())) {
-          for (String segment: segmentNos) {
+          for (String segment : segmentNos) {
             tableIndex.deleteSegmentIndexData(segment);
           }
           tableIndex.clear();
@@ -738,7 +593,7 @@ public final class IndexStoreManager {
   }
 
   private boolean hasCGIndex(CarbonTable carbonTable) throws IOException {
-    // In case of spark file format flow, carbontable will be null
+    // In case of spark file format flow, carbon table will be null
     if (null == carbonTable) {
       return false;
     }

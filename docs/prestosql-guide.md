@@ -24,12 +24,14 @@ This tutorial provides a quick introduction to using current integration/presto 
 
 [Presto Single Node Setup for Carbondata](#presto-single-node-setup-for-carbondata)
 
+[Presto Setup with CarbonData Distributed IndexServer](#presto-setup-with-carbondata-distributed-indexserver)
+
 ## Presto Multinode Cluster Setup for Carbondata
 ### Installing Presto
 
 To know about which version of presto is supported by this version of carbon, visit 
-https://github.com/apache/carbondata/blob/master/integration/presto/pom.xml
-and look for ```<presto.version>```
+https://github.com/apache/carbondata/blob/master/pom.xml
+and look for ```<presto.version>``` inside `prestosql` profile.
 
 _Example:_ 
   `<presto.version>316</presto.version>`
@@ -139,11 +141,15 @@ Then, `query.max-memory=<30GB * number of nodes>`.
 
 ##### Configuring Carbondata in Presto
 1. Create a file named `carbondata.properties` in the `catalog` folder and set the required properties on all the nodes.
+2. As carbondata connector extends hive connector all the configurations(including S3) is same as hive connector.
+Just replace the connector name in hive configuration and copy same to carbondata.properties
+`connector.name = carbondata`
 
 ### Add Plugins
 
 1. Create a directory named `carbondata` in plugin directory of presto.
-2. Copy `carbondata` jars to `plugin/carbondata` directory on all nodes.
+2. Copy all the jars from ../integration/presto/target/carbondata-presto-X.Y.Z-SNAPSHOT to `plugin/carbondata` directory on all nodes.
+
 
 ### Start Presto Server on all nodes
 
@@ -294,6 +300,24 @@ carbondata files.
 
 ### Supported features of presto carbon
 Presto carbon only supports reading the carbon table which is written by spark carbon or carbon SDK. 
-During reading, it supports the non-distributed datamaps like block datamap and bloom datamap.
+During reading, it supports the non-distributed index like block index and bloom index.
 It doesn't support Materialized View as it needs query plan to be changed and presto does not allow it.
-Also Presto carbon supports streaming segment read from streaming table created by spark.
+Also, Presto carbon supports streaming segment read from streaming table created by spark.
+
+## Presto Setup with CarbonData Distributed IndexServer
+
+### Dependency jars
+After copying all the jars from ../integration/presto/target/carbondata-presto-X.Y.Z-SNAPSHOT 
+to `plugin/carbondata` directory on all nodes, ensure copying the following jars as well.
+1. Copy ../integration/spark/target/carbondata-spark_X.Y.Z-SNAPSHOT.jar
+2. Copy corresponding Spark dependency jars to the location.
+
+### Configure properties
+Configure IndexServer configurations in carbon.properties file. Refer 
+[Configuring IndexServer](https://github.com/apache/carbondata/blob/master/docs/index-server.md#Configurations) for more info.
+Add  `-Dcarbon.properties.filepath=<path>/carbon.properties` in jvm.config file. 
+
+### Presto with IndexServer
+Start distributed index server. Launch presto CLI and fire SELECT query and check if the corresponding job
+is fired in the index server application.  Users can use spark to view the cache loaded by using
+show metacache command. Refer: [MetaCacheDDL](./ddl-of-carbondata.md#cache)

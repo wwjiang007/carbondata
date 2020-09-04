@@ -32,12 +32,11 @@ import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.carbondata.core.index.dev.IndexModel;
 import org.apache.carbondata.core.index.dev.fgindex.FineGrainBlocklet;
 import org.apache.carbondata.core.index.dev.fgindex.FineGrainIndex;
-import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.IndexSchema;
 import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.MatchExpression;
-import org.apache.carbondata.core.scan.filter.executer.FilterExecuter;
+import org.apache.carbondata.core.scan.filter.executer.FilterExecutor;
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 
@@ -103,7 +102,7 @@ public class LuceneFineGrainIndex extends FineGrainIndex {
   }
 
   /**
-   * It is called to load the data map to memory or to initialize it.
+   * It is called to load the index to memory or to initialize it.
    */
   public void init(IndexModel indexModel) throws IOException {
     long startTime = System.currentTimeMillis();
@@ -203,8 +202,8 @@ public class LuceneFineGrainIndex extends FineGrainIndex {
    */
   @Override
   public List<FineGrainBlocklet> prune(FilterResolverIntf filterExp,
-      SegmentProperties segmentProperties, List<PartitionSpec> partitions,
-      FilterExecuter filterExecuter, CarbonTable carbonTable) throws IOException {
+      SegmentProperties segmentProperties, FilterExecutor filterExecutor,
+      CarbonTable carbonTable) throws IOException {
 
     // convert filter expr into lucene list query
     List<String> fields = new ArrayList<String>();

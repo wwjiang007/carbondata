@@ -29,9 +29,10 @@ import org.apache.spark.{CarbonInputMetrics, DataSkewRangePartitioner, TaskConte
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.execution.command.ExecutionErrors
+import org.apache.spark.sql.types.{ByteType, DateType, LongType, StringType, TimestampType}
 import org.apache.spark.sql.util.{SparkSQLUtil, SparkTypeConverter}
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.unsafe.types.UTF8String
@@ -165,13 +166,15 @@ object DataLoadProcessBuilderOnSpark {
     sc.runJob(sortRDD, (context: TaskContext, rows: Iterator[CarbonRow]) => {
       setTaskListener(model.getTableName, model.getSegmentId, segmentMetaDataAccumulator)
       val loadModel = modelBroadcast.value.getCopyWithTaskNo(context.partitionId.toString)
+      loadModel.setMetrics(new DataLoadMetrics())
       DataLoadProcessorStepOnSpark.writeFunc(
         rows, context.partitionId, loadModel, writeStepRowCounter, conf.value.value)
+      SparkSQLUtil.setOutputMetrics(context.taskMetrics().outputMetrics, loadModel.getMetrics)
     })
 
     // clean cache only if persisted and keeping unpersist non-blocking as non-blocking call will
     // not have any functional impact as spark automatically monitors the cache usage on each node
-    // and drops out old data partiotions in a least-recently used (LRU) fashion.
+    // and drops out old data partitions in a least-recently used (LRU) fashion.
     if (numPartitions > 1) {
       convertRDD.unpersist(false)
     }
@@ -235,10 +238,15 @@ object DataLoadProcessBuilderOnSpark {
         CarbonProperties.getInstance().getGlobalSortRddStorageLevel()))
     }
     val sortColumnsLength = model.getCarbonDataLoadSchema.getCarbonTable.getSortColumns.size()
-    val sortColumnDataTypes = dataTypes.take(sortColumnsLength)
-    val rowComparator = GlobalSortHelper.generateRowComparator(sortColumnDataTypes)
+    var sortColumnDataTypes = dataTypes.take(sortColumnsLength)
+    sortColumnDataTypes = sortColumnDataTypes.map {
+      case StringType => ByteType
+      case TimestampType | DateType => LongType
+      case datatype => datatype
+    }
+    val rowComparator = GlobalSortHelper.generateRowComparator(sortColumnDataTypes.zipWithIndex)
     val sortRDD = rdd.sortBy(row =>
-      getKey(row, sortColumnsLength, sortColumnDataTypes),
+      getKey(row, sortColumnsLength),
       true,
       numPartitions)(
       rowComparator, classTag[Array[AnyRef]])
@@ -252,12 +260,14 @@ object DataLoadProcessBuilderOnSpark {
     sc.runJob(newRDD, (context: TaskContext, rows: Iterator[CarbonRow]) => {
       setTaskListener(model.getTableName, model.getSegmentId, segmentMetaDataAccumulator)
       val loadModel = modelBroadcast.value.getCopyWithTaskNo(context.partitionId.toString)
+      loadModel.setMetrics(new DataLoadMetrics())
       DataLoadProcessorStepOnSpark.writeFunc(rows, context.partitionId, loadModel,
         writeStepRowCounter, conf.value.value)
+      SparkSQLUtil.setOutputMetrics(context.taskMetrics().outputMetrics, loadModel.getMetrics)
     })
     // clean cache only if persisted and keeping unpersist non-blocking as non-blocking call will
     // not have any functional impact as spark automatically monitors the cache usage on each node
-    // and drops out old data partiotions in a least-recently used (LRU) fashion.
+    // and drops out old data partitions in a least-recently used (LRU) fashion.
     if (numPartitions > 1) {
       rdd.unpersist(false)
     }
@@ -269,8 +279,7 @@ object DataLoadProcessBuilderOnSpark {
   }
 
   def getKey(row: Array[AnyRef],
-      sortColumnsLength: Int,
-      dataTypes: Seq[org.apache.spark.sql.types.DataType]): Array[AnyRef] = {
+      sortColumnsLength: Int): Array[AnyRef] = {
     val key: Array[AnyRef] = new Array[AnyRef](sortColumnsLength)
     System.arraycopy(row, 0, key, 0, sortColumnsLength)
     key
@@ -373,7 +382,7 @@ object DataLoadProcessBuilderOnSpark {
 
   /**
    * provide RDD for sample
-   * CSVRecordReader(univocity parser) will output only one column
+   * CSVRecordReader(Univocity parser) will output only one column
    */
   private def getSampleRDD(
       sparkSession: SparkSession,
@@ -437,13 +446,13 @@ object DataLoadProcessBuilderOnSpark {
         // better to generate a CarbonData file for each partition
         val totalSize = model.getTotalSize.toDouble
         val table = model.getCarbonDataLoadSchema.getCarbonTable
-        numPartitions = getNumPatitionsBasedOnSize(totalSize, table, model, false)
+        numPartitions = getNumPartitionsBasedOnSize(totalSize, table, model, false)
       }
     }
     numPartitions
   }
 
-  def getNumPatitionsBasedOnSize(totalSize: Double,
+  def getNumPartitionsBasedOnSize(totalSize: Double,
       table: CarbonTable,
       model: CarbonLoadModel,
       mergerFlag: Boolean): Int = {
@@ -473,16 +482,16 @@ object DataLoadProcessBuilderOnSpark {
     if (column.isDimension) {
       val dimension = column.asInstanceOf[CarbonDimension]
       if (dimension.getDataType == DataTypes.DATE) {
-        new PrimtiveOrdering(DataTypes.INT)
+        new PrimitiveOrdering(DataTypes.INT)
       } else {
         if (DataTypeUtil.isPrimitiveColumn(column.getDataType)) {
-          new PrimtiveOrdering(column.getDataType)
+          new PrimitiveOrdering(column.getDataType)
         } else {
           new ByteArrayOrdering()
         }
       }
     } else {
-      new PrimtiveOrdering(column.getDataType)
+      new PrimitiveOrdering(column.getDataType)
     }
   }
 
@@ -565,7 +574,7 @@ object DataLoadProcessBuilderOnSpark {
   }
 }
 
-class PrimtiveOrdering(dataType: DataType) extends Ordering[Object] {
+class PrimitiveOrdering(dataType: DataType) extends Ordering[Object] {
   val comparator = org.apache.carbondata.core.util.comparator.Comparator
     .getComparator(dataType)
 

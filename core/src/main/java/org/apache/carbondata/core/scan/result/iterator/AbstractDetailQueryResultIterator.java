@@ -97,7 +97,7 @@ public abstract class AbstractDetailQueryResultIterator<E> extends CarbonIterato
     this.fileReader.setReadPageByPage(queryModel.isReadPageByPage());
     this.execService = execService;
     initialiseInfos();
-    initQueryStatiticsModel();
+    initQueryStatisticsModel();
   }
 
   private void initialiseInfos() {
@@ -125,11 +125,11 @@ public abstract class AbstractDetailQueryResultIterator<E> extends CarbonIterato
    *
    * @param dataBlock       data block
    * @param deleteDeltaInfo delete delta info
-   * @return blockid+pageid to deleted row mapping
+   * @return blockId+pageId to deleted row mapping
    */
   private Map<String, DeleteDeltaVo> getDeleteDeltaDetails(AbstractIndex dataBlock,
       DeleteDeltaInfo deleteDeltaInfo) {
-    // if datablock deleted delta timestamp is more then the current delete delta files timestamp
+    // if data block deleted delta timestamp is more then the current delete delta files timestamp
     // then return the current deleted rows
     if (dataBlock.getDeleteDeltaTimestamp() >= deleteDeltaInfo
         .getLatestDeleteDeltaFileTimestamp()) {
@@ -201,11 +201,8 @@ public abstract class AbstractDetailQueryResultIterator<E> extends CarbonIterato
   public boolean hasNext() {
     if ((dataBlockIterator != null && dataBlockIterator.hasNext())) {
       return true;
-    } else if (blockExecutionInfos.size() > 0) {
-      return true;
-    } else {
-      return false;
     }
+    return blockExecutionInfos.size() > 0;
   }
 
   void updateDataBlockIterator() {
@@ -232,7 +229,7 @@ public abstract class AbstractDetailQueryResultIterator<E> extends CarbonIterato
     return null;
   }
 
-  private void initQueryStatiticsModel() {
+  private void initQueryStatisticsModel() {
     this.queryStatisticsModel = new QueryStatisticsModel();
     this.queryStatisticsModel.setRecorder(recorder);
     QueryStatistic queryStatisticTotalBlocklet = new QueryStatistic();

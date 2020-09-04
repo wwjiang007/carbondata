@@ -66,6 +66,7 @@ import com.facebook.presto.spi.TableNotFoundException;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.google.common.collect.ImmutableList;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 
@@ -100,6 +101,7 @@ public class CarbondataSplitManager extends HiveSplitManager {
     HiveTableLayoutHandle layout = (HiveTableLayoutHandle) layoutHandle;
     SchemaTableName schemaTableName = layout.getSchemaTableName();
 
+    carbonTableReader.setPrestoQueryId(session.getQueryId());
     // get table metadata
     SemiTransactionalHiveMetastore metastore =
         metastoreProvider.apply((HiveTransactionHandle) transactionHandle);
@@ -109,8 +111,12 @@ public class CarbondataSplitManager extends HiveSplitManager {
     if (!table.getStorage().getStorageFormat().getInputFormat().contains("carbon")) {
       return super.getSplits(transactionHandle, session, layoutHandle, splitSchedulingStrategy);
     }
-    String location = table.getStorage().getLocation();
-
+    // for hive metastore, get table location from catalog table's tablePath
+    String location = table.getStorage().getSerdeParameters().get("tablePath");
+    if (StringUtils.isEmpty(location))  {
+      // file metastore case tablePath can be null, so get from location
+      location = table.getStorage().getLocation();
+    }
     String queryId = System.nanoTime() + "";
     QueryStatistic statistic = new QueryStatistic();
     QueryStatisticsRecorder statisticRecorder = CarbonTimeStatisticsFactory.createDriverRecorder();

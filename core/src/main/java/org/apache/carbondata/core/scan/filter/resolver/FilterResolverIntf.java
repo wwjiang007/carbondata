@@ -21,7 +21,7 @@ import java.io.Serializable;
 
 import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.exception.FilterUnsupportedException;
-import org.apache.carbondata.core.scan.filter.intf.FilterExecuterType;
+import org.apache.carbondata.core.scan.filter.intf.FilterExecutorType;
 import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.DimColumnResolvedFilterInfo;
 import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.MeasureColumnResolvedFilterInfo;
 
@@ -30,7 +30,7 @@ public interface FilterResolverIntf extends Serializable {
   /**
    * This API will resolve the filter expression and generates the
    * dictionaries for executing/evaluating the filter expressions in the
-   * executer layer.
+   * executor layer.
    *
    * @throws FilterUnsupportedException
    */
@@ -69,12 +69,12 @@ public interface FilterResolverIntf extends Serializable {
   MeasureColumnResolvedFilterInfo getMsrColResolvedFilterInfo();
 
   /**
-   * API will return the filter executer type which will be used to evaluate
+   * API will return the filter executor type which will be used to evaluate
    * the resolved filter while query execution
    *
-   * @return FilterExecuterType.
+   * @return FilterExecutorType.
    */
-  FilterExecuterType getFilterExecuterType();
+  FilterExecutorType getFilterExecutorType();
 
   Expression getFilterExpression();
 

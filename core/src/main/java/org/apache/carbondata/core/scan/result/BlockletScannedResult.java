@@ -32,6 +32,7 @@ import org.apache.carbondata.core.datastore.chunk.DimensionColumnPage;
 import org.apache.carbondata.core.datastore.chunk.impl.DimensionRawColumnChunk;
 import org.apache.carbondata.core.datastore.chunk.impl.MeasureRawColumnChunk;
 import org.apache.carbondata.core.datastore.page.ColumnPage;
+import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.mutate.DeleteDeltaVo;
 import org.apache.carbondata.core.scan.executor.infos.BlockExecutionInfo;
 import org.apache.carbondata.core.scan.filter.GenericQueryType;
@@ -129,7 +130,7 @@ public abstract class BlockletScannedResult {
   private int[] complexParentBlockIndexes;
 
   /**
-   * blockletid+pageumber to deleted reocrd map
+   * blockletId+pageNumber to deleted record map
    */
   private Map<String, DeleteDeltaVo> deletedRecordMap;
 
@@ -153,6 +154,9 @@ public abstract class BlockletScannedResult {
 
   private ReusableDataBuffer[] measureReusableBuffer;
 
+  // index used by dimensionReusableBuffer
+  private int dimensionReusableBufferIndex;
+
   public BlockletScannedResult(BlockExecutionInfo blockExecutionInfo,
       QueryStatisticsModel queryStatisticsModel) {
     this.dimensionReusableBuffer = blockExecutionInfo.getDimensionReusableDataBuffer();
@@ -160,7 +164,7 @@ public abstract class BlockletScannedResult {
     this.fixedLengthKeySize = blockExecutionInfo.getFixedLengthKeySize();
     this.noDictionaryColumnChunkIndexes = blockExecutionInfo.getNoDictionaryColumnChunkIndexes();
     this.dictionaryColumnChunkIndexes = blockExecutionInfo.getDictionaryColumnChunkIndex();
-    this.complexParentIndexToQueryMap = blockExecutionInfo.getComlexDimensionInfoMap();
+    this.complexParentIndexToQueryMap = blockExecutionInfo.getComplexDimensionInfoMap();
     this.complexParentBlockIndexes = blockExecutionInfo.getComplexColumnParentBlockIndexes();
     this.totalDimensionsSize = blockExecutionInfo.getProjectionDimensions().length;
     this.deletedRecordMap = blockExecutionInfo.getDeletedRecordsMap();
@@ -263,36 +267,36 @@ public abstract class BlockletScannedResult {
 
   public void fillColumnarComplexBatch(ColumnVectorInfo[] vectorInfos) {
     ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-    ReUsableByteArrayDataOutputStream reuseableDataOutput =
+    ReUsableByteArrayDataOutputStream reusableDataOutput =
         new ReUsableByteArrayDataOutputStream(byteStream);
     boolean isExceptionThrown = false;
-    for (int i = 0; i < vectorInfos.length; i++) {
-      int offset = vectorInfos[i].offset;
-      int len = offset + vectorInfos[i].size;
-      int vectorOffset = vectorInfos[i].vectorOffset;
-      CarbonColumnVector vector = vectorInfos[i].vector;
+    for (ColumnVectorInfo vectorInfo : vectorInfos) {
+      int offset = vectorInfo.offset;
+      int len = offset + vectorInfo.size;
+      int vectorOffset = vectorInfo.vectorOffset;
+      CarbonColumnVector vector = vectorInfo.vector;
       for (int j = offset; j < len; j++) {
         try {
-          vectorInfos[i].genericQueryType
+          vectorInfo.genericQueryType
               .parseBlocksAndReturnComplexColumnByteArray(dimRawColumnChunks, dimensionColumnPages,
                   pageFilteredRowId == null ? j : pageFilteredRowId[pageCounter][j], pageCounter,
-                  reuseableDataOutput);
-          Object data = vectorInfos[i].genericQueryType
-              .getDataBasedOnDataType(ByteBuffer.wrap(reuseableDataOutput.getByteArray()));
+                  reusableDataOutput);
+          Object data = vectorInfo.genericQueryType
+              .getDataBasedOnDataType(ByteBuffer.wrap(reusableDataOutput.getByteArray()));
           vector.putObject(vectorOffset++, data);
-          reuseableDataOutput.reset();
+          reusableDataOutput.reset();
         } catch (IOException e) {
           isExceptionThrown = true;
           LOGGER.error(e.getMessage(), e);
         } finally {
           if (isExceptionThrown) {
-            CarbonUtil.closeStreams(reuseableDataOutput);
+            CarbonUtil.closeStreams(reusableDataOutput);
             CarbonUtil.closeStreams(byteStream);
           }
         }
       }
     }
-    CarbonUtil.closeStreams(reuseableDataOutput);
+    CarbonUtil.closeStreams(reusableDataOutput);
     CarbonUtil.closeStreams(byteStream);
   }
 
@@ -323,7 +327,7 @@ public abstract class BlockletScannedResult {
   }
 
   /**
-   * Just increment the counter incase of query only on measures.
+   * Just increment the counter in case of query only on measures.
    */
   public void incrementCounter() {
     rowCounter++;
@@ -394,11 +398,25 @@ public abstract class BlockletScannedResult {
         pageUncompressTime.getCount() + (System.currentTimeMillis() - startTime));
   }
 
+  void fillChildDataChunks(CarbonColumnVector columnVector, CarbonDimension dimension,
+      ColumnVectorInfo complexInfo) {
+    columnVector.setLazyPage(new LazyPageLoader(lazyBlockletLoader, dimension.getOrdinal(), false,
+        pageIdFiltered[pageCounter], complexInfo,
+        dimensionReusableBuffer[dimensionReusableBufferIndex++]));
+    if (columnVector.getChildrenVector() != null) {
+      int i = 0;
+      for (CarbonColumnVector childVector : columnVector.getChildrenVector()) {
+        fillChildDataChunks(childVector, dimension.getListOfChildDimensions().get(i++),
+            complexInfo);
+      }
+    }
+  }
+
   /**
    * Fill all the vectors with data by decompressing/decoding the column page
    */
   public void fillDataChunks(ColumnVectorInfo[] dictionaryInfo, ColumnVectorInfo[] noDictionaryInfo,
-      ColumnVectorInfo[] msrVectorInfo, int[] measuresOrdinal) {
+      ColumnVectorInfo[] msrVectorInfo, int[] measuresOrdinal, ColumnVectorInfo[] complexInfo) {
     freeDataChunkMemory();
     if (pageCounter >= pageFilteredRowCount.length) {
       return;
@@ -409,12 +427,29 @@ public abstract class BlockletScannedResult {
           new LazyPageLoader(lazyBlockletLoader, dictionaryColumnChunkIndexes[i], false,
               pageIdFiltered[pageCounter], dictionaryInfo[i], dimensionReusableBuffer[i]));
     }
-    int startIndex = dictionaryColumnChunkIndexes.length;
+    dimensionReusableBufferIndex = dictionaryColumnChunkIndexes.length;
     for (int i = 0; i < this.noDictionaryColumnChunkIndexes.length; i++) {
       noDictionaryInfo[i].vector.setLazyPage(
           new LazyPageLoader(lazyBlockletLoader, noDictionaryColumnChunkIndexes[i], false,
               pageIdFiltered[pageCounter], noDictionaryInfo[i],
-              dimensionReusableBuffer[startIndex++]));
+              dimensionReusableBuffer[dimensionReusableBufferIndex++]));
+    }
+    dimensionReusableBufferIndex =
+        noDictionaryColumnChunkIndexes.length + dictionaryColumnChunkIndexes.length;
+
+    for (int i = 0; i < this.complexParentBlockIndexes.length; i++) {
+      complexInfo[i].vector.getColumnVector().setLazyPage(
+          new LazyPageLoader(lazyBlockletLoader, complexParentBlockIndexes[i], false,
+              pageIdFiltered[pageCounter], complexInfo[i],
+              dimensionReusableBuffer[dimensionReusableBufferIndex++]));
+      // set child pages
+      int dimIndex = 0;
+      for (CarbonColumnVector childVector : complexInfo[i].vector.getColumnVector()
+          .getChildrenVector()) {
+        fillChildDataChunks(childVector,
+            complexInfo[i].dimension.getDimension().getListOfChildDimensions().get(dimIndex++),
+            complexInfo[i]);
+      }
     }
 
     for (int i = 0; i < measuresOrdinal.length; i++) {
@@ -442,7 +477,7 @@ public abstract class BlockletScannedResult {
     clearValidRowIdList();
   }
 
-  public int numberOfpages() {
+  public int numberOfPages() {
     return pageFilteredRowCount.length;
   }
 
@@ -521,7 +556,7 @@ public abstract class BlockletScannedResult {
   protected List<byte[][]> getComplexTypeKeyArrayBatch() {
     List<byte[][]> complexTypeArrayList = new ArrayList<>(validRowIds.size());
     ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-    ReUsableByteArrayDataOutputStream reUseableDataOutput =
+    ReUsableByteArrayDataOutputStream reusableDataOutput =
         new ReUsableByteArrayDataOutputStream(byteStream);
     boolean isExceptionThrown = false;
     byte[][] complexTypeData = null;
@@ -538,23 +573,23 @@ public abstract class BlockletScannedResult {
         try {
           genericQueryType
               .parseBlocksAndReturnComplexColumnByteArray(dimRawColumnChunks, dimensionColumnPages,
-                  validRowIds.get(j), pageCounter, reUseableDataOutput);
+                  validRowIds.get(j), pageCounter, reusableDataOutput);
           // get the key array in columnar way
           byte[][] complexKeyArray = complexTypeArrayList.get(j);
           complexKeyArray[i] = byteStream.toByteArray();
-          reUseableDataOutput.reset();
+          reusableDataOutput.reset();
         } catch (IOException e) {
           isExceptionThrown = true;
           LOGGER.error(e.getMessage(), e);
         } finally {
           if (isExceptionThrown) {
-            CarbonUtil.closeStreams(reUseableDataOutput);
+            CarbonUtil.closeStreams(reusableDataOutput);
             CarbonUtil.closeStreams(byteStream);
           }
         }
       }
     }
-    CarbonUtil.closeStreams(reUseableDataOutput);
+    CarbonUtil.closeStreams(reusableDataOutput);
     CarbonUtil.closeStreams(byteStream);
     return complexTypeArrayList;
   }
@@ -573,7 +608,7 @@ public abstract class BlockletScannedResult {
   public void setBlockletId(String blockletId, String blockletNumber) {
     this.blockletId = blockletId + CarbonCommonConstants.FILE_SEPARATOR + blockletNumber;
     this.blockletNumber = blockletNumber;
-    // if deleted recors map is present for this block
+    // if deleted record map is present for this block
     // then get the first page deleted vo
     if (null != deletedRecordMap) {
       String key;
@@ -727,7 +762,7 @@ public abstract class BlockletScannedResult {
   public abstract int getCurrentRowId();
 
   /**
-   * @return dictionary key array for all the dictionary dimension in integer array forat
+   * @return dictionary key array for all the dictionary dimension in integer array format
    * selected in query
    */
   public abstract int[] getDictionaryKeyIntegerArray();
@@ -750,7 +785,7 @@ public abstract class BlockletScannedResult {
       completeKey = new byte[fixedLengthKeySize];
       dictionaryKeyArrayList.add(completeKey);
     }
-    // initialize offset array onli if data is present
+    // initialize offset array if data is present
     if (this.dictionaryColumnChunkIndexes.length > 0) {
       columnDataOffsets = new int[validRowIds.size()];
     }

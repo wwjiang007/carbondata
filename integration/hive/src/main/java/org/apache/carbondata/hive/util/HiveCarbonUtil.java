@@ -49,7 +49,7 @@ import org.apache.carbondata.core.metadata.schema.table.TableSchema;
 import org.apache.carbondata.core.metadata.schema.table.TableSchemaBuilder;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.util.CarbonUtil;
-import org.apache.carbondata.core.util.OutputFilesInfoHolder;
+import org.apache.carbondata.core.util.DataLoadMetrics;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.core.writer.ThriftWriter;
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel;
@@ -151,8 +151,33 @@ public class HiveCarbonUtil {
       throw new RuntimeException(e);
     }
     loadModel.setSkipParsers();
-    loadModel.setOutputFilesInfoHolder(new OutputFilesInfoHolder());
+    loadModel.setMetrics(new DataLoadMetrics());
     return loadModel;
+  }
+
+  public static CarbonTable getCarbonTable(Configuration tableProperties) throws SQLException {
+    String[] tableUniqueName = tableProperties.get("name").split("\\.");
+    String databaseName = tableUniqueName[0];
+    String tableName = tableUniqueName[1];
+    String tablePath = tableProperties.get(hive_metastoreConstants.META_TABLE_LOCATION);
+    String columns = tableProperties.get(hive_metastoreConstants.META_TABLE_COLUMNS);
+    String sortColumns = tableProperties.get("sort_columns");
+    String columnTypes = tableProperties.get(hive_metastoreConstants.META_TABLE_COLUMN_TYPES);
+    String partitionColumns =
+        tableProperties.get(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS);
+    String partitionColumnTypes =
+        tableProperties.get(hive_metastoreConstants.META_TABLE_PARTITION_COLUMN_TYPES);
+    if (partitionColumns != null) {
+      columns = columns + "," + partitionColumns;
+      columnTypes = columnTypes + ":" + partitionColumnTypes;
+    }
+    String[] columnTypeArray = HiveCarbonUtil.splitSchemaStringToArray(columnTypes);
+
+    CarbonTable carbonTable = CarbonTable.buildFromTableInfo(
+        HiveCarbonUtil.getTableInfo(tableName, databaseName, tablePath,
+            sortColumns, columns.split(","), columnTypeArray, new ArrayList<>()));
+    carbonTable.setTransactionalTable(false);
+    return carbonTable;
   }
 
   private static TableInfo getTableInfo(String tableName, String databaseName, String location,
@@ -197,6 +222,7 @@ public class HiveCarbonUtil {
     tableInfo.setDatabaseName(databaseName);
     tableInfo.setTablePath(location);
     tableInfo.setFactTable(tableSchema);
+    tableInfo.setTableUniqueName(databaseName + "_" + tableName);
     return tableInfo;
   }
 

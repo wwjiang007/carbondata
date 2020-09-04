@@ -87,7 +87,9 @@ public class TableStatusReadCommittedScope implements ReadCommittedScope {
       SegmentFileStore fileStore =
           new SegmentFileStore(identifier.getTablePath(), segment.getSegmentFileName());
       indexFiles = fileStore.getIndexOrMergeFiles();
-      segment.setSegmentMetaDataInfo(fileStore.getSegmentFile().getSegmentMetaDataInfo());
+      if (fileStore.getSegmentFile() != null) {
+        segment.setSegmentMetaDataInfo(fileStore.getSegmentFile().getSegmentMetaDataInfo());
+      }
     }
     return indexFiles;
   }
@@ -95,7 +97,9 @@ public class TableStatusReadCommittedScope implements ReadCommittedScope {
   public SegmentRefreshInfo getCommittedSegmentRefreshInfo(Segment segment, UpdateVO updateVo) {
     SegmentRefreshInfo segmentRefreshInfo;
     long segmentFileTimeStamp = 0L;
-    if (null != segment.getSegmentFileName()) {
+    if (null != segment.getLoadMetadataDetails()) {
+      segmentFileTimeStamp = segment.getLoadMetadataDetails().getLastModifiedTime();
+    } else if (null != segment.getSegmentFileName()) {
       segmentFileTimeStamp = FileFactory.getCarbonFile(CarbonTablePath
           .getSegmentFilePath(identifier.getTablePath(), segment.getSegmentFileName()))
           .getLastModifiedTime();
@@ -112,7 +116,7 @@ public class TableStatusReadCommittedScope implements ReadCommittedScope {
   @Override
   public void takeCarbonIndexFileSnapShot() throws IOException {
     // Only Segment Information is updated.
-    // File information will be fetched on the fly according to the fecthed segment info.
+    // File information will be fetched on the fly according to the fetched segment info.
     this.loadMetadataDetails = SegmentStatusManager
         .readTableStatusFile(CarbonTablePath.getTableStatusFilePath(identifier.getTablePath()));
   }

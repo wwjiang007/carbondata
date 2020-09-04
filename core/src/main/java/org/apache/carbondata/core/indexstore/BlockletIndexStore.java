@@ -174,7 +174,7 @@ public class BlockletIndexStore
         new ArrayList<>(tableSegmentUniqueIdentifiers.size());
     List<TableBlockIndexUniqueIdentifierWrapper> missedIdentifiersWrapper = new ArrayList<>();
     BlockletIndexWrapper blockletIndexWrapper = null;
-    // Get the indexes for each indexfile from cache.
+    // Get the indexes for each index file from cache.
     try {
       for (TableBlockIndexUniqueIdentifierWrapper
                identifierWrapper : tableSegmentUniqueIdentifiers) {
@@ -248,7 +248,7 @@ public class BlockletIndexStore
   @Override
   public void put(TableBlockIndexUniqueIdentifierWrapper tableBlockIndexUniqueIdentifierWrapper,
       BlockletIndexWrapper wrapper) throws IOException {
-    // As dataMap will use unsafe memory, it is not recommended to overwrite an existing entry
+    // As index will use unsafe memory, it is not recommended to overwrite an existing entry
     // as in that case clearing unsafe memory need to be taken card. If at all index entry
     // in the cache need to be overwritten then use the invalidate interface
     // and then use the put interface
@@ -266,7 +266,7 @@ public class BlockletIndexStore
         lruCache.put(tableBlockIndexUniqueIdentifierWrapper.getTableBlockIndexUniqueIdentifier()
             .getUniqueTableSegmentIdentifier(), wrapper, wrapper.getMemorySize(), expirationTime);
       } catch (Throwable e) {
-        // clear all the memory acquired by data map in case of any failure
+        // clear all the memory acquired by index in case of any failure
         for (Index blockletIndex : indexes) {
           blockletIndex.clear();
         }
@@ -278,10 +278,10 @@ public class BlockletIndexStore
   /**
    * Below method will be used to load the segment of segments
    * One segment may have multiple task , so  table segment will be loaded
-   * based on task id and will return the map of taksId to table segment
+   * based on task id and will return the map of taskId to table segment
    * map
    *
-   * @return map of taks id to segment mapping
+   * @return map of task id to segment mapping
    * @throws IOException
    */
   private BlockIndex loadAndGetIndex(TableBlockIndexUniqueIdentifier identifier,
@@ -317,12 +317,12 @@ public class BlockletIndexStore
   private synchronized Object addAndGetSegmentLock(String uniqueIdentifier) {
     // get the segment lock object if it is present then return
     // otherwise add the new lock and return
-    Object segmentLoderLockObject = segmentLockMap.get(uniqueIdentifier);
-    if (null == segmentLoderLockObject) {
-      segmentLoderLockObject = new Object();
-      segmentLockMap.put(uniqueIdentifier, segmentLoderLockObject);
+    Object segmentLockObject = segmentLockMap.get(uniqueIdentifier);
+    if (null == segmentLockObject) {
+      segmentLockObject = new Object();
+      segmentLockMap.put(uniqueIdentifier, segmentLockObject);
     }
-    return segmentLoderLockObject;
+    return segmentLockObject;
   }
 
   /**

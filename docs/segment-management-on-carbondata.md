@@ -32,7 +32,7 @@ concept which helps to maintain consistency of data and easy transaction managem
 
   ```
   SHOW [HISTORY] SEGMENTS
-  [FOR TABLE | ON] [db_name.]table_name
+  [FOR TABLE | ON] [db_name.]table_name [INCLUDE STAGE] [LIMIT number_of_segments]
   [AS (select query from table_name_segments)]
   ```
 
@@ -54,15 +54,27 @@ concept which helps to maintain consistency of data and easy transaction managem
   SHOW SEGMENTS ON CarbonDatabase.CarbonTable
   ```
 
+  Show 10 visible segments with the largest segmentid
+
+  ```
+  SHOW SEGMENTS ON CarbonDatabase.CarbonTable LIMIT 10
+  ```
+
   Show all segments, include invisible segments
   ```
   SHOW HISTORY SEGMENTS ON CarbonDatabase.CarbonTable
   ```
 
+  Show all segments, include stages
+  Stage status is 'Unload' or 'Loading', and stage ID, stage load time taken is null.
+  ```
+  SHOW SEGMENTS ON CarbonDatabase.CarbonTable INCLUDE STAGE
+  ```
+
 
   When more detail of the segment is required, user can issue SHOW SEGMENT by query.    
     
-  The query should against table name with '_segments' appended and select from following fields:
+  The query should be against table name with '_segments' appended and select from following fields:
     
 - id: String, the id of the segment
 - status: String, status of the segment
@@ -83,6 +95,9 @@ concept which helps to maintain consistency of data and easy transaction managem
   SHOW SEGMENTS ON CarbonTable AS 
   SELECT * FROM CarbonTable_segments
   
+  SHOW SEGMENTS ON CarbonTable LIMIT 10 AS 
+  SELECT * FROM CarbonTable_segments
+  
   SHOW SEGMENTS ON CarbonTable AS
   SELECT id, dataSize FROM CarbonTable_segments 
   WHERE status='Success' 
@@ -90,6 +105,9 @@ concept which helps to maintain consistency of data and easy transaction managem
   
   SHOW SEGMENTS ON CarbonTable AS
   SELECT avg(timeTakenMs) FROM CarbonTable_segments  
+  
+  SHOW SEGMENTS ON CarbonTable INCLUDE STAGE AS
+  SELECT avg(timeTakenMs) FROM CarbonTable_segments
   ```
 
 
@@ -149,7 +167,7 @@ concept which helps to maintain consistency of data and easy transaction managem
   **NOTE:**
   carbon.input.segments: Specifies the segment IDs to be queried. This property allows you to query specified segments of the specified table. The CarbonScan will read data from specified segments only.
 
-  If user wants to query with segments reading in multi threading mode, then CarbonSession. threadSet can be used instead of SET query.
+  If user wants to query with segments reading in multi-threading mode, then CarbonSession.threadSet can be used instead of SET query.
   ```
   CarbonSession.threadSet ("carbon.input.segments.<database_name>.<table_name>","<list of segment IDs>");
   ```
@@ -159,14 +177,14 @@ concept which helps to maintain consistency of data and easy transaction managem
   SET carbon.input.segments.<database_name>.<table_name> = *;
   ```
 
-  If user wants to query with segments reading in multi threading mode, then CarbonSession. threadSet can be used instead of SET query. 
+  If user wants to query with segments reading in multi-threading mode, then CarbonSession.threadSet can be used instead of SET query.
   ```
   CarbonSession.threadSet ("carbon.input.segments.<database_name>.<table_name>","*");
   ```
 
   **Examples:**
 
-  * Example to show the list of segment IDs,segment status, and other required details and then specify the list of segments to be read.
+  * Example to show the list of segment IDs, segment status, and other required details and then specify the list of segments to be read.
 
   ```
   SHOW SEGMENTS FOR carbontable1;
@@ -174,13 +192,13 @@ concept which helps to maintain consistency of data and easy transaction managem
   SET carbon.input.segments.db.carbontable1 = 1,3,9;
   ```
 
-  * Example to query with segments reading in multi threading mode:
+  * Example to query with segments reading in multi-threading mode:
 
   ```
   CarbonSession.threadSet ("carbon.input.segments.db.carbontable_Multi_Thread","1,3");
   ```
 
-  * Example for threadset in multithread environment (following shows how it is used in Scala code):
+  * Example for threadset in multi-thread environment (following shows how it is used in Scala code):
 
   ```
   def main(args: Array[String]) {

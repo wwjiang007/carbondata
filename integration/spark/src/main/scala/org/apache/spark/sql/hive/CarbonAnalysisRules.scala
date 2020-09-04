@@ -34,8 +34,6 @@ import org.apache.spark.sql.util.CarbonException
 import org.apache.spark.util.CarbonReflectionUtils
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.index.IndexStoreManager
-import org.apache.carbondata.core.index.status.IndexStatusManager
 import org.apache.carbondata.core.view.MVStatus
 import org.apache.carbondata.view.MVManagerInSpark
 
@@ -44,6 +42,12 @@ case class CarbonIUDAnalysisRule(sparkSession: SparkSession) extends Rule[Logica
   private lazy val parser = sparkSession.sessionState.sqlParser
   private lazy val optimizer = sparkSession.sessionState.optimizer
   private lazy val analyzer = sparkSession.sessionState.analyzer
+
+  private def projectionWithTupleId(alias: Option[String]): Seq[UnresolvedAlias] = {
+    val tupleId = UnresolvedAlias(Alias(UnresolvedFunction("getTupleId",
+      Seq.empty, isDistinct = false), "tupleId")())
+    Seq(UnresolvedAlias(UnresolvedStar(alias.map(Seq(_)))), tupleId)
+  }
 
   private def processUpdateQuery(
       table: UnresolvedRelation,
@@ -61,23 +65,9 @@ case class CarbonIUDAnalysisRule(sparkSession: SparkSession) extends Rule[Logica
     var addedTupleId = false
 
     def prepareTargetRelation(relation: UnresolvedRelation): SubqueryAlias = {
-      val tupleId = UnresolvedAlias(Alias(UnresolvedFunction("getTupleId",
-        Seq.empty, isDistinct = false), "tupleId")())
-
-      val projList = Seq(UnresolvedAlias(UnresolvedStar(alias.map(Seq(_)))), tupleId)
+      val projList = projectionWithTupleId(alias)
       val carbonTable = CarbonEnv.getCarbonTable(table.tableIdentifier)(sparkSession)
-      if (carbonTable != null) {
-        val viewManager = MVManagerInSpark.get(sparkSession)
-        val viewSchemas = viewManager.getSchemasOnTable(carbonTable)
-        if (!viewSchemas.isEmpty) {
-          viewSchemas.asScala.foreach { schema =>
-            viewManager.setStatus(
-              schema.getIdentifier,
-              MVStatus.DISABLED
-            )
-          }
-        }
-      }
+      MVManagerInSpark.disableMVOnTable(sparkSession, carbonTable)
       val tableRelation =
         alias match {
           case Some(_) =>
@@ -196,26 +186,14 @@ case class CarbonIUDAnalysisRule(sparkSession: SparkSession) extends Rule[Logica
       case relation: UnresolvedRelation
         if table.tableIdentifier == relation.tableIdentifier && !addedTupleId =>
         addedTupleId = true
-        val tupleId = UnresolvedAlias(Alias(UnresolvedFunction("getTupleId",
-          Seq.empty, isDistinct = false), "tupleId")())
-
-        val projList = Seq(UnresolvedAlias(UnresolvedStar(alias.map(Seq(_)))), tupleId)
+        val projList = projectionWithTupleId(alias)
         val carbonTable = CarbonEnv.getCarbonTable(table.tableIdentifier)(sparkSession)
         if (carbonTable != null) {
           if (carbonTable.isMV) {
             throw new UnsupportedOperationException(
               "Delete operation is not supported for indexSchema table")
           }
-          val viewManager = MVManagerInSpark.get(sparkSession)
-          val viewSchemas = viewManager.getSchemasOnTable(carbonTable)
-          if (!viewSchemas.isEmpty) {
-            viewSchemas.asScala.foreach { schema =>
-              viewManager.setStatus(
-                schema.getIdentifier,
-                MVStatus.DISABLED
-              )
-            }
-          }
+          MVManagerInSpark.disableMVOnTable(sparkSession, carbonTable)
         }
         // include tuple id in subquery
         alias match {
@@ -236,9 +214,9 @@ case class CarbonIUDAnalysisRule(sparkSession: SparkSession) extends Rule[Logica
       System.currentTimeMillis().toString)
   }
 
-  override def apply(logicalplan: LogicalPlan): LogicalPlan = {
+  override def apply(logicalPlan: LogicalPlan): LogicalPlan = {
 
-    logicalplan transform {
+    logicalPlan transform {
       case UpdateTable(t, cols, sel, alias, where) => processUpdateQuery(t, cols, sel, alias, where)
       case DeleteRecords(statement, alias, table) =>
         processDeleteRecordsQuery(

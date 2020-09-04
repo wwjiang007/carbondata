@@ -75,10 +75,10 @@ object CarbonScalaUtil {
         carbonLoadModel.getBinaryDecoder)
     } catch {
       case e: Exception =>
-        if (e.getMessage.startsWith(FieldConverter.stringLengthExceedErrorMsg)) {
-          val msg = s"Column ${carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
-            .getCreateOrderColumn.get(idx).getColName} is too long," +
-            s" consider to use 'long_string_columns' table property."
+        if (e.getMessage.startsWith(CarbonCommonConstants.STRING_LENGTH_EXCEEDED_MESSAGE)) {
+          val msg = CarbonCommonConstants.STRING_LENGTH_EXCEEDED_MESSAGE.format(row,
+              carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable.getCreateOrderColumn
+                .get(idx).getColName)
           LOGGER.error(msg, e)
           throw new Exception(msg, e)
         } else {
@@ -92,7 +92,7 @@ object CarbonScalaUtil {
    *
    * @param value           Input value to convert
    * @param dataType        Datatype to convert and then convert to String
-   * @param timeStampFormat Timestamp format to convert in case of timestamp datatypes
+   * @param timeStampFormat Timestamp format to convert in case of timestamp data types
    * @param dateFormat      DataFormat to convert in case of DateType datatype
    * @return converted String
    */
@@ -145,7 +145,7 @@ object CarbonScalaUtil {
    *
    * @param value           Input value to convert
    * @param dataType        Datatype to convert and then convert to String
-   * @param timeStampFormat Timestamp format to convert in case of timestamp datatypes
+   * @param timeStampFormat Timestamp format to convert in case of timestamp data types
    * @param dateFormat      DataFormat to convert in case of DateType datatype
    * @return converted String
    */
@@ -344,7 +344,7 @@ object CarbonScalaUtil {
           specLinkedMap,
           table).toMap
       f.copy(spec = changedSpec)
-    }.groupBy(p => p.spec).map(f => f._2.head).toSeq // Avoid duplicates by do groupby
+    }.groupBy(p => p.spec).map(f => f._2.head).toSeq // Avoid duplicates by do group by
   }
 
   /**
@@ -399,7 +399,7 @@ object CarbonScalaUtil {
       } else {
         finalProperties.put("tableName", dbAndTableName(0))
       }
-      // Overriding the tablePath in case tablepath already exists. This will happen when old
+      // Overriding the 'tablePath' in case 'tablepath' already exists. This will happen when old
       // table schema is updated by the new code then both `path` and `tablepath` will exist. In
       // this case use tablepath
       parameters.get("tablepath") match {
@@ -599,8 +599,7 @@ object CarbonScalaUtil {
    *
    * @param tableProperties
    */
-  def validateDuplicateLocalDictIncludeExcludeColmns(tableProperties: mutable.Map[String,
-    String]): Unit = {
+  def validateDuplicateColumnsForLocalDict(tableProperties: mutable.Map[String, String]): Unit = {
     val isLocalDictIncludeDefined = tableProperties
       .get(CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE)
       .isDefined
@@ -666,24 +665,24 @@ object CarbonScalaUtil {
     }
 
     // check if column is other than STRING or VARCHAR datatype
-    localDictColumns.foreach { dictColm =>
+    localDictColumns.foreach { dictColumn =>
       if (fields
-        .exists(x => x.column.equalsIgnoreCase(dictColm) &&
+        .exists(x => x.column.equalsIgnoreCase(dictColumn) &&
                      !x.dataType.get.equalsIgnoreCase("STRING") &&
                      !x.dataType.get.equalsIgnoreCase("VARCHAR") &&
                      !x.dataType.get.equalsIgnoreCase("STRUCT") &&
                      !x.dataType.get.equalsIgnoreCase("MAP") &&
                      !x.dataType.get.equalsIgnoreCase("ARRAY"))) {
-        if (fields.exists(x => x.column.equalsIgnoreCase(dictColm)
+        if (fields.exists(x => x.column.equalsIgnoreCase(dictColumn)
                 && x.dataType.get.equalsIgnoreCase("BINARY"))
                 && tableProperties.get("local_dictionary_exclude").nonEmpty
-                && tableProperties.get("local_dictionary_exclude").get.contains(dictColm)
+                && tableProperties.get("local_dictionary_exclude").get.contains(dictColumn)
                 && (tableProperties.get("local_dictionary_include").isEmpty
-                || (!tableProperties.get("local_dictionary_include").get.contains(dictColm)))) {
+                || (!tableProperties.get("local_dictionary_include").get.contains(dictColumn)))) {
           LOGGER.info("Local_dictionary_exclude supports binary")
         } else {
           val errorMsg = "LOCAL_DICTIONARY_INCLUDE/LOCAL_DICTIONARY_EXCLUDE column: " +
-                  dictColm.trim +
+                  dictColumn.trim +
                   " is not a string/complex/varchar datatype column. LOCAL_DICTIONARY_COLUMN" +
                   " should be no dictionary string/complex/varchar datatype column." +
                   "Please check the DDL."
@@ -693,13 +692,12 @@ object CarbonScalaUtil {
     }
 
     // Validate whether any of the child columns of complex dataType column is a string column
-    localDictColumns.foreach { dictColm =>
+    localDictColumns.foreach { dictColumn =>
       if (fields
-        .exists(x => x.column.equalsIgnoreCase(dictColm) && x.children.isDefined &&
-                     null != x.children.get &&
-                     !validateChildColumnsRecursively(x))) {
+        .exists(x => x.column.equalsIgnoreCase(dictColumn) && x.children.isDefined &&
+                     null != x.children.get && !validateChildColumnsRecursively(x))) {
         val errMsg =
-          s"None of the child columns of complex dataType column $dictColm specified in " +
+          s"None of the child columns of complex dataType column $dictColumn specified in " +
           "local_dictionary_include are not of string dataType."
         throw new MalformedCarbonCommandException(errMsg)
       }
@@ -707,40 +705,39 @@ object CarbonScalaUtil {
   }
 
   /**
-   * The method adds the index handler to sort columns if it is not already present as sort column
-   * @param handler Index handler name
-   * @param sourceColumns Source columns of index handler
+   * The method inserts the column to sort columns
+   * @param column Name of the column to be inserted to sort columns
+   * @param insertBefore Columns before which given column should be inserted
    * @param tableProperties Table properties
    */
-  def addIndexHandlerToSortColumns(handler: String, sourceColumns: Array[String],
+  def insertColumnToSortColumns(column: String, insertBefore: Array[String],
       tableProperties: mutable.Map[String, String]): Unit = {
-    // Add handler into sort columns
+    // Insert the column into sort columns
     val sortKey = tableProperties.get(CarbonCommonConstants.SORT_COLUMNS)
-    var sortColumnsString = handler
-    // If sort columns are not configured, simply use handler as a sort column.
+    var sortColumnsString = column
+    // If sort columns are not configured, simply use column as a sort column.
     if (sortKey.isDefined && !sortKey.get.isEmpty) {
       sortColumnsString = sortKey.get
       val sortColumns = sortColumnsString.split(",").map(_.trim)
-      // If sort columns already contains handler, use sort columns as is.
-      if (!sortColumns.contains(handler)) {
-        // If sort columns do not contain handler as one of the sort column then check if
-        // any of handler's source columns are present as sort columns. If so, insert handler
-        // into sort columns such that it is just before its source columns. Thus, sorting of
-        // data happens w.r.t handler before any of its source columns.
-        val sourceIndex = new Array[Int](sourceColumns.length)
-        sourceColumns.zipWithIndex.foreach {
-          case (source, index) => sourceIndex(index) = sortColumns.indexWhere(_.equals(source))
+      // If sort columns already contains column, use sort columns as is.
+      if (!sortColumns.contains(column)) {
+        // If sort columns do not contain this column as one of the sort column then check if
+        // any of the insertBefore columns are present as sort columns. If so, insert this column
+        // into sort columns such that it is just before them. Thus, sorting of data happens w.r.t
+        // this column before any of the insertBefore columns.
+        val columnsIndex = new Array[Int](insertBefore.length)
+        insertBefore.zipWithIndex.foreach {
+          case (colName, index) => columnsIndex(index) = sortColumns.indexWhere(_.equals(colName))
         }
-        val posIdx = sourceIndex.filter(_ >= 0)
+        val posIdx = columnsIndex.filter(_ >= 0)
         if (posIdx.nonEmpty) {
-          // Found index of first source column in the sort columns. Insert handler just
-          // before it.
-          sortColumnsString = (sortColumns.slice(0, posIdx.min) ++ Array(handler) ++
+          // Found index of first column in the sort columns. Insert this column just before it
+          sortColumnsString = (sortColumns.slice(0, posIdx.min) ++ Array(column) ++
                                sortColumns.slice(posIdx.min, sortColumns.length)).mkString(",")
         } else {
-          // None of the source columns of handler are not present as sort columns. Just append
-          // handler to existing sort columns.
-          sortColumnsString = sortColumnsString + s",$handler"
+          // None of the insertBefore column are not present as sort columns. Just append
+          // column to existing sort columns.
+          sortColumnsString = sortColumnsString + s",$column"
         }
       }
     }

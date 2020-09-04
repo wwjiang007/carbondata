@@ -17,7 +17,6 @@
 
 package org.apache.carbondata.index.bloom
 
-import java.io.File
 import java.util.{Random, UUID}
 
 import scala.collection.JavaConverters._
@@ -38,14 +37,13 @@ import org.apache.carbondata.core.index.status.IndexStatus
 import org.apache.carbondata.core.metadata.index.IndexType
 
 class BloomCoarseGrainIndexFunctionSuite  extends QueryTest with BeforeAndAfterAll with BeforeAndAfterEach {
-  val bigFile = s"$resourcesPath/bloom_datamap_function_test_big.csv"
+  val bigFile = s"$resourcesPath/bloom_index_function_test_big.csv"
   val normalTable = "carbon_normal"
   val bloomSampleTable = "carbon_bloom"
   val indexName = "bloom_dm"
 
   override protected def beforeAll(): Unit = {
     deleteFile(bigFile)
-    new File(CarbonProperties.getInstance().getSystemFolderLocation).delete()
     createFile(bigFile, line = 2000)
     sql(s"DROP TABLE IF EXISTS $normalTable")
     sql(s"DROP TABLE IF EXISTS $bloomSampleTable")

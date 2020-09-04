@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
+import org.apache.carbondata.core.metadata.datatype.ArrayType;
 import org.apache.carbondata.core.metadata.datatype.DataType;
 import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.datatype.DecimalType;
@@ -107,9 +108,9 @@ public class TableSchemaBuilder {
     schema.setTableId(UUID.randomUUID().toString());
     schema.setPartitionInfo(null);
     schema.setBucketingInfo(null);
-    SchemaEvolution schemaEvol = new SchemaEvolution();
-    schemaEvol.setSchemaEvolutionEntryList(new ArrayList<SchemaEvolutionEntry>());
-    schema.setSchemaEvolution(schemaEvol);
+    SchemaEvolution schemaEvolution = new SchemaEvolution();
+    schemaEvolution.setSchemaEvolutionEntryList(new ArrayList<SchemaEvolutionEntry>());
+    schema.setSchemaEvolution(schemaEvolution);
     List<ColumnSchema> allColumns = new LinkedList<>(sortColumns);
     allColumns.addAll(dimension);
     allColumns.addAll(varCharColumns);
@@ -132,10 +133,9 @@ public class TableSchemaBuilder {
     if (isLocalDictionaryEnabled) {
       property.put(CarbonCommonConstants.LOCAL_DICTIONARY_ENABLE,
           String.valueOf(isLocalDictionaryEnabled));
-      String localdictionaryThreshold = localDictionaryThreshold.equalsIgnoreCase("0") ?
-          CarbonCommonConstants.LOCAL_DICTIONARY_THRESHOLD_DEFAULT :
-          localDictionaryThreshold;
-      property.put(CarbonCommonConstants.LOCAL_DICTIONARY_THRESHOLD, localdictionaryThreshold);
+      String localDictionaryThreshold = this.localDictionaryThreshold.equalsIgnoreCase("0") ?
+          CarbonCommonConstants.LOCAL_DICTIONARY_THRESHOLD_DEFAULT : this.localDictionaryThreshold;
+      property.put(CarbonCommonConstants.LOCAL_DICTIONARY_THRESHOLD, localDictionaryThreshold);
       for (int index = 0; index < allColumns.size(); index++) {
         ColumnSchema colSchema = allColumns.get(index);
         if (colSchema.getDataType() == DataTypes.STRING
@@ -177,18 +177,10 @@ public class TableSchemaBuilder {
       newColumn.setColumnName(field.getFieldName());
     }
     newColumn.setDataType(field.getDataType());
-    if (isSortColumn ||
-        field.getDataType() == DataTypes.STRING ||
-        field.getDataType() == DataTypes.VARCHAR ||
-        field.getDataType() == DataTypes.DATE ||
-        field.getDataType() == DataTypes.TIMESTAMP ||
-        field.getDataType() == DataTypes.BINARY ||
-        field.getDataType().isComplexType() ||
-        (isComplexChild))  {
-      newColumn.setDimensionColumn(true);
-    } else {
-      newColumn.setDimensionColumn(false);
-    }
+    newColumn.setDimensionColumn(isSortColumn || field.getDataType() == DataTypes.STRING
+        || field.getDataType() == DataTypes.VARCHAR || field.getDataType() == DataTypes.DATE
+        || field.getDataType() == DataTypes.TIMESTAMP || field.getDataType() == DataTypes.BINARY
+        || field.getDataType().isComplexType() || (isComplexChild));
     if (!isComplexChild) {
       newColumn.setSchemaOrdinal(ordinal++);
     } else {
@@ -240,14 +232,20 @@ public class TableSchemaBuilder {
       String parentFieldName = newColumn.getColumnName();
       if (DataTypes.isArrayType(field.getDataType())) {
         for (StructField structField : field.getChildren()) {
-          structField.setFieldName(getColNameForArray(valIndex));
+          String colName = getColNameForArray(valIndex);
+          if (null != ((ArrayType) field.getDataType()).getElementName()) {
+            colName = ((ArrayType) field.getDataType()).getElementName();
+          }
+          structField.setFieldName(colName);
           addColumn(structField, parentFieldName, valIndex, false, true, isInvertedIdxColumn);
         }
       } else if (DataTypes.isStructType(field.getDataType())
           && ((StructType) field.getDataType()).getFields().size() > 0) {
         // This field has children.
-        for (StructField structField : field.getChildren()) {
-          addColumn(structField, parentFieldName, valIndex, false, true, isInvertedIdxColumn);
+        if (field.getChildren() != null) {
+          for (StructField structField : field.getChildren()) {
+            addColumn(structField, parentFieldName, valIndex, false, true, isInvertedIdxColumn);
+          }
         }
       } else if (DataTypes.isMapType(field.getDataType())) {
         for (StructField structField : field.getChildren()) {

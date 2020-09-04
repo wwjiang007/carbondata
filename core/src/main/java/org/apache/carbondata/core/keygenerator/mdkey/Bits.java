@@ -44,9 +44,9 @@ public class Bits implements Serializable {
    */
   private int[] lens;
   /**
-   * wsize.
+   * word size.
    */
-  private int wsize;
+  private int wSize;
   /**
    * byteSize.
    */
@@ -56,11 +56,11 @@ public class Bits implements Serializable {
     this.lens = lens;
     this.length = getTotalLength(lens);
 
-    wsize = length / LONG_LENGTH;
+    wSize = length / LONG_LENGTH;
     byteSize = length / 8;
 
     if (length % LONG_LENGTH != 0) {
-      wsize++;
+      wSize++;
     }
 
     if (length % 8 != 0) {
@@ -115,45 +115,8 @@ public class Bits implements Serializable {
     return new int[] { start, end };
   }
 
-  protected long[] get(long[] keys) {
-    long[] words = new long[wsize];
-    int ll = 0;
-    int minLength = Math.min(lens.length, keys.length);
-    for (int i = minLength - 1; i >= 0; i--) {
-
-      long val = keys[i];
-
-      int idx = ll >> 6; // divide by 64 to get the new word index
-      int position = ll & 0x3f; // to ignore sign bit and consider the remaining
-      val = val & (LONG_MAX >> (MAX_LENGTH - lens[i])); // To control the
-      // logic so that
-      // any val do not
-      // exceed the
-      // cardinality
-      long mask = (val << position);
-      long word = words[idx];
-      words[idx] = (word | mask);
-      ll += lens[i];
-
-      int nextIndex = ll >> 6; // This is divide by 64
-
-      if (nextIndex != idx) {
-        int consideredBits = lens[i] - ll & 0x3f;
-        //Check for spill over only if all the bits are not considered
-        if (consideredBits < lens[i]) {
-          mask = (val >> (lens[i] - ll & 0x3f)); //& (0x7fffffffffffffffL >> (0x3f-pos));
-          word = words[nextIndex];
-          words[nextIndex] = (word | mask);
-        }
-      }
-
-    }
-
-    return words;
-  }
-
   protected long[] get(int[] keys) {
-    long[] words = new long[wsize];
+    long[] words = new long[wSize];
     int ll = 0;
     int minLength = Math.min(lens.length, keys.length);
     for (int i = minLength - 1; i >= 0; i--) {
@@ -191,7 +154,7 @@ public class Bits implements Serializable {
   }
 
   private long[] getArray(long[] words) {
-    long[] vals = new long[lens.length];
+    long[] values = new long[lens.length];
     int ll = 0;
     for (int i = lens.length - 1; i >= 0; i--) {
 
@@ -200,8 +163,8 @@ public class Bits implements Serializable {
       long val = words[index];
       long mask = (LONG_MAX >>> (MAX_LENGTH - lens[i]));
       mask = mask << pos;
-      vals[i] = (val & mask);
-      vals[i] >>>= pos;
+      values[i] = (val & mask);
+      values[i] >>>= pos;
       ll += lens[i];
 
       int nextIndex = ll >> 6;
@@ -211,18 +174,11 @@ public class Bits implements Serializable {
         if (pos != 0) {
           mask = (LONG_MAX >>> (MAX_LENGTH - pos));
           val = words[nextIndex];
-          vals[i] = vals[i] | ((val & mask) << (lens[i] - pos));
+          values[i] = values[i] | ((val & mask) << (lens[i] - pos));
         }
       }
     }
-    return vals;
-  }
-
-  public byte[] getBytes(long[] keys) {
-
-    long[] words = get(keys);
-
-    return getBytesVal(words);
+    return values;
   }
 
   private byte[] getBytesVal(long[] words) {
@@ -255,7 +211,7 @@ public class Bits implements Serializable {
 
     int length = 8;
     int ls = byteSize;
-    long[] words = new long[wsize];
+    long[] words = new long[wSize];
     for (int i = 0; i < words.length; i++) {
       long l = 0;
       ls -= 8;
@@ -274,42 +230,6 @@ public class Bits implements Serializable {
     }
 
     return getArray(words);
-
-  }
-
-  public long[] getKeyArray(byte[] key, int[] maskByteRanges) {
-
-    int length = 8;
-    int ls = byteSize;
-    long[] words = new long[wsize];
-    for (int i = 0; i < words.length; i++) {
-      long l = 0;
-      ls -= 8;
-      int m2 = 0;
-      if (ls < 0) {
-        m2 = ls + length;
-        ls = 0;
-      } else {
-        m2 = ls + 8;
-      }
-      if (maskByteRanges == null) {
-        for (int j = ls; j < m2; j++) {
-          l <<= 8;
-          l ^= key[j] & 0xFF;
-        }
-      } else {
-        for (int j = ls; j < m2; j++) {
-          l <<= 8;
-          if (maskByteRanges[j] != -1) {
-            l ^= key[maskByteRanges[j]] & 0xFF;
-          }
-        }
-      }
-      words[i] = l;
-    }
-
-    return getArray(words);
-
   }
 
   @Override

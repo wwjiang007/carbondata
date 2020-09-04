@@ -106,7 +106,7 @@ public class RawResultIterator extends CarbonIterator<Object[]> {
     }
 
     @Override
-    public Void call() throws Exception {
+    public Void call() {
       if (isBackupFilling) {
         backupBuffer = fetchRows();
         isBackupFilled = true;
@@ -137,7 +137,7 @@ public class RawResultIterator extends CarbonIterator<Object[]> {
           if (!isBackupFilled) {
             fetchFuture.get();
           }
-          // copy backup buffer to current buffer and fill backup buffer asyn
+          // copy backup buffer to current buffer and fill backup buffer asynchronously
           currentIdxInBuffer = 0;
           currentBuffer.clear();
           currentBuffer = backupBuffer;
@@ -173,11 +173,7 @@ public class RawResultIterator extends CarbonIterator<Object[]> {
   @Override
   public boolean hasNext() {
     fillDataFromPrefetch();
-    if (currentIdxInBuffer < currentBuffer.size()) {
-      return true;
-    }
-
-    return false;
+    return currentIdxInBuffer < currentBuffer.size();
   }
 
   @Override

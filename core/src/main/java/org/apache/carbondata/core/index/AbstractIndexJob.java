@@ -23,10 +23,11 @@ import org.apache.carbondata.core.indexstore.BlockletIndexWrapper;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 
 /**
- * abstract class for data map job
+ * abstract class for index job
  */
 public abstract class AbstractIndexJob implements IndexJob {
 
@@ -36,7 +37,8 @@ public abstract class AbstractIndexJob implements IndexJob {
   }
 
   @Override
-  public List<ExtendedBlocklet> execute(IndexInputFormat indexInputFormat) {
+  public List<ExtendedBlocklet> execute(IndexInputFormat indexInputFormat,
+      Configuration configuration) {
     return null;
   }
 }

@@ -77,6 +77,30 @@ class StandardPartitionTableQueryTestCase extends QueryTest with BeforeAndAfterA
 
   }
 
+  test("test load on partition table with load header option set to true") {
+    sql("drop table if exists partitionone")
+    sql(
+      """
+        | CREATE TABLE partitionone (empname String, designation String, doj Timestamp,
+        |  workgroupcategory int, workgroupcategoryname String, deptno int, deptname String,
+        |  projectcode int, projectjoindate Timestamp, projectenddate Date,attendance int,
+        |  utilization int,salary int)
+        | PARTITIONED BY (empno int)
+        | STORED AS carbondata
+      """.stripMargin)
+    sql(s"""LOAD DATA local inpath '$resourcesPath/data.csv' INTO TABLE partitionone OPTIONS('DELIMITER'= ',','HEADER'='true','QUOTECHAR'= '"')""")
+
+    val frame = sql(
+      "select empno, empname, designation, doj, workgroupcategory, workgroupcategoryname, deptno," +
+      " deptname, projectcode, projectjoindate, projectenddate, attendance, utilization, salary " +
+      "from partitionone where empno=11 order by empno")
+    verifyPartitionInfo(frame, Seq("empno=11"))
+
+    checkAnswer(frame,
+      sql("select  empno, empname, designation, doj, workgroupcategory, workgroupcategoryname, deptno, deptname, projectcode, projectjoindate, projectenddate, attendance, utilization, salary from originTable where empno=11 order by empno"))
+    sql("drop table if exists partitionone")
+  }
+
   test("create partition table by dataframe") {
     sql("select * from originTable")
       .write
@@ -491,7 +515,7 @@ test("Creation of partition table should fail if the colname in table schema and
       sql("alter table onlyPart drop columns(name)")
     }
     assert(ex1.getMessage.contains("alter table drop column is failed, cannot have the table with all columns as partition column"))
-    if (SparkUtil.isSparkVersionXandAbove("2.2")) {
+    if (SparkUtil.isSparkVersionXAndAbove("2.2")) {
       val ex2 = intercept[MalformedCarbonCommandException] {
         sql("alter table onlyPart change age age bigint")
       }

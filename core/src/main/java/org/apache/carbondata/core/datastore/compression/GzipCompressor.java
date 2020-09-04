@@ -97,7 +97,7 @@ public class GzipCompressor extends AbstractCompressor {
       int initialSize = (data.length * 2) < Integer.MAX_VALUE ? (data.length * 2) : data.length;
       byte[] buffer = new byte[initialSize];
       int len;
-      /**
+      /*
        * Reads the next byte of the data from the input stream and stores them into buffer
        * Data is then read from the buffer and put into byteOutputStream from a offset.
        */
@@ -143,7 +143,7 @@ public class GzipCompressor extends AbstractCompressor {
   @Override
   public long rawUncompress(byte[] input, byte[] output) {
     //gzip api doesnt have rawUncompress yet.
-    throw new RuntimeException("Not implemented rawUcompress for gzip yet");
+    throw new RuntimeException("Not implemented rawUncompress for gzip yet");
   }
 
   @Override
@@ -165,6 +165,6 @@ public class GzipCompressor extends AbstractCompressor {
   @Override
   public int rawUncompress(byte[] data, int offset, int length, byte[] output) {
     //gzip api doesnt have rawUncompress yet.
-    throw new RuntimeException("Not implemented rawUcompress for gzip yet");
+    throw new RuntimeException("Not implemented rawUncompress for gzip yet");
   }
 }

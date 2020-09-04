@@ -23,7 +23,7 @@ import org.apache.carbondata.core.scan.filter.intf.RowIntf;
 import org.apache.carbondata.core.scan.processor.RawBlockletColumnChunks;
 import org.apache.carbondata.core.util.BitSetGroup;
 
-public class FalseFilterExecutor implements FilterExecuter {
+public class FalseFilterExecutor implements FilterExecutor {
 
   @Override
   public BitSetGroup applyFilter(RawBlockletColumnChunks rawChunks, boolean useBitsetPipeline) {
@@ -39,8 +39,7 @@ public class FalseFilterExecutor implements FilterExecuter {
   @Override
   public BitSet prunePages(RawBlockletColumnChunks rawChunks) {
     int numberOfPages = rawChunks.getDataBlock().numberOfPages();
-    BitSet set = new BitSet(numberOfPages);
-    return set;
+    return new BitSet(numberOfPages);
   }
 
   @Override

@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.sun.xml.internal.messaging.saaj.util.ByteOutputStream
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.test.util.QueryTest
 import org.scalatest.BeforeAndAfterAll
 
@@ -42,7 +43,7 @@ import org.apache.carbondata.core.metadata.CarbonMetadata
 import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, IndexSchema}
 import org.apache.carbondata.core.scan.expression.Expression
 import org.apache.carbondata.core.scan.expression.conditional.EqualToExpression
-import org.apache.carbondata.core.scan.filter.executer.FilterExecuter
+import org.apache.carbondata.core.scan.filter.executer.FilterExecutor
 import org.apache.carbondata.core.scan.filter.intf.ExpressionType
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf
 import org.apache.carbondata.core.util.path.CarbonTablePath
@@ -156,7 +157,7 @@ class FGIndexFactory(carbonTable: CarbonTable,
    * Get the indexSchema for segmentId
    */
   override def getIndexes(segment: Segment,
-      partitions: java.util.List[PartitionSpec]): java.util.List[FineGrainIndex] = {
+      partitionLocations: java.util.Set[Path]): java.util.List[FineGrainIndex] = {
     getIndexes(segment)
   }
 }
@@ -170,7 +171,7 @@ class FGIndex extends FineGrainIndex {
   var taskName:String = _
 
   /**
-   * It is called to load the data map to memory or to initialize it.
+   * It is called to load the index to memory or to initialize it.
    */
   override def init(indexModel: IndexModel): Unit = {
     this.filePath = indexModel.getFilePath
@@ -196,8 +197,7 @@ class FGIndex extends FineGrainIndex {
   override def prune(
       filterExp: FilterResolverIntf,
       segmentProperties: SegmentProperties,
-      partitions: java.util.List[PartitionSpec],
-      filterExecuter: FilterExecuter,
+      filterExecuter: FilterExecutor,
       carbonTable: CarbonTable): java.util.List[FineGrainBlocklet] = {
     val buffer: ArrayBuffer[Expression] = new ArrayBuffer[Expression]()
     val expression = filterExp.getFilterExpression

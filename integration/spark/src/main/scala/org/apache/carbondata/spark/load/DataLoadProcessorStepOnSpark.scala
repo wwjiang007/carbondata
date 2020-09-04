@@ -21,11 +21,11 @@ import java.util
 
 import com.univocity.parsers.common.TextParsingException
 import org.apache.hadoop.conf.Configuration
+import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
-import org.apache.spark.TaskContext
 import org.apache.spark.util.LongAccumulator
 
 import org.apache.carbondata.common.logging.LogServiceFactory
@@ -165,7 +165,7 @@ object DataLoadProcessorStepOnSpark {
     }
   }
 
-  def inputAndconvertFunc(
+  def inputAndConvertFunc(
       rows: Iterator[Array[AnyRef]],
       index: Int,
       modelBroadcast: Broadcast[CarbonLoadModel],
@@ -209,16 +209,6 @@ object DataLoadProcessorStepOnSpark {
           row = new CarbonRow(rowParser.parseRow(rows.next()))
         }
         row = rowConverter.convert(row)
-        if (row != null) {
-          // In case of partition, after Input processor and converter steps, all the rows are given
-          // to hive to create partition folders. As hive is unaware of non-schema index columns,
-          // should discard those columns from rows and return.
-          val schemaColumnValues = row.getData.zipWithIndex.collect {
-            case (data, index) if !conf.getDataFields()(index).getColumn.isIndexColumn =>
-              data
-          }
-          row.setData(schemaColumnValues)
-        }
         rowCounter.add(1)
         row
       }
@@ -467,7 +457,7 @@ object DataLoadProcessorStepOnSpark {
 class NewInputProcessorStepImpl(configuration: CarbonDataLoadConfiguration,
     rows: Iterator[CarbonRow]) extends AbstractDataLoadProcessorStep(configuration, null) {
   /**
-   * Tranform the data as per the implementation.
+   * Transform the data as per the implementation.
    *
    * @return Array of Iterator with data. It can be processed parallel if implementation class wants
    * @throws CarbonDataLoadingException

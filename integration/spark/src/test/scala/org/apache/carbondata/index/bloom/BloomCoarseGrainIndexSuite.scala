@@ -28,20 +28,19 @@ import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
 
 import org.apache.carbondata.common.exceptions.sql.{MalformedCarbonCommandException, MalformedIndexCommandException}
 import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.index.status.{IndexStatus, IndexStatusManager}
+import org.apache.carbondata.core.index.status.IndexStatus
 import org.apache.carbondata.core.metadata.index.IndexType
 import org.apache.carbondata.core.util.CarbonProperties
 
 class BloomCoarseGrainIndexSuite extends QueryTest with BeforeAndAfterAll with BeforeAndAfterEach {
   val carbonSession = sqlContext.sparkSession
-  val bigFile = s"$resourcesPath/bloom_datamap_input_big.csv"
-  val smallFile = s"$resourcesPath/bloom_datamap_input_small.csv"
+  val bigFile = s"$resourcesPath/bloom_index_input_big.csv"
+  val smallFile = s"$resourcesPath/bloom_index_input_small.csv"
   val normalTable = "carbon_normal"
   val bloomSampleTable = "carbon_bloom"
   val indexName = "bloom_dm"
 
   override protected def beforeAll(): Unit = {
-    new File(CarbonProperties.getInstance().getSystemFolderLocation).delete()
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.ENABLE_QUERY_STATISTICS, "true")
     createFile(bigFile, line = 50000)

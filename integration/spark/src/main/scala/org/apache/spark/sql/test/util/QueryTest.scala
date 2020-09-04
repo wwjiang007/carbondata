@@ -29,7 +29,7 @@ import org.apache.spark.sql.test.TestQueryExecutor
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.cache.CacheProvider
 import org.apache.carbondata.core.constants.{CarbonCommonConstants, CarbonLoadOptionConstants}
-import org.apache.carbondata.core.util.{CarbonProperties, SessionParams, ThreadLocalSessionInfo}
+import org.apache.carbondata.core.util.{CarbonProperties, ThreadLocalSessionInfo}
 
 
 
@@ -90,6 +90,13 @@ class QueryTest extends PlanTest {
     }
   }
 
+  protected def checkAnswerWithoutSort(df: DataFrame, expectedAnswer: Seq[Row]): Unit = {
+    QueryTest.checkAnswer(df, expectedAnswer, needSort = false) match {
+      case Some(errorMessage) => fail(errorMessage)
+      case None =>
+    }
+  }
+
   protected def checkAnswer(df: DataFrame, expectedAnswer: Row): Unit = {
     checkAnswer(df, Seq(expectedAnswer))
   }
@@ -119,8 +126,9 @@ class QueryTest extends PlanTest {
   val resourcesPath = TestQueryExecutor.resourcesPath
   val target = TestQueryExecutor.target
   val integrationPath = TestQueryExecutor.integrationPath
-  val dblocation = TestQueryExecutor.location
+  val dbLocation = TestQueryExecutor.location
   val defaultParallelism = sqlContext.sparkContext.defaultParallelism
+  val targetTestClass = System.getProperty("user.dir") + "/target/test-classes"
 
   def defaultConfig(): Unit = {
     CarbonEnv.getInstance(sqlContext.sparkSession).carbonSessionInfo.getSessionParams.clear()
@@ -166,8 +174,7 @@ class QueryTest extends PlanTest {
 
   def setCarbonProperties(propertiesString: String): Unit = {
     val properties = propertiesString.split(", ", -1)
-    val exclude = Set("carbon.system.folder.location",
-      "carbon.badRecords.location",
+    val exclude = Set("carbon.badRecords.location",
       "carbon.storelocation")
     properties.foreach { property =>
       val entry = property.split("=")
@@ -219,8 +226,14 @@ object QueryTest {
    * @param df the [[DataFrame]] to be executed
    * @param expectedAnswer the expected result in a [[Seq]] of [[Row]]s.
    */
-  def checkAnswer(df: DataFrame, expectedAnswer: Seq[Row]): Option[String] = {
-    val isSorted = df.logicalPlan.collect { case s: logical.Sort => s }.nonEmpty
+  def checkAnswer(df: DataFrame,
+      expectedAnswer: Seq[Row],
+      needSort: Boolean = true): Option[String] = {
+    val isSorted = if (needSort) {
+      df.logicalPlan.collect { case s: logical.Sort => s }.nonEmpty
+    } else {
+      true
+    }
     def prepareAnswer(answer: Seq[Row]): Seq[Row] = {
       // Converts data to types that we can do equality comparison using Scala collections.
       // For BigDecimal type, the Scala type has a better definition of equality test (similar to

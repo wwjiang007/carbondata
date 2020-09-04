@@ -38,7 +38,6 @@ public class Field {
   private DataType type;
   private List<StructField> children;
   private String parent;
-  private String storeType = "columnar";
   private int schemaOrdinal = -1;
   private int precision = 0;
   private int scale = 0;
@@ -133,7 +132,8 @@ public class Field {
     } else if (type.equalsIgnoreCase("binary")) {
       this.type = DataTypes.BINARY;
     } else if (type.equalsIgnoreCase("array")) {
-      this.type = DataTypes.createArrayType(fields.get(0).getDataType());
+      this.type = DataTypes.createArrayType(fields.get(0).getDataType(),
+        fields.get(0).getFieldName());
     } else if (type.equalsIgnoreCase("struct")) {
       this.type = DataTypes.createStructType(fields);
     } else {
@@ -189,10 +189,6 @@ public class Field {
 
   public void setParent(String parent) {
     this.parent = parent;
-  }
-
-  public String getStoreType() {
-    return storeType;
   }
 
   public int getSchemaOrdinal() {
@@ -312,15 +308,11 @@ public class Field {
   public boolean equals(Object obj) {
     if (obj instanceof Field) {
       Field field = (Field) obj;
-      if ((!this.getDataType().equals(field.getDataType()))
-          || (!this.getFieldName().equals(field.getFieldName()))
-          || (!(this.getSchemaOrdinal() == (field.getSchemaOrdinal())))
-          ) {
-        return false;
-      }
+      return (this.getDataType().equals(field.getDataType()))
+          && (this.getFieldName().equals(field.getFieldName()))
+          && (this.getSchemaOrdinal() == (field.getSchemaOrdinal()));
     } else {
       return false;
     }
-    return true;
   }
 }

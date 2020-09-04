@@ -17,6 +17,7 @@
 
 package org.apache.carbondata.core.util;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
@@ -24,7 +25,7 @@ import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.log4j.Logger;
 
 /**
- * A util which provide methods used to record time information druing data loading.
+ * A util which provide methods used to record time information during data loading.
  */
 public class CarbonLoadStatisticsImpl implements LoadStatistics {
   private CarbonLoadStatisticsImpl() {
@@ -46,8 +47,8 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
    *threads, who does the same thing, LET - EST is the cost time of doing one thing using
    *multiple thread.
  */
-  private long loadCsvfilesToDfStartTime = 0;
-  private long loadCsvfilesToDfCostTime = 0;
+  private long loadCsvFilesToDfStartTime = 0;
+  private long loadCsvFilesToDfCostTime = 0;
   private long dicShuffleAndWriteFileTotalStartTime = 0;
 
   //LRU cache load one time
@@ -100,13 +101,13 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
     }
   }
 
-  public void recordLoadCsvfilesToDfTime() {
-    long loadCsvfilesToDfTimePoint = System.currentTimeMillis();
-    if (0 == loadCsvfilesToDfStartTime) {
-      loadCsvfilesToDfStartTime = loadCsvfilesToDfTimePoint;
+  public void recordLoadCsvFilesToDfTime() {
+    long loadCsvFilesToDfTimePoint = System.currentTimeMillis();
+    if (0 == loadCsvFilesToDfStartTime) {
+      loadCsvFilesToDfStartTime = loadCsvFilesToDfTimePoint;
     }
-    if (loadCsvfilesToDfTimePoint - loadCsvfilesToDfStartTime > loadCsvfilesToDfCostTime) {
-      loadCsvfilesToDfCostTime = loadCsvfilesToDfTimePoint - loadCsvfilesToDfStartTime;
+    if (loadCsvFilesToDfTimePoint - loadCsvFilesToDfStartTime > loadCsvFilesToDfCostTime) {
+      loadCsvFilesToDfCostTime = loadCsvFilesToDfTimePoint - loadCsvFilesToDfStartTime;
     }
   }
 
@@ -114,34 +115,26 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
     return lruCacheLoadTime;
   }
 
-  public void recordDictionaryValuesTotalTime(String partitionID,
-      Long dictionaryValuesTotalTimeTimePoint) {
-    if (null != parDictionaryValuesTotalTimeMap.get(partitionID)) {
-      if (null == parDictionaryValuesTotalTimeMap.get(partitionID)[0]) {
-        parDictionaryValuesTotalTimeMap.get(partitionID)[0] = dictionaryValuesTotalTimeTimePoint;
+  private void recordStatistics(Map<String, Long[]> statMap, String partitionID, Long value) {
+    if (null != statMap.get(partitionID)) {
+      if (null == statMap.get(partitionID)[0]) {
+        statMap.get(partitionID)[0] = value;
       }
-      if (null == parDictionaryValuesTotalTimeMap.get(partitionID)[1] ||
-          dictionaryValuesTotalTimeTimePoint - parDictionaryValuesTotalTimeMap.get(partitionID)[0] >
-              parDictionaryValuesTotalTimeMap.get(partitionID)[1]) {
-        parDictionaryValuesTotalTimeMap.get(partitionID)[1] = dictionaryValuesTotalTimeTimePoint -
-            parDictionaryValuesTotalTimeMap.get(partitionID)[0];
+      if (null == statMap.get(partitionID)[1] ||
+          value - statMap.get(partitionID)[0] > statMap.get(partitionID)[1]) {
+        statMap.get(partitionID)[1] = value - statMap.get(partitionID)[0];
       }
     }
   }
 
-  public void recordCsvInputStepTime(String partitionID,
-      Long csvInputStepTimePoint) {
-    if (null != parCsvInputStepTimeMap.get(partitionID)) {
-      if (null == parCsvInputStepTimeMap.get(partitionID)[0]) {
-        parCsvInputStepTimeMap.get(partitionID)[0] = csvInputStepTimePoint;
-      }
-      if (null == parCsvInputStepTimeMap.get(partitionID)[1] ||
-              csvInputStepTimePoint - parCsvInputStepTimeMap.get(partitionID)[0] >
-                      parCsvInputStepTimeMap.get(partitionID)[1]) {
-        parCsvInputStepTimeMap.get(partitionID)[1] = csvInputStepTimePoint -
-                parCsvInputStepTimeMap.get(partitionID)[0];
-      }
-    }
+  public void recordDictionaryValuesTotalTime(String partitionID,
+      Long dictionaryValuesTotalTimeTimePoint) {
+    recordStatistics(parDictionaryValuesTotalTimeMap, partitionID,
+        dictionaryValuesTotalTimeTimePoint);
+  }
+
+  public void recordCsvInputStepTime(String partitionID, Long csvInputStepTimePoint) {
+    recordStatistics(parCsvInputStepTimeMap, partitionID, csvInputStepTimePoint);
   }
 
   public void recordLruCacheLoadTime(double lruCacheLoadTime) {
@@ -150,68 +143,22 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
 
   public void recordGeneratingDictionaryValuesTime(String partitionID,
       Long generatingDictionaryValuesTimePoint) {
-    if (null != parGeneratingDictionaryValuesTimeMap.get(partitionID)) {
-      if (null == parGeneratingDictionaryValuesTimeMap.get(partitionID)[0]) {
-        parGeneratingDictionaryValuesTimeMap.get(partitionID)[0] =
-                generatingDictionaryValuesTimePoint;
-      }
-      if (null == parGeneratingDictionaryValuesTimeMap.get(partitionID)[1] ||
-              generatingDictionaryValuesTimePoint - parGeneratingDictionaryValuesTimeMap
-                      .get(partitionID)[0] > parGeneratingDictionaryValuesTimeMap
-                      .get(partitionID)[1]) {
-        parGeneratingDictionaryValuesTimeMap.get(partitionID)[1] =
-                generatingDictionaryValuesTimePoint - parGeneratingDictionaryValuesTimeMap
-                        .get(partitionID)[0];
-      }
-    }
+    recordStatistics(parGeneratingDictionaryValuesTimeMap, partitionID,
+        generatingDictionaryValuesTimePoint);
   }
 
-  public void recordSortRowsStepTotalTime(String partitionID,
-                                          Long sortRowsStepTotalTimePoint) {
-    if (null != parSortRowsStepTotalTimeMap.get(partitionID)) {
-      if (null == parSortRowsStepTotalTimeMap.get(partitionID)[0]) {
-        parSortRowsStepTotalTimeMap.get(partitionID)[0] = sortRowsStepTotalTimePoint;
-      }
-      if (null == parSortRowsStepTotalTimeMap.get(partitionID)[1] ||
-              sortRowsStepTotalTimePoint - parSortRowsStepTotalTimeMap.get(partitionID)[0] >
-                      parSortRowsStepTotalTimeMap.get(partitionID)[1]) {
-        parSortRowsStepTotalTimeMap.get(partitionID)[1] = sortRowsStepTotalTimePoint -
-                parSortRowsStepTotalTimeMap.get(partitionID)[0];
-      }
-    }
+  public void recordSortRowsStepTotalTime(String partitionID, Long sortRowsStepTotalTimePoint) {
+    recordStatistics(parSortRowsStepTotalTimeMap, partitionID, sortRowsStepTotalTimePoint);
   }
 
-  public void recordMdkGenerateTotalTime(String partitionID,
-                                         Long mdkGenerateTotalTimePoint) {
-    if (null != parMdkGenerateTotalTimeMap.get(partitionID)) {
-      if (null == parMdkGenerateTotalTimeMap.get(partitionID)[0]) {
-        parMdkGenerateTotalTimeMap.get(partitionID)[0] = mdkGenerateTotalTimePoint;
-      }
-      if (null == parMdkGenerateTotalTimeMap.get(partitionID)[1] ||
-              mdkGenerateTotalTimePoint - parMdkGenerateTotalTimeMap.get(partitionID)[0] >
-                      parMdkGenerateTotalTimeMap.get(partitionID)[1]) {
-        parMdkGenerateTotalTimeMap.get(partitionID)[1] = mdkGenerateTotalTimePoint -
-                parMdkGenerateTotalTimeMap.get(partitionID)[0];
-      }
-    }
+  public void recordMdkGenerateTotalTime(String partitionID, Long mdkGenerateTotalTimePoint) {
+    recordStatistics(parMdkGenerateTotalTimeMap, partitionID, mdkGenerateTotalTimePoint);
   }
 
   public void recordDictionaryValue2MdkAdd2FileTime(String partitionID,
       Long dictionaryValue2MdkAdd2FileTimePoint) {
-    if (null != parDictionaryValue2MdkAdd2FileTime.get(partitionID)) {
-      if (null == parDictionaryValue2MdkAdd2FileTime.get(partitionID)[0]) {
-        parDictionaryValue2MdkAdd2FileTime.get(partitionID)[0] =
-                dictionaryValue2MdkAdd2FileTimePoint;
-      }
-      if (null == parDictionaryValue2MdkAdd2FileTime.get(partitionID)[1] ||
-              dictionaryValue2MdkAdd2FileTimePoint - parDictionaryValue2MdkAdd2FileTime
-                      .get(partitionID)[0] > parDictionaryValue2MdkAdd2FileTime
-                      .get(partitionID)[1]) {
-        parDictionaryValue2MdkAdd2FileTime.get(partitionID)[1] =
-                dictionaryValue2MdkAdd2FileTimePoint - parDictionaryValue2MdkAdd2FileTime
-                        .get(partitionID)[0];
-      }
-    }
+    recordStatistics(parDictionaryValue2MdkAdd2FileTime, partitionID,
+        dictionaryValue2MdkAdd2FileTimePoint);
   }
 
   //Record the node blocks information map
@@ -228,8 +175,8 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
     this.totalRecords = totalRecords;
   }
 
-  private double getLoadCsvfilesToDfTime() {
-    return loadCsvfilesToDfCostTime / 1000.0;
+  private double getLoadCsvFilesToDfTime() {
+    return loadCsvFilesToDfCostTime / 1000.0;
   }
 
   private double getDictionaryValuesTotalTime(String partitionID) {
@@ -288,7 +235,7 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
   }
 
   private double getTotalTime(String partitionID) {
-    this.totalTime = getLoadCsvfilesToDfTime() +
+    this.totalTime = getLoadCsvFilesToDfTime() +
         getLruCacheLoadTime() + getDictionaryValuesTotalTime(partitionID) +
         getDictionaryValue2MdkAdd2FileTime(partitionID);
     return totalTime;
@@ -296,9 +243,9 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
 
   //Print the statistics information
   private void printDicGenStatisticsInfo() {
-    double loadCsvfilesToDfTime = getLoadCsvfilesToDfTime();
+    double loadCsvFilesToDfTime = getLoadCsvFilesToDfTime();
     LOGGER.info("STAGE 1 ->Load csv to DataFrame and generate" +
-            " block distinct values: " + loadCsvfilesToDfTime + "(s)");
+            " block distinct values: " + loadCsvFilesToDfTime + "(s)");
   }
 
   private void printLruCacheLoadTimeInfo() {
@@ -377,8 +324,8 @@ public class CarbonLoadStatisticsImpl implements LoadStatistics {
 
   //Reset the load statistics values
   private void resetLoadStatistics() {
-    loadCsvfilesToDfStartTime = 0;
-    loadCsvfilesToDfCostTime = 0;
+    loadCsvFilesToDfStartTime = 0;
+    loadCsvFilesToDfCostTime = 0;
     dicShuffleAndWriteFileTotalStartTime = 0;
     lruCacheLoadTime = 0;
     totalRecords = 0;

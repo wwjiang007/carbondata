@@ -73,7 +73,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
    * with i1 as (select positionReference from index1 where dt='20261201'
    * group by positionReference),
    * with i2 as (select positionReference from index2 where age='10'),
-   * with indexJion as (select positionReference from i1 join i2 on
+   * with indexJoin as (select positionReference from i1 join i2 on
    * i1.positionReference = i2.positionReference limit 10),
    * with index as (select positionReference from indexJoin group by positionReference)
    * select * from a join index on a.positionId = index.positionReference limit 10
@@ -86,7 +86,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
     var originalFilterAttributes: Set[String] = Set.empty
     var filterAttributes: Set[String] = Set.empty
     var matchingIndexTables: Seq[String] = Seq.empty
-    // all filter attributes are retrived
+    // all filter attributes are retrieved
     filter.condition collect {
       case attr: AttributeReference =>
         originalFilterAttributes = originalFilterAttributes. +(attr.name.toLowerCase)
@@ -144,7 +144,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
         // if the user has requested for the positionID column, in that case we are
         // adding this table property. This is used later to check whether to
         // remove the positionId column from the projection list.
-        // This property will be reflected across sessions as it is directly added to tblproperties.
+        // This property will be reflected across sessions as it is directly added to tblProperties.
         // So concurrent query run with getPositionID() UDF will have issue.
         // But getPositionID() UDF is restricted to testing purpose.
         indexableRelation.carbonTable.getTableInfo.getFactTable.getTableProperties
@@ -263,14 +263,24 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
       case SIUnaryFilterPushDownOperation(tableName, filterCondition) =>
         val attributeMap = indexTableAttributeMap.get(tableName).get
         var filterAttributes = indexJoinedFilterAttributes
-        val indexTableFilter = filterCondition transformDown {
+        val newFilterCondition = filterCondition transform {
+          case ArrayContains(left, right) =>
+            EqualTo(left, right)
+        }
+        val indexTableFilter = newFilterCondition transformDown {
+          case array: GetArrayItem =>
+            val attr = array.child.asInstanceOf[AttributeReference]
+            val attrNew = attributeMap.get(attr.name.toLowerCase()).get
+            filterAttributes += attr.name.toLowerCase
+            attrNew
           case attr: AttributeReference =>
             val attrNew = attributeMap.get(attr.name.toLowerCase()).get
             filterAttributes += attr.name.toLowerCase
             attrNew
         }
-        val positionReference =
-          Seq(attributeMap(CarbonCommonConstants.POSITION_REFERENCE.toLowerCase()))
+        val positionRef = attributeMap(CarbonCommonConstants.POSITION_REFERENCE.toLowerCase())
+        var positionReference = Seq(positionRef)
+
         // Add Filter on logicalRelation
         var planTransform: LogicalPlan = Filter(indexTableFilter,
           indexTableToLogicalRelationMapping(tableName))
@@ -326,8 +336,8 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
   }
 
   /**
-   * This method will combine 2 dataframes by applying union or join based on the nodeType and
-   * create a new dataframe
+   * This method will combine 2 DataFrames by applying union or join based on the nodeType and
+   * create a new DataFrame
    *
    */
   private def applyUnionOrJoinOnDataFrames(nodeType: NodeType,
@@ -436,7 +446,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
   }
 
   /**
-   * This method will check whether the condition is valid for SI pushdown. If yes then return the
+   * This method will check whether the condition is valid for SI push down. If yes then return the
    * tableName which contains this condition
    *
    * @param condition
@@ -448,12 +458,12 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
       indexTableColumnsToTableMapping: mutable.Map[String, Set[String]],
       pushDownRequired: Boolean): Option[String] = {
     // In case of Like Filter in OR, both the conditions should not be transformed
-    // Incase of like filter in And, only like filter should be removed and
+    // In case of like filter in And, only like filter should be removed and
     // other filter should be transformed with index table
 
-    // Incase NI condition with and, eg., NI(col1 = 'a') && col1 = 'b',
+    // In case NI condition with and, eg., NI(col1 = 'a') && col1 = 'b',
     // only col1 = 'b' should be pushed to index table.
-    // Incase NI condition with or, eg., NI(col1 = 'a') || col1 = 'b',
+    // In case NI condition with or, eg., NI(col1 = 'a') || col1 = 'b',
     // both the condition should not be pushed to index table.
 
     var tableName: Option[String] = None
@@ -548,6 +558,8 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
           case _ =>
             (filterTree, condition, None)
         }
+      case And(ArrayContains(_, _), ArrayContains(_, _)) =>
+        (filterTree, condition, None)
       case and@And(left, right) =>
         val (newSIFilterTreeLeft, newLeft, tableNameLeft) =
           createIndexTableFilterCondition(
@@ -659,7 +671,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
   }
 
   /**
-   * This method is used to determn whether limit has to be pushed down to secondary index or not.
+   * This method is used to determine whether limit has to be pushed down to secondary index or not.
    *
    * @param relation
    * @return false if carbon table is not an index table and update status file exists because
@@ -676,7 +688,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
 
   def transformFilterToJoin(plan: LogicalPlan, needProjection: Boolean): LogicalPlan = {
     val isRowDeletedInTableMap = scala.collection.mutable.Map.empty[String, Boolean]
-    // if the join pushdown is enabled, then no need to add projection list to the logical plan as
+    // if the join push down is enabled, then no need to add projection list to the logical plan as
     // we can directly map the join output with the required projections
     // if it is false then the join will not be pushed down to carbon and
     // there it is required to add projection list to map the output from the join
@@ -730,7 +742,7 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
       // When limit is provided in query, this limit literal can be pushed down to index table
       // if all the filter columns have index table, then limit can be pushed down before grouping
       // last index table, as number of records returned after join where unique and it will
-      // definitely return atleast 1 record.
+      // definitely return at least 1 record.
       case limit@Limit(literal: Literal,
       filter@Filter(condition, logicalRelation@MatchIndexableRelation(indexableRelation)))
         if !condition.isInstanceOf[IsNotNull] &&
@@ -827,12 +839,9 @@ class CarbonSecondaryIndexOptimizer(sparkSession: SparkSession) {
 }
 
 object MatchIndexableRelation {
-
-  type ReturnType = (CarbonDatasourceHadoopRelation)
-
-  def unapply(plan: LogicalPlan): Option[ReturnType] = {
+  def unapply(plan: LogicalPlan): Option[CarbonDatasourceHadoopRelation] = {
     plan match {
-      case l: LogicalRelation if (l.relation.isInstanceOf[CarbonDatasourceHadoopRelation]) =>
+      case l: LogicalRelation if l.relation.isInstanceOf[CarbonDatasourceHadoopRelation] =>
         Some(l.relation.asInstanceOf[CarbonDatasourceHadoopRelation])
       case _ => None
     }

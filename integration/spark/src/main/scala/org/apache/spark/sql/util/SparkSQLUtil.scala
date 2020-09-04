@@ -20,6 +20,7 @@ package org.apache.spark.sql.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.executor.OutputMetrics
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -27,7 +28,7 @@ import org.apache.spark.sql.catalyst.analysis.EliminateView
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeSeq, NamedExpression}
 import org.apache.spark.sql.catalyst.optimizer.{CheckCartesianProducts, EliminateOuterJoin, NullPropagation, PullupCorrelatedPredicates, RemoveRedundantAliases, ReorderJoin}
 import org.apache.spark.sql.catalyst.plans.{logical, QueryPlan}
-import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, LogicalPlan, Statistics}
+import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Command, LogicalPlan, Statistics, Union}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.LogicalRDD
 import org.apache.spark.sql.internal.{SessionState, SQLConf}
@@ -35,6 +36,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
+import org.apache.carbondata.core.util.DataLoadMetrics
 
 object SparkSQLUtil {
   def sessionState(sparkSession: SparkSession): SessionState = sparkSession.sessionState
@@ -55,7 +57,7 @@ object SparkSQLUtil {
     logicalPlanObj.stats
   }
 
-  def invokeQueryPlannormalizeExprId(r: NamedExpression, input: AttributeSeq)
+  def invokeQueryPlanNormalizeExprId(r: NamedExpression, input: AttributeSeq)
       : NamedExpression = {
     QueryPlan.normalizeExprId(r, input)
   }
@@ -84,7 +86,7 @@ object SparkSQLUtil {
     EliminateView
   }
 
-  def getPullupCorrelatedPredicatesObj(): Rule[LogicalPlan] = {
+  def getPullUpCorrelatedPredicatesObj(): Rule[LogicalPlan] = {
     PullupCorrelatedPredicates
   }
 
@@ -160,11 +162,30 @@ object SparkSQLUtil {
       carbonTable: CarbonTable): DataFrame = {
     /**
      * [[org.apache.spark.sql.catalyst.expressions.objects.ValidateExternalType]] validates the
-     * datatype of column data and corresponding datatype in schema provided to create dataframe.
+     * datatype of column data and corresponding datatype in schema provided to create DataFrame.
      * Since carbonScanRDD gives Long data for timestamp column and corresponding column datatype in
      * schema is Timestamp, this validation fails if we use createDataFrame API which takes rdd as
-     * input. Hence, using below API which creates dataframe from tablename.
+     * input. Hence, using below API which creates DataFrame from qualified table name.
      */
-    sparkSession.sqlContext.table(carbonTable.getTableName)
+    sparkSession.sqlContext.table(carbonTable.getDatabaseName + "." + carbonTable.getTableName)
+  }
+
+  def setOutputMetrics(outputMetrics: OutputMetrics, dataLoadMetrics: DataLoadMetrics): Unit = {
+    if (dataLoadMetrics != null && outputMetrics != null) {
+      outputMetrics.setBytesWritten(dataLoadMetrics.getNumOutputBytes)
+      outputMetrics.setRecordsWritten(dataLoadMetrics.getNumOutputRows)
+    }
+  }
+
+  def isCommand(logicalPlan: LogicalPlan): Boolean = logicalPlan match {
+    case _: Command => true
+    case Union(children) if children.forall(_.isInstanceOf[Command]) => true
+    case _ => false
+  }
+
+  def isRelation(className: String): Boolean = {
+    className.equals("org.apache.spark.sql.catalyst.catalog.CatalogRelation") ||
+    className.equals("org.apache.spark.sql.catalyst.catalog.HiveTableRelation") ||
+    className.equals("org.apache.spark.sql.catalyst.catalog.UnresolvedCatalogRelation")
   }
 }

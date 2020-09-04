@@ -49,6 +49,7 @@ import org.apache.carbondata.core.metadata.schema.indextable.{IndexMetadata, Ind
 import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, TableInfo, TableSchema}
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema
 import org.apache.carbondata.core.service.impl.ColumnUniqueIdGenerator
+import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatusManager}
 import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil}
 import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.events.{CreateTablePostExecutionEvent, CreateTablePreExecutionEvent, OperationContext, OperationListenerBus}
@@ -59,12 +60,12 @@ class ErrorMessage(message: String) extends Exception(message) {
 /**
  * Command for index table creation
  *
- * @param indexModel        SecondaryIndex model holding the index infomation
+ * @param indexModel        SecondaryIndex model holding the index information
  * @param tableProperties   SI table properties
  * @param ifNotExists       true if IF NOT EXISTS is set
  * @param isDeferredRefresh true if WITH DEFERRED REFRESH is set
- * @param isCreateSIndex    if false then will not create index table schema in the carbonstore
- *                          and will avoid dataload for SI creation.
+ * @param isCreateSIndex    if false then will not create index table schema in the carbon store
+ *                          and will avoid data load for SI creation.
  */
 private[sql] case class CarbonCreateSecondaryIndexCommand(
     indexModel: IndexModel,
@@ -199,7 +200,7 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
         .map(x => if (!x.isComplex) {
           x.getColName
         })
-      val dimNames = dims.map(x => if (!x.isComplex) {
+      val dimNames = dims.map(x => if (DataTypes.isArrayType(x.getDataType) || !x.isComplex) {
         x.getColName.toLowerCase()
       })
       val isMeasureColPresent = indexModel.columnNames.find(x => msrs.contains(x))
@@ -208,6 +209,14 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
           isMeasureColPresent
             .get
         }")
+      }
+      val properties = carbonTable.getTableInfo.getFactTable.getTableProperties.asScala
+      val spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX)
+      if (spatialProperty.isDefined) {
+        if (indexModel.columnNames.exists(x => x.equalsIgnoreCase(spatialProperty.get.trim))) {
+          throw new ErrorMessage(s"Secondary Index is not supported for Spatial index column:" +
+                                 s" ${ spatialProperty.get.trim }")
+        }
       }
       if (indexModel.columnNames.exists(x => !dimNames.contains(x))) {
         throw new ErrorMessage(
@@ -237,7 +246,8 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
 
       var isColsIndexedAsPerTable = true
       for (i <- indexModel.columnNames.indices) {
-        if (!dims(i).getColName.equalsIgnoreCase(indexModel.columnNames(i))) {
+        val mainTableDims = dims.sortBy(_.getOrdinal)
+        if (!mainTableDims(i).getColName.equalsIgnoreCase(indexModel.columnNames(i))) {
           isColsIndexedAsPerTable = false
         }
       }
@@ -252,6 +262,16 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
         throw new ErrorMessage(
           s"Table [$tableName] under database [$databaseName] is already an index table")
       }
+      // creation of index on long string columns are not supported
+      if (dims.filter(dimension => indexModel.columnNames
+        .contains(dimension.getColName))
+        .map(_.getDataType)
+        .exists(dataType => dataType.equals(DataTypes.VARCHAR))) {
+        throw new ErrorMessage(
+          s"one or more index columns specified contains long string column" +
+          s" in table $databaseName.$tableName. SI cannot be created on long string columns.")
+      }
+
       // Check whether index table column order is same as another index table column order
       oldIndexInfo = carbonTable.getIndexInfo
       if (null == oldIndexInfo) {
@@ -299,18 +319,10 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
       tableInfo.getFactTable.getTableProperties
         .put(tableInfo.getFactTable.getTableId, indexTableMeta.serialize)
       // set index information in parent table
-      val parentIndexMetadata = if (
-        carbonTable.getTableInfo.getFactTable.getTableProperties
-          .get(carbonTable.getCarbonTableIdentifier.getTableId) != null) {
-        carbonTable.getIndexMetadata
-      } else {
-        new IndexMetadata(false)
-      }
-      parentIndexMetadata.addIndexTableInfo(IndexType.SI.getIndexProviderName,
+      IndexTableUtil.addIndexInfoToParentTable(carbonTable,
+        IndexType.SI.getIndexProviderName,
         indexTableName,
         indexProperties)
-      carbonTable.getTableInfo.getFactTable.getTableProperties
-        .put(carbonTable.getCarbonTableIdentifier.getTableId, parentIndexMetadata.serialize)
 
       val cols = tableInfo.getFactTable.getListOfColumns.asScala.filter(!_.isInvisible)
       val fields = new Array[String](cols.size)
@@ -351,6 +363,14 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
                 'false', 'parentTablePath' = '${carbonTable.getTablePath}',
                 'parentTableId' = '${carbonTable.getCarbonTableIdentifier.getTableId}')""")
           .collect()
+
+        // Refresh the index table
+        CarbonEnv
+          .getInstance(sparkSession)
+          .carbonMetaStore
+          .lookupRelation(indexModel.dbName, indexTableName)(sparkSession)
+          .asInstanceOf[CarbonRelation]
+          .carbonTable
       }
 
       CarbonIndexUtil.addIndexTableInfo(IndexType.SI.getIndexProviderName,
@@ -374,7 +394,7 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
 
       CarbonHiveIndexMetadataUtil.refreshTable(databaseName, tableName, sparkSession)
 
-      // refersh the parent table relation
+      // refresh the parent table relation
       sparkSession.sessionState.catalog.refreshTable(identifier)
       // load data for secondary index
       if (isCreateSIndex) {
@@ -382,9 +402,14 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
       }
       val indexTablePath = CarbonTablePath
         .getMetadataPath(tableInfo.getOrCreateAbsoluteTableIdentifier.getTablePath)
-      val isMaintableSegEqualToSISegs = CarbonInternalLoaderUtil
-        .checkMainTableSegEqualToSISeg(carbonTable.getMetadataPath, indexTablePath)
-      if (isMaintableSegEqualToSISegs) {
+      val mainTblLoadMetadataDetails: Array[LoadMetadataDetails] =
+        SegmentStatusManager.readLoadMetadata(carbonTable.getMetadataPath)
+      val siTblLoadMetadataDetails: Array[LoadMetadataDetails] =
+        SegmentStatusManager.readLoadMetadata(indexTablePath)
+      val isMainTableSegEqualToSISegs = CarbonInternalLoaderUtil
+        .checkMainTableSegEqualToSISeg(mainTblLoadMetadataDetails,
+          siTblLoadMetadataDetails)
+      if (isMainTableSegEqualToSISegs) {
         // enable the SI table
         sparkSession.sql(
           s"""ALTER TABLE $databaseName.$indexTableName SET
@@ -419,10 +444,32 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
       databaseName: String, tableName: String, indexTableName: String,
       absoluteTableIdentifier: AbsoluteTableIdentifier): TableInfo = {
     var schemaOrdinal = -1
-    var allColumns = indexModel.columnNames.map { indexCol =>
-      val colSchema = carbonTable.getDimensionByName(indexCol).getColumnSchema
+    var allColumns = List[ColumnSchema]()
+    var complexColumnExists = false
+    indexModel.columnNames.foreach { indexCol =>
+      val dimension = carbonTable.getDimensionByName(indexCol)
       schemaOrdinal += 1
-      cloneColumnSchema(colSchema, schemaOrdinal)
+      if (dimension.isComplex) {
+        if (complexColumnExists) {
+          throw new ErrorMessage(
+            "SI creation with more than one complex type is not supported yet")
+        }
+        if (dimension.getNumberOfChild > 0) {
+          val complexChildDims = dimension.getListOfChildDimensions.asScala
+          if (complexChildDims.exists(col => DataTypes.isArrayType(col.getDataType))) {
+            throw new ErrorMessage(
+              "SI creation with nested array complex type is not supported yet")
+          }
+        }
+        allColumns = allColumns :+ cloneColumnSchema(
+          dimension.getColumnSchema,
+          schemaOrdinal,
+          dimension.getListOfChildDimensions.get(0).getColumnSchema.getDataType)
+        complexColumnExists = true
+      } else {
+        val colSchema = dimension.getColumnSchema
+        allColumns = allColumns :+ cloneColumnSchema(colSchema, schemaOrdinal)
+      }
     }
     // Setting TRUE on all sort columns
     allColumns.foreach(f => f.setSortColumn(true))
@@ -438,7 +485,7 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
       0,
       0,
       schemaOrdinal)
-    // sort column proeprty should be true for implicit no dictionary column position reference
+    // sort column property should be true for implicit no dictionary column position reference
     // as there exist a same behavior for no dictionary columns by default
     blockletId.setSortColumn(true)
     // set the blockletId column as local dict column implicit no dictionary column position
@@ -504,12 +551,12 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
   def setLocalDictionaryConfigs(indexTblPropertiesMap: java.util.HashMap[String, String],
       parentTblPropertiesMap: java.util.Map[String, String],
       allColumns: List[ColumnSchema]): Unit = {
-    val isLocalDictEnabledFormainTable = parentTblPropertiesMap
+    val isLocalDictEnabledForMainTable = parentTblPropertiesMap
       .get(CarbonCommonConstants.LOCAL_DICTIONARY_ENABLE)
     indexTblPropertiesMap
       .put(
         CarbonCommonConstants.LOCAL_DICTIONARY_ENABLE,
-        isLocalDictEnabledFormainTable)
+        isLocalDictEnabledForMainTable)
     indexTblPropertiesMap
       .put(
         CarbonCommonConstants.LOCAL_DICTIONARY_THRESHOLD,
@@ -523,7 +570,7 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
         localDictColumns :+= column.getColumnName
       }
     )
-    if (isLocalDictEnabledFormainTable != null && isLocalDictEnabledFormainTable.toBoolean) {
+    if (isLocalDictEnabledForMainTable != null && isLocalDictEnabledForMainTable.toBoolean) {
       indexTblPropertiesMap
         .put(
           CarbonCommonConstants.LOCAL_DICTIONARY_INCLUDE,
@@ -595,12 +642,24 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
     columnSchema
   }
 
-  def cloneColumnSchema(parentColumnSchema: ColumnSchema, schemaOrdinal: Int): ColumnSchema = {
+  def cloneColumnSchema(parentColumnSchema: ColumnSchema,
+      schemaOrdinal: Int,
+      dataType: DataType = null): ColumnSchema = {
     val columnSchema = new ColumnSchema()
-    columnSchema.setDataType(parentColumnSchema.getDataType)
+    val encodingList = parentColumnSchema.getEncodingList
+    // if data type is arrayType, then store the column as its CHILD data type in SI
+    if (DataTypes.isArrayType(parentColumnSchema.getDataType)) {
+      columnSchema.setDataType(dataType)
+      if (dataType == DataTypes.DATE) {
+        encodingList.add(Encoding.DIRECT_DICTIONARY)
+        encodingList.add(Encoding.DICTIONARY)
+      }
+    } else {
+      columnSchema.setDataType(parentColumnSchema.getDataType)
+    }
     columnSchema.setColumnName(parentColumnSchema.getColumnName)
     columnSchema.setColumnProperties(parentColumnSchema.getColumnProperties)
-    columnSchema.setEncodingList(parentColumnSchema.getEncodingList)
+    columnSchema.setEncodingList(encodingList)
     columnSchema.setColumnUniqueId(parentColumnSchema.getColumnUniqueId)
     columnSchema.setColumnReferenceId(parentColumnSchema.getColumnReferenceId)
     columnSchema.setDimensionColumn(parentColumnSchema.isDimensionColumn)

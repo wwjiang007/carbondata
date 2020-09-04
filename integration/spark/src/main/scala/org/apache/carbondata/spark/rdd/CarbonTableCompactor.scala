@@ -18,15 +18,14 @@
 package org.apache.carbondata.spark.rdd
 
 import java.util
-import java.util.List
+import java.util.{Collections, List}
 import java.util.concurrent.ExecutorService
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
-import org.apache.hadoop.mapred.JobConf
-import org.apache.hadoop.mapreduce.{InputSplit, Job}
-import org.apache.spark.deploy.SparkHadoopUtil
+import org.apache.hadoop.mapreduce.InputSplit
 import org.apache.spark.sql.{CarbonUtils, SparkSession, SQLContext}
 import org.apache.spark.sql.execution.command.{CarbonMergerMapping, CompactionCallableModel, CompactionModel}
 import org.apache.spark.sql.execution.command.management.CommonLoadUtils
@@ -37,21 +36,23 @@ import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.constants.SortScopeOptions.SortScope
 import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.index.{IndexStoreManager, Segment}
-import org.apache.carbondata.core.metadata.schema.table.CarbonTable
+import org.apache.carbondata.core.locks.{CarbonLockFactory, ICarbonLock, LockUsage}
 import org.apache.carbondata.core.metadata.SegmentFileStore
+import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.segmentmeta.SegmentMetaDataInfo
 import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatusManager}
+import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil}
 import org.apache.carbondata.core.util.path.CarbonTablePath
-import org.apache.carbondata.core.util.CarbonUtil
 import org.apache.carbondata.events._
-import org.apache.carbondata.hadoop.api.{CarbonInputFormat, CarbonTableInputFormat}
 import org.apache.carbondata.hadoop.CarbonInputSplit
-import org.apache.carbondata.indexserver.DistributedRDDUtils
+import org.apache.carbondata.hadoop.api.{CarbonInputFormat, CarbonTableInputFormat}
+import org.apache.carbondata.indexserver.{DistributedRDDUtils, IndexServer}
 import org.apache.carbondata.processing.loading.FailureCauses
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel
 import org.apache.carbondata.processing.merger.{CarbonCompactionUtil, CarbonDataMergerUtil, CompactionType}
-import org.apache.carbondata.spark.load.DataLoadProcessBuilderOnSpark
 import org.apache.carbondata.spark.MergeResultImpl
+import org.apache.carbondata.spark.load.DataLoadProcessBuilderOnSpark
+import org.apache.carbondata.spark.util.CarbonSparkUtil
 import org.apache.carbondata.view.MVManagerInSpark
 
 /**
@@ -92,13 +93,44 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
             loadsToMerge.size() > 0)) {
       val lastSegment = sortedSegments.get(sortedSegments.size() - 1)
       deletePartialLoadsInCompaction()
-
+      val compactedLoad = CarbonDataMergerUtil.getMergedLoadName(loadsToMerge)
+      var segmentLocks: ListBuffer[ICarbonLock] = ListBuffer.empty
+      loadsToMerge.asScala.foreach { segmentId =>
+        val segmentLock = CarbonLockFactory
+          .getCarbonLockObj(carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
+            .getAbsoluteTableIdentifier,
+            CarbonTablePath.addSegmentPrefix(segmentId.getLoadName) + LockUsage.LOCK)
+        segmentLock.lockWithRetries()
+        segmentLocks += segmentLock
+      }
       try {
-        scanSegmentsAndSubmitJob(loadsToMerge, compactedSegments)
+        scanSegmentsAndSubmitJob(loadsToMerge, compactedSegments, compactedLoad)
       } catch {
         case e: Exception =>
           LOGGER.error(s"Exception in compaction thread ${ e.getMessage }", e)
+          // in case of exception, clear the cache loaded both in driver, and index server if
+          // enabled. Consider a scenario where listener is called for SI table to do load after
+          // compaction, then basically SI loads the new compacted load of main table to cache as it
+          // needs to select data from main table. after that if the load to SI fails, cache is to
+          // be cleared.
+          val compactedLoadToClear = compactedLoad.substring(
+            compactedLoad.lastIndexOf(CarbonCommonConstants.UNDERSCORE) + 1)
+          if (!CarbonProperties.getInstance()
+            .isDistributedPruningEnabled(carbonLoadModel.getDatabaseName,
+              carbonLoadModel.getTableName)) {
+            IndexStoreManager.getInstance()
+              .clearInvalidSegments(carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable,
+                Collections.singletonList(compactedLoadToClear))
+          } else {
+            IndexServer.getClient
+              .invalidateSegmentCache(carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable,
+                Array(compactedLoadToClear))
+          }
           throw e
+      } finally {
+        segmentLocks.foreach { segmentLock =>
+          segmentLock.unlock()
+        }
       }
 
       // scan again and determine if anything is there to merge again.
@@ -133,7 +165,7 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
    * This will submit the loads to be merged into the executor.
    */
   def scanSegmentsAndSubmitJob(loadsToMerge: util.List[LoadMetadataDetails],
-      compactedSegments: List[String]): Unit = {
+      compactedSegments: List[String], mergedLoadName: String): Unit = {
     loadsToMerge.asScala.foreach { seg =>
       LOGGER.info("loads identified for merge is " + seg.getLoadName)
     }
@@ -145,10 +177,11 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
       compactionModel.compactionType,
       compactionModel.currentPartitions,
       compactedSegments)
-    triggerCompaction(compactionCallableModel)
+    triggerCompaction(compactionCallableModel, mergedLoadName: String)
   }
 
-  private def triggerCompaction(compactionCallableModel: CompactionCallableModel): Unit = {
+  private def triggerCompaction(compactionCallableModel: CompactionCallableModel,
+      mergedLoadName: String): Unit = {
     val carbonTable = compactionCallableModel.carbonTable
     val loadsToMerge = compactionCallableModel.loadsToMerge
     val sc = compactionCallableModel.sqlContext
@@ -157,7 +190,6 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
     val partitions = compactionCallableModel.currentPartitions
     val tablePath = carbonLoadModel.getTablePath
     val startTime = System.nanoTime()
-    val mergedLoadName = CarbonDataMergerUtil.getMergedLoadName(loadsToMerge)
     val mergedLoads = compactionCallableModel.compactedSegments
     mergedLoads.add(mergedLoadName)
     var finalMergeStatus = false
@@ -299,7 +331,7 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
 
       val endTime = System.nanoTime()
       LOGGER.info(s"time taken to merge $mergedLoadName is ${ endTime - startTime }")
-      val statusFileUpdation =
+      val statusFileUpdate =
         ((compactionType == CompactionType.IUD_UPDDEL_DELTA) &&
          CarbonDataMergerUtil
            .updateLoadMetadataIUDUpdateDeltaMergeStatus(loadsToMerge,
@@ -341,10 +373,10 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
         true
       }
       // here either of the conditions can be true, when delete segment is fired after compaction
-      // has started, statusFileUpdation will be false , but at the same time commitComplete can be
+      // has started, statusFileUpdate will be false , but at the same time commitComplete can be
       // true because compaction for all indexes will be finished at a time to the maximum level
       // possible (level 1, 2 etc). so we need to check for either condition
-      if (!statusFileUpdation || !commitComplete) {
+      if (!statusFileUpdate || !commitComplete) {
         LOGGER.error(s"Compaction request failed for table ${ carbonLoadModel.getDatabaseName }." +
                      s"${ carbonLoadModel.getTableName }")
         throw new Exception(s"Compaction failed to update metadata for table" +
@@ -354,7 +386,7 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
         LOGGER.info(s"Compaction request completed for table " +
                     s"${ carbonLoadModel.getDatabaseName }.${ carbonLoadModel.getTableName }")
 
-        // Prepriming index for compaction
+        // Pre-priming index for compaction
         val segmentsForPriming = if (compactionType.equals(CompactionType.IUD_DELETE_DELTA) ||
             compactionType.equals(CompactionType.IUD_UPDDEL_DELTA)) {
             validSegments.asScala.map(_.getSegmentNo).toList
@@ -406,6 +438,9 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
       // generate LoadModel which can be used global_sort flow
       val outputModel = DataLoadProcessBuilderOnSpark.createLoadModelForGlobalSort(
         sparkSession, table)
+      // set fact time stamp, else the carbondata file will be created with fact timestamp as 0.
+      outputModel.setFactTimeStamp(carbonLoadModel.getFactTimeStamp)
+      outputModel.setLoadMetadataDetails(carbonLoadModel.getLoadMetadataDetails)
       outputModel.setSegmentId(carbonMergerMapping.mergedLoadName.split("_")(1))
       loadResult = DataLoadProcessBuilderOnSpark.loadDataUsingGlobalSort(
         sparkSession,
@@ -433,9 +468,7 @@ class CarbonTableCompactor(carbonLoadModel: CarbonLoadModel,
       carbonTable: CarbonTable,
       segments: Array[Segment]
   ): java.util.List[InputSplit] = {
-    val jobConf = new JobConf(SparkSQLUtil.sessionState(sparkSession).newHadoopConf())
-    SparkHadoopUtil.get.addCredentials(jobConf)
-    val job = Job.getInstance(jobConf)
+    val job = CarbonSparkUtil.createHadoopJob()
     val conf = job.getConfiguration
     CarbonInputFormat.setTablePath(conf, carbonTable.getTablePath)
     CarbonInputFormat.setTableInfo(conf, carbonTable.getTableInfo)

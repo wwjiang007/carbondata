@@ -103,7 +103,7 @@ public class DecoderBasedFallbackEncoder implements Callable<FallbackEncodedColu
             encodedColumnPage.getActualPage().getPageSize());
 
     // uncompressed data from encoded column page is dictionary data, get the dictionary data using
-    // keygenerator
+    // KeyGenerator
     KeyGenerator keyGenerator = KeyGeneratorFactory
         .getKeyGenerator(new int[] { CarbonCommonConstants.LOCAL_DICTIONARY_MAX + 1 });
 
@@ -126,6 +126,7 @@ public class DecoderBasedFallbackEncoder implements Callable<FallbackEncodedColu
     // fallBackEncodedColumnPage is created using new page of actual data
     // This is required to free the memory once it is of no use
     actualDataColumnPage.freeMemory();
+    encodedColumnPage.cleanBuffer();
     return fallBackEncodedColumnPage;
   }
 

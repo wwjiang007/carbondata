@@ -32,7 +32,7 @@ import static org.apache.carbondata.core.memory.CarbonUnsafe.BYTE_ARRAY_OFFSET;
 import static org.apache.carbondata.core.memory.CarbonUnsafe.getUnsafe;
 
 /**
- * Store the data map row @{@link IndexRow} data to unsafe.
+ * Store the index row @{@link IndexRow} data to unsafe.
  */
 public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
 
@@ -97,11 +97,11 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
    * LO: Last Offset
    *
    * Read:
-   * FD: Read directly based of byte postion added in CarbonRowSchema
+   * FD: Read directly based of byte position added in CarbonRowSchema
    *
    * VD: Read based on below logic
    * if not last variable column schema
-   * X = read actual variable column offset based on byte postion added in CarbonRowSchema
+   * X = read actual variable column offset based on byte position added in CarbonRowSchema
    * Y = read next variable column offset (next 4 bytes)
    * get the length
    * len  = (X-Y)
@@ -123,28 +123,26 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
     ensureSize(rowSize);
     int pointer = runningLength;
     int bytePosition = 0;
-    for (int i = 0; i < schema.length; i++) {
-      switch (schema[i].getSchemaType()) {
-        case STRUCT:
-          CarbonRowSchema[] childSchemas =
-              ((CarbonRowSchema.StructCarbonRowSchema) schema[i]).getChildSchemas();
-          for (int j = 0; j < childSchemas.length; j++) {
-            if (childSchemas[j].getBytePosition() > bytePosition) {
-              bytePosition = childSchemas[j].getBytePosition();
-            }
+    for (CarbonRowSchema carbonRowSchema : schema) {
+      if (carbonRowSchema.getSchemaType() == CarbonRowSchema.IndexSchemaType.STRUCT) {
+        CarbonRowSchema[] childSchemas =
+            ((CarbonRowSchema.StructCarbonRowSchema) carbonRowSchema).getChildSchemas();
+        for (int j = 0; j < childSchemas.length; j++) {
+          if (childSchemas[j].getBytePosition() > bytePosition) {
+            bytePosition = childSchemas[j].getBytePosition();
           }
-          break;
-        default:
-          if (schema[i].getBytePosition() > bytePosition) {
-            bytePosition = schema[i].getBytePosition();
-          }
+        }
+      } else {
+        if (carbonRowSchema.getBytePosition() > bytePosition) {
+          bytePosition = carbonRowSchema.getBytePosition();
+        }
       }
     }
     // byte position of Last offset
     bytePosition += CarbonCommonConstants.INT_SIZE_IN_BYTE;
     // start byte position of variable length data
     int varColPosition = bytePosition + CarbonCommonConstants.INT_SIZE_IN_BYTE;
-    // current position refers to current byte postion in memory block
+    // current position refers to current byte position in memory block
     int currentPosition;
     for (int i = 0; i < schema.length; i++) {
       switch (schema[i].getSchemaType()) {
@@ -167,11 +165,11 @@ public class UnsafeMemoryDMStore extends AbstractMemoryDMStore {
           break;
       }
     }
-    // writting the last offset
+    // writing the last offset
     getUnsafe()
         .putInt(memoryBlock.getBaseObject(), memoryBlock.getBaseOffset() + pointer + bytePosition,
             varColPosition);
-    // after adding last offset increament the length by 4 bytes as last postion
+    // after adding last offset increment the length by 4 bytes as last position
     // written as INT
     runningLength += CarbonCommonConstants.INT_SIZE_IN_BYTE;
     pointers[rowCount++] = pointer;

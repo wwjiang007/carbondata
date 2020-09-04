@@ -19,10 +19,9 @@ package org.apache.carbondata.index
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.Partition
+import org.apache.spark.{Partition, TaskContext}
 import org.apache.spark.rdd.CarbonMergeFilePartition
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.TaskContext
 
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.util.path.CarbonTablePath
@@ -31,7 +30,7 @@ import org.apache.carbondata.spark.rdd.CarbonRDD
 
 
 /**
- * RDD to merge all bloomindex files of specified segment for bloom index
+ * RDD to merge all bloom index files of specified segment for bloom index
  */
 class CarbonMergeBloomIndexFilesRDD(
   @transient private val ss: SparkSession,

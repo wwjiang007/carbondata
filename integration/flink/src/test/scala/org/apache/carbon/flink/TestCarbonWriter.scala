@@ -17,87 +17,45 @@
 
 package org.apache.carbon.flink
 
+import java.text.SimpleDateFormat
 import java.util.Properties
 
-import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.datastore.filesystem.{CarbonFile, CarbonFileFilter}
+import org.apache.flink.api.common.JobExecutionResult
 import org.apache.flink.api.common.restartstrategy.RestartStrategies
 import org.apache.flink.core.fs.Path
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 import org.apache.flink.streaming.api.functions.sink.filesystem.StreamingFileSink
 import org.apache.spark.sql.{CarbonEnv, Row}
+import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.test.util.QueryTest
+import org.apache.spark.sql.execution.exchange.Exchange
+import org.apache.spark.sql.secondaryindex.joins.BroadCastSIFilterPushJoin
 
+import org.apache.carbondata.api.CarbonStore
+import org.apache.carbondata.core.constants.CarbonCommonConstants
+import org.apache.carbondata.core.datastore.filesystem.{CarbonFile, CarbonFileFilter}
 import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.carbondata.core.util.path.CarbonTablePath
-import org.apache.spark.sql.execution.exchange.Exchange
 
-class TestCarbonWriter extends QueryTest {
+import org.scalatest.BeforeAndAfterAll
+
+class TestCarbonWriter extends QueryTest with BeforeAndAfterAll{
 
   val tableName = "test_flink"
   val bucketTableName = "insert_bucket_table"
+  val dataTempPath: String = targetTestClass + "/data/temp/"
 
   test("Writing flink data to local carbon table") {
-    sql(s"DROP TABLE IF EXISTS $tableName").collect()
-    sql(
-      s"""
-         | CREATE TABLE $tableName (stringField string, intField int, shortField short)
-         | STORED AS carbondata
-      """.stripMargin
-    ).collect()
-
-    val rootPath = System.getProperty("user.dir") + "/target/test-classes"
-
-    val dataTempPath = rootPath + "/data/temp/"
-
+    createTable
     try {
       val tablePath = storeLocation + "/" + tableName + "/"
-
-      val writerProperties = newWriterProperties(dataTempPath, storeLocation)
+      val writerProperties = newWriterProperties(dataTempPath)
       val carbonProperties = newCarbonProperties(storeLocation)
 
       val environment = StreamExecutionEnvironment.getExecutionEnvironment
-      environment.setParallelism(1)
       environment.enableCheckpointing(2000L)
-      environment.setRestartStrategy(RestartStrategies.noRestart)
-
-      val dataCount = 1000
-      val source = new TestSource(dataCount) {
-        @throws[InterruptedException]
-        override def get(index: Int): Array[AnyRef] = {
-          Thread.sleep(1L)
-          val data = new Array[AnyRef](3)
-          data(0) = "test" + index
-          data(1) = index.asInstanceOf[AnyRef]
-          data(2) = 12345.asInstanceOf[AnyRef]
-          data
-        }
-
-        @throws[InterruptedException]
-        override def onFinish(): Unit = {
-          Thread.sleep(5000L)
-        }
-      }
-      val stream = environment.addSource(source)
-      val factory = CarbonWriterFactory.builder("Local").build(
-        "default",
-        tableName,
-        tablePath,
-        new Properties,
-        writerProperties,
-        carbonProperties
-      )
-      val streamSink = StreamingFileSink.forBulkFormat(new Path(ProxyFileSystem.DEFAULT_URI), factory).build
-
-      stream.addSink(streamSink)
-
-      try environment.execute
-      catch {
-        case exception: Exception =>
-          // TODO
-          throw new UnsupportedOperationException(exception)
-      }
+      executeFlinkStreamingEnvironment(environment, writerProperties, carbonProperties)
 
       checkAnswer(sql(s"select count(1) from $tableName"), Seq(Row(0)))
 
@@ -113,76 +71,19 @@ class TestCarbonWriter extends QueryTest {
 
       checkAnswer(sql(s"SELECT count(*) FROM $tableName"), Seq(Row(1000)))
       checkAnswer(sql(s"select count(intField) from $tableName where intField >= 900"), Seq(Row(100)))
-
-      // ensure the stage snapshot file and all stage files are deleted
-      assertResult(false)(FileFactory.isFileExist(CarbonTablePath.getStageSnapshotFile(tablePath)))
-      assertResult(true)(FileFactory.getCarbonFile(CarbonTablePath.getStageDir(tablePath)).listFiles().isEmpty)
-
-    } finally {
-      sql(s"DROP TABLE IF EXISTS $tableName").collect()
+      checkIfStageFilesAreDeleted(tablePath)
     }
   }
 
   test("test batch_file_count option") {
-    sql(s"DROP TABLE IF EXISTS $tableName").collect()
-    sql(
-      s"""
-         | CREATE TABLE $tableName (stringField string, intField int, shortField short)
-         | STORED AS carbondata
-      """.stripMargin
-    ).collect()
-
-    val rootPath = System.getProperty("user.dir") + "/target/test-classes"
-
-    val dataTempPath = rootPath + "/data/temp/"
-
+    createTable
     try {
-      val tablePath = storeLocation + "/" + tableName + "/"
-
-      val writerProperties = newWriterProperties(dataTempPath, storeLocation)
+      val writerProperties = newWriterProperties(dataTempPath)
       val carbonProperties = newCarbonProperties(storeLocation)
-
       writerProperties.put(CarbonLocalProperty.COMMIT_THRESHOLD, "100")
 
       val environment = StreamExecutionEnvironment.getExecutionEnvironment
-      environment.setParallelism(1)
-      environment.setRestartStrategy(RestartStrategies.noRestart)
-
-      val dataCount = 1000
-      val source = new TestSource(dataCount) {
-        @throws[InterruptedException]
-        override def get(index: Int): Array[AnyRef] = {
-          val data = new Array[AnyRef](3)
-          data(0) = "test" + index
-          data(1) = index.asInstanceOf[AnyRef]
-          data(2) = 12345.asInstanceOf[AnyRef]
-          data
-        }
-
-        @throws[InterruptedException]
-        override def onFinish(): Unit = {
-          Thread.sleep(5000L)
-        }
-      }
-      val stream = environment.addSource(source)
-      val factory = CarbonWriterFactory.builder("Local").build(
-        "default",
-        tableName,
-        tablePath,
-        new Properties,
-        writerProperties,
-        carbonProperties
-      )
-      val streamSink = StreamingFileSink.forBulkFormat(new Path(ProxyFileSystem.DEFAULT_URI), factory).build
-
-      stream.addSink(streamSink)
-
-      try environment.execute
-      catch {
-        case exception: Exception =>
-          // TODO
-          throw new UnsupportedOperationException(exception)
-      }
+      executeFlinkStreamingEnvironment(environment, writerProperties, carbonProperties)
 
       sql(s"INSERT INTO $tableName STAGE OPTIONS ('batch_file_count' = '5')")
 
@@ -191,8 +92,6 @@ class TestCarbonWriter extends QueryTest {
       sql(s"INSERT INTO $tableName STAGE OPTIONS ('batch_file_count' = '5')")
 
       checkAnswer(sql(s"SELECT count(1) FROM $tableName"), Seq(Row(1000)))
-    } finally {
-      sql(s"DROP TABLE IF EXISTS $tableName").collect()
     }
   }
 
@@ -201,67 +100,24 @@ class TestCarbonWriter extends QueryTest {
     sql(s"DROP TABLE IF EXISTS $bucketTableName").collect()
     sql(
       s"""
-         | CREATE TABLE $tableName (stringField string, intField int, shortField short)
+         | CREATE TABLE $tableName (stringField string, intField int, shortField short, stringField1 string)
          | STORED AS carbondata TBLPROPERTIES ('BUCKET_NUMBER'='10', 'BUCKET_COLUMNS'='stringField')
       """.stripMargin
     ).collect()
     sql(
       s"""
-         | CREATE TABLE $bucketTableName (stringField string, intField int, shortField short)
+         | CREATE TABLE $bucketTableName (stringField string, intField int, shortField short, stringField1 string)
          | STORED AS carbondata TBLPROPERTIES ('BUCKET_NUMBER'='10', 'BUCKET_COLUMNS'='stringField')
       """.stripMargin
     ).collect()
-
-    val rootPath = System.getProperty("user.dir") + "/target/test-classes"
-
-    val dataTempPath = rootPath + "/data/temp/"
-
     try {
-      val flinkTablePath = storeLocation + "/" + tableName + "/"
-
-      val writerProperties = newWriterProperties(dataTempPath, storeLocation)
+      val writerProperties = newWriterProperties(dataTempPath)
       val carbonProperties = newCarbonProperties(storeLocation)
-
       writerProperties.put(CarbonLocalProperty.COMMIT_THRESHOLD, "100")
 
       val environment = StreamExecutionEnvironment.getExecutionEnvironment
-      environment.setParallelism(1)
-      environment.setRestartStrategy(RestartStrategies.noRestart)
+      executeFlinkStreamingEnvironment(environment, writerProperties, carbonProperties)
 
-      val dataCount = 1000
-      val source = new TestSource(dataCount) {
-        @throws[InterruptedException]
-        override def get(index: Int): Array[AnyRef] = {
-          val data = new Array[AnyRef](3)
-          data(0) = "test" + index
-          data(1) = index.asInstanceOf[AnyRef]
-          data(2) = 12345.asInstanceOf[AnyRef]
-          data
-        }
-
-        @throws[InterruptedException]
-        override def onFinish(): Unit = {
-          Thread.sleep(5000L)
-        }
-      }
-      val stream = environment.addSource(source)
-      val factory = CarbonWriterFactory.builder("Local").build(
-        "default",
-        tableName,
-        flinkTablePath,
-        new Properties,
-        writerProperties,
-        carbonProperties
-      )
-      val streamSink = StreamingFileSink.forBulkFormat(new Path(ProxyFileSystem.DEFAULT_URI), factory).build
-
-      stream.addSink(streamSink)
-
-      try environment.execute
-      catch {
-        case exception: Exception =>
-          throw new UnsupportedOperationException(exception)
-      }
       sql(s"INSERT INTO $tableName STAGE OPTIONS ('batch_file_count' = '5')")
       val table = CarbonEnv.getCarbonTable(Option("default"), s"$tableName")(sqlContext.sparkSession)
       val segmentDir = FileFactory.getCarbonFile(table.getTablePath + "/Fact/Part0/Segment_0")
@@ -301,16 +157,252 @@ class TestCarbonWriter extends QueryTest {
            |from $tableName t1, $bucketTableName t2
            |where t1.stringField = t2.stringField) temp
       """.stripMargin), Row(1000))
-    } finally {
-      sql(s"DROP TABLE IF EXISTS $tableName").collect()
-      sql(s"DROP TABLE IF EXISTS $bucketTableName").collect()
     }
   }
 
+  test("test insert stage command with secondary index and bloomfilter") {
+    createTable
+    // create si and bloom index
+    sql(s"drop index if exists si_1 on $tableName")
+    sql(s"drop index if exists bloom_1 on $tableName")
+    sql(s"create index si_1 on $tableName(stringField1) as 'carbondata'")
+    sql(s"create index bloom_1 on $tableName(intField) as 'bloomfilter'")
+    try {
+      val tablePath = storeLocation + "/" + tableName + "/"
+      val writerProperties = newWriterProperties(dataTempPath)
+      val carbonProperties = newCarbonProperties(storeLocation)
 
-  private def newWriterProperties(
-    dataTempPath: String,
-    storeLocation: String) = {
+      val environment = StreamExecutionEnvironment.getExecutionEnvironment
+      environment.enableCheckpointing(2000L)
+      executeFlinkStreamingEnvironment(environment, writerProperties, carbonProperties)
+
+      // check count before insert stage
+      checkAnswer(sql(s"SELECT count(*) FROM $tableName"), Seq(Row(0)))
+      checkAnswer(sql("select count(*) from si_1"), Seq(Row(0)))
+
+      sql(s"INSERT INTO $tableName STAGE")
+
+      checkAnswer(sql("select count(*) from si_1"), Seq(Row(1000)))
+      checkAnswer(sql(s"SELECT count(*) FROM $tableName"), Seq(Row(1000)))
+      // check if query hits si
+      val df = sql(s"select stringField, intField from $tableName where stringField1 = 'si12'")
+      checkAnswer(df, Seq(Row("test12", 12)))
+      var isFilterHitSecondaryIndex = false
+      df.queryExecution.sparkPlan.transform {
+        case broadCastSIFilterPushDown: BroadCastSIFilterPushJoin =>
+          isFilterHitSecondaryIndex = true
+          broadCastSIFilterPushDown
+      }
+      assert(isFilterHitSecondaryIndex)
+
+      // check if query hits bloom filter
+      checkAnswer(sql(s"select intField,stringField1 from $tableName where intField = 99"), Seq(Row(99, "si99")))
+      CarbonProperties.getInstance().addProperty(CarbonCommonConstants.ENABLE_QUERY_STATISTICS, "true")
+      val explainBloom = sql(s"explain select intField,stringField1 from $tableName where intField = 99").collect()
+      assert(explainBloom(0).getString(0).contains(
+        """
+          |Table Scan on test_flink
+          | - total: 1 blocks, 1 blocklets
+          | - filter: (intfield <> null and intfield = 99)
+          | - pruned by Main Index
+          |    - skipped: 0 blocks, 0 blocklets
+          | - pruned by CG Index
+          |    - name: bloom_1
+          |    - provider: bloomfilter
+          |    - skipped: 0 blocks, 0 blocklets""".stripMargin))
+      checkIfStageFilesAreDeleted(tablePath)
+    }
+  }
+
+  test("test insert stage command with materilaized view") {
+    createTable
+    // create materialized view
+    sql(s"drop materialized view if exists mv_1")
+    sql(s"create materialized view mv_1 as select stringField, shortField from $tableName where intField=99 ")
+    try {
+      val tablePath = storeLocation + "/" + tableName + "/"
+      val writerProperties = newWriterProperties(dataTempPath)
+      val carbonProperties = newCarbonProperties(storeLocation)
+
+      val environment = StreamExecutionEnvironment.getExecutionEnvironment
+      environment.enableCheckpointing(2000L)
+      executeFlinkStreamingEnvironment(environment, writerProperties, carbonProperties)
+      // check count before insert stage
+      checkAnswer(sql(s"SELECT count(*) FROM $tableName"), Seq(Row(0)))
+      checkAnswer(sql(s"SELECT count(*) FROM mv_1"), Seq(Row(0)))
+
+      sql(s"INSERT INTO $tableName STAGE")
+      checkAnswer(sql(s"SELECT count(*) FROM mv_1"), Seq(Row(1)))
+      val df = sql(s"select stringField, shortField from $tableName where intField=99")
+      val tables = df.queryExecution.optimizedPlan collect {
+        case l: LogicalRelation => l.catalogTable.get
+      }
+      assert(tables.exists(_.identifier.table.equalsIgnoreCase("mv_1")))
+      checkAnswer(df, Seq(Row("test99",12345)))
+      checkIfStageFilesAreDeleted(tablePath)
+    }
+  }
+
+  test("Show segments with stage") {
+    createTable
+    try {
+      val tablePath = storeLocation + "/" + tableName + "/"
+      val stagePath = CarbonTablePath.getStageDir(tablePath)
+      val writerProperties = newWriterProperties(dataTempPath)
+      val carbonProperties = newCarbonProperties(storeLocation)
+
+      val environment = StreamExecutionEnvironment.getExecutionEnvironment
+      environment.enableCheckpointing(2000L)
+      executeFlinkStreamingEnvironment(environment, writerProperties, carbonProperties)
+
+      // 1. Test "SHOW SEGMENT ON $tableanme WITH STAGE"
+      var rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE").collect()
+      var unloadedStageCount = CarbonStore.listStageFiles(stagePath)._1.length
+      assert(unloadedStageCount > 0)
+      assert(rows.length == unloadedStageCount)
+      for (index <- 0 until unloadedStageCount) {
+        assert(rows(index).getString(0) == null)
+        assert(rows(index).getString(1).equals("Unload"))
+        assert(rows(index).getString(2) != null)
+        assert(rows(index).getString(3) == null)
+        assert(rows(index).getString(4).equals("NA"))
+        assert(rows(index).getString(5) != null)
+        assert(rows(index).getString(6) != null)
+        assert(rows(index).getString(7) == null)
+        assertShowStagesCreateTimeDesc(rows, index)
+      }
+
+      // 2. Test "SHOW SEGMENT FOR TABLE $tableanme"
+      val rowsfortable = sql(s"SHOW SEGMENTS FOR TABLE $tableName WITH STAGE").collect()
+      assert(rowsfortable.length > 0)
+      assert(rowsfortable.length == rows.length)
+      for (index <- 0 until unloadedStageCount) {
+        assert(rows(index).toString() == rowsfortable(index).toString())
+      }
+
+      // 3. Test "SHOW SEGMENT ON $tableanme WITH STAGE AS (QUERY)"
+      rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE AS " +
+        s"(SELECT * FROM $tableName" + "_segments)").collect()
+      assert(rows.length > 0)
+      for (index <- 0 until rows.length) {
+        val row = rows(index)
+        assert(rows(index).getString(0) == null)
+        assert(rows(index).getString(1).equals("Unload"))
+        assert(rows(index).getString(2) != null)
+        assert(rows(index).getLong(3) == -1)
+        assert(rows(index).get(4).toString.equals("WrappedArray(NA)"))
+        assert(rows(index).getLong(5) > 0)
+        assert(rows(index).getLong(6) > 0)
+        assert(rows(index).getString(7) == null)
+        assert(rows(index).getString(8) == null)
+        assert(rows(index).getString(9) == null)
+        assert(rows(index).getString(10) == null)
+        assert(rows(index).getString(11) == null)
+        assertShowStagesCreateTimeDesc(rows, index)
+      }
+
+      // 4. Test "SHOW SEGMENT ON $tableanme WITH STAGE LIMIT 1 AS (QUERY)"
+      //    Test "SHOW SEGMENT ON $tableanme LIMIT 1 AS (QUERY)"
+
+      if (unloadedStageCount > 1) {
+        sql(s"INSERT INTO $tableName STAGE OPTIONS ('batch_file_count' = '1')")
+
+        unloadedStageCount = CarbonStore.listStageFiles(stagePath)._1.length
+        rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE LIMIT 1").collect()
+        assert(rows.length == unloadedStageCount + 1)
+        assert(rows(0).getString(1).equals("Unload"))
+
+        rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE LIMIT 0").collect()
+        assert(rows.length == unloadedStageCount)
+        assert(rows(0).getString(1).equals("Unload"))
+
+        rows = sql(s"SHOW SEGMENTS FOR TABLE $tableName WITH STAGE LIMIT 1").collect()
+        assert(rows.length == unloadedStageCount + 1)
+        assert(rows(0).getString(1).equals("Unload"))
+
+        rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE LIMIT 1 AS " +
+          s"(SELECT * FROM $tableName" + "_segments)").collect()
+        assert(rows.length == unloadedStageCount + 1)
+        assert(rows(0).getString(1).equals("Unload"))
+
+        rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE AS " +
+          s"(SELECT * FROM $tableName" + "_segments where status = 'Unload')").collect()
+        unloadedStageCount = CarbonStore.listStageFiles(stagePath)._1.length
+        assert(rows.length == unloadedStageCount)
+        assert(rows(0).getString(1).equals("Unload"))
+
+        rows = sql(s"SHOW SEGMENTS ON $tableName WITH STAGE AS " +
+          s"(SELECT * FROM $tableName" + "_segments where status = 'Success')").collect()
+        assert(rows.length == 1)
+        assert(rows(0).getString(1).equals("Success"))
+      }
+    }
+  }
+
+  private def executeFlinkStreamingEnvironment(environment: StreamExecutionEnvironment,
+      writerProperties: Properties,
+      carbonProperties: Properties): JobExecutionResult = {
+    val tablePath = storeLocation + "/" + tableName + "/"
+    environment.setParallelism(1)
+    environment.setRestartStrategy(RestartStrategies.noRestart)
+    val dataCount = 1000
+    val source = new TestSource(dataCount) {
+      @throws[InterruptedException]
+      override def get(index: Int): Array[AnyRef] = {
+        Thread.sleep(1L)
+        val data = new Array[AnyRef](4)
+        data(0) = "test" + index
+        data(1) = index.asInstanceOf[AnyRef]
+        data(2) = 12345.asInstanceOf[AnyRef]
+        data(3) = "si" + index
+        data
+      }
+      @throws[InterruptedException]
+      override def onFinish(): Unit = {
+        Thread.sleep(5000L)
+      }
+    }
+    val stream = environment.addSource(source)
+    val factory = CarbonWriterFactory.builder("Local").build(
+      "default",
+      tableName,
+      tablePath,
+      new Properties,
+      writerProperties,
+      carbonProperties)
+    val streamSink = StreamingFileSink.forBulkFormat(new Path(ProxyFileSystem.DEFAULT_URI), factory).build
+    stream.addSink(streamSink)
+
+    try environment.execute
+    catch {
+      case exception: Exception =>
+        // TODO
+        throw new UnsupportedOperationException(exception)
+    }
+  }
+
+  private def checkIfStageFilesAreDeleted(tablePath: String): Unit = {
+    // ensure the stage snapshot file and all stage files are deleted
+    assertResult(false)(FileFactory.isFileExist(CarbonTablePath.getStageSnapshotFile(tablePath)))
+    assertResult(true)(FileFactory.getCarbonFile(CarbonTablePath.getStageDir(tablePath)).listFiles().isEmpty)
+  }
+
+  private def createTable = {
+    sql(s"DROP TABLE IF EXISTS $tableName")
+    sql(s"""
+           | CREATE TABLE $tableName (stringField string, intField int, shortField short, stringField1 string)
+           | STORED AS carbondata
+      """.stripMargin)
+  }
+
+  override def afterAll(): Unit = {
+    CarbonProperties.getInstance().addProperty(CarbonCommonConstants.ENABLE_QUERY_STATISTICS,
+        CarbonCommonConstants.ENABLE_QUERY_STATISTICS_DEFAULT)
+    sql(s"DROP TABLE IF EXISTS $tableName")
+    sql(s"DROP TABLE IF EXISTS $bucketTableName").collect()
+  }
+
+  private def newWriterProperties(dataTempPath: String) = {
     val properties = new Properties
     properties.setProperty(CarbonLocalProperty.DATA_TEMP_PATH, dataTempPath)
     properties
@@ -327,4 +419,13 @@ class TestCarbonWriter extends QueryTest {
     properties
   }
 
+  private def assertShowStagesCreateTimeDesc(rows: Array[Row], index: Int): Unit = {
+    if (index > 0) {
+      val nowtime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").
+        parse(rows(index).getString(2)).getTime
+      val lasttime = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").
+        parse(rows(index - 1).getString(2)).getTime
+      assert(nowtime <= lasttime)
+    }
+  }
 }

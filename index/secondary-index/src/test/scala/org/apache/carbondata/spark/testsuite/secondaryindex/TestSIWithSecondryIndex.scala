@@ -28,6 +28,8 @@ import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatus, SegmentStatusManager}
 import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.carbondata.core.util.path.CarbonTablePath
+import org.apache.carbondata.spark.exception.ProcessMetaDataException
+
 import org.apache.spark.sql.test.util.QueryTest
 
 class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
@@ -35,6 +37,8 @@ class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
   override def beforeAll {
     sql("drop index if exists si_altercolumn on table_WithSIAndAlter")
     sql("drop table if exists table_WithSIAndAlter")
+    sql("drop table if exists table_drop_columns")
+    sql("drop table if exists table_drop_columns_fail")
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT,
         CarbonCommonConstants.CARBON_TIMESTAMP_DEFAULT_FORMAT)
@@ -59,6 +63,27 @@ class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
       val value = carbonTable.getTableInfo.getFactTable.getTableProperties.get(key)
       expectedValue.equals(value)
     }
+  }
+
+  test ("test alter drop all columns of the SI table") {
+    sql("create table table_drop_columns (name string, id string, country string) stored as carbondata")
+    sql("insert into table_drop_columns select 'xx', '1', 'china'")
+    sql("create index index_1 on table table_drop_columns(id, country) as 'carbondata'")
+    // alter table to drop all the columns used in index
+    sql("alter table table_drop_columns drop columns(id, country)")
+    sql("insert into table_drop_columns select 'xy'")
+    assert(sql("show indexes on table_drop_columns").collect().isEmpty)
+  }
+
+  test ("test alter drop few columns of the SI table") {
+    sql("create table table_drop_columns_fail (name string, id string, country string) stored as carbondata")
+    sql("insert into table_drop_columns_fail select 'xx', '1', 'china'")
+    sql("create index index_1 on table table_drop_columns_fail(id, country) as 'carbondata'")
+    // alter table to drop few columns used in index. This should fail as we are not dropping all
+    // the index columns
+    assert(intercept[ProcessMetaDataException](sql(
+      "alter table table_drop_columns_fail drop columns(id)")).getMessage
+      .contains("Alter table drop column operation failed:"))
   }
 
   test("Test secondry index data count") {
@@ -150,6 +175,7 @@ class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
     val carbontable = CarbonEnv.getCarbonTable(Some("default"), "uniqdata")(sqlContext.sparkSession)
     val details = SegmentStatusManager.readLoadMetadata(indexTable.getMetadataPath)
     val failSegments = List("3","4")
+    sql(s"""set carbon.si.repair.limit = 2""")
     var loadMetadataDetailsList = Array[LoadMetadataDetails]()
     details.foreach{detail =>
       if(failSegments.contains(detail.getLoadName)){
@@ -176,6 +202,7 @@ class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
            |SERDEPROPERTIES ('isSITableEnabled' = 'false')""".stripMargin)
     val count2 = sql("select * from uniqdata where workgroupcategoryname = 'developer'").count()
     val df2 = sql("select * from uniqdata where workgroupcategoryname = 'developer'").queryExecution.sparkPlan
+    sql(s"""set carbon.si.repair.limit = 1""")
     assert(count1 == count2)
     assert(isFilterPushedDownToSI(df1))
     assert(!isFilterPushedDownToSI(df2))
@@ -221,6 +248,19 @@ class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
     assert(errorMessage.contains("Index [uniqdataidxtable] already exists under database [default]"))
   }
 
+  test("test date type with SI table") {
+    sql("drop table if exists maintable")
+    sql("CREATE TABLE maintable (id int,name string,salary float,dob date,address string) STORED AS carbondata")
+    sql("insert into maintable values(1,'aa',23423.334,'2009-09-06','df'),(1,'aa',23423.334,'2009-09-07','df')")
+    sql("insert into maintable select 2,'bb',4454.454,'2009-09-09','bang'")
+    sql("drop index if exists index_date on maintable")
+    sql("create index index_date on table maintable(dob) AS 'carbondata'")
+    val df = sql("select id,name,dob from maintable where dob = '2009-09-07'")
+    assert(isFilterPushedDownToSI(df.queryExecution.sparkPlan))
+    checkAnswer(df, Seq(Row(1,"aa", java.sql.Date.valueOf("2009-09-07"))))
+    sql("drop table if exists maintable")
+  }
+
   override def afterAll {
     sql("drop index si_altercolumn on table_WithSIAndAlter")
     sql("drop table if exists table_WithSIAndAlter")
@@ -229,5 +269,7 @@ class TestSIWithSecondryIndex extends QueryTest with BeforeAndAfterAll {
     sql("drop table if exists column_meta_cache")
     sql("drop table if exists uniqdata")
     sql("drop table if exists uniqdataTable")
+    sql("drop table if exists table_drop_columns")
+    sql("drop table if exists table_drop_columns_fail")
   }
 }

@@ -40,6 +40,7 @@ import org.apache.carbondata.core.metadata.schema.PartitionInfo
 import org.apache.carbondata.core.metadata.schema.partition.PartitionType
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema
 import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil, CustomIndex}
+import org.apache.carbondata.geo.GeoConstants
 import org.apache.carbondata.processing.util.CarbonLoaderUtil
 import org.apache.carbondata.spark.util.{CarbonScalaUtil, CommonUtil, DataTypeConverterUtil}
 
@@ -90,45 +91,45 @@ object CarbonParserUtil {
   }
 
   /**
-   * The method parses, validates and processes the index_handler property.
+   * The method parses, validates and processes the spatial_index property.
    * @param tableProperties Table properties
    * @param tableFields Sequence of table fields
    * @return <Seq[Field]> Sequence of index fields to add to table fields
    */
-  private def processIndexProperty(tableProperties: mutable.Map[String, String],
+  private def processSpatialIndexProperty(tableProperties: mutable.Map[String, String],
       tableFields: Seq[Field]): Seq[Field] = {
-    val option = tableProperties.get(CarbonCommonConstants.INDEX_HANDLER)
+    val option = tableProperties.get(CarbonCommonConstants.SPATIAL_INDEX)
     val fields = ListBuffer[Field]()
     if (option.isDefined) {
       if (option.get.trim.isEmpty) {
         throw new MalformedCarbonCommandException(
-          s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
+          s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
           s"Option value is empty.")
       }
-      option.get.split(",").map(_.trim).foreach { handler =>
-        // Validate target column name
-        if (tableFields.exists(_.column.equalsIgnoreCase(handler))) {
+      option.get.split(",").map(_.trim).foreach { indexName =>
+        // Validate index column name
+        if (tableFields.exists(_.column.equalsIgnoreCase(indexName))) {
           throw new MalformedCarbonCommandException(
-            s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
-            s"handler: $handler must not match with any other column name in the table")
+            s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
+            s"index: $indexName must not match with any other column name in the table")
         }
-        val TYPE = s"${ CarbonCommonConstants.INDEX_HANDLER }.$handler.type"
-        val SOURCE_COLUMNS = s"${ CarbonCommonConstants.INDEX_HANDLER }.$handler.sourcecolumns"
+        val TYPE = s"${ CarbonCommonConstants.SPATIAL_INDEX }.$indexName.type"
+        val SOURCE_COLUMNS = s"${ CarbonCommonConstants.SPATIAL_INDEX }.$indexName.sourcecolumns"
         val SOURCE_COLUMN_TYPES
-        = s"${ CarbonCommonConstants.INDEX_HANDLER }.$handler.sourcecolumntypes"
-        val HANDLER_CLASS = s"${ CarbonCommonConstants.INDEX_HANDLER }.$handler.class"
-        val HANDLER_INSTANCE = s"${ CarbonCommonConstants.INDEX_HANDLER }.$handler.instance"
+        = s"${ CarbonCommonConstants.SPATIAL_INDEX }.$indexName.sourcecolumntypes"
+        val SPATIAL_INDEX_CLASS = s"${ CarbonCommonConstants.SPATIAL_INDEX }.$indexName.class"
+        val SPATIAL_INDEX_INSTANCE = s"${ CarbonCommonConstants.SPATIAL_INDEX }.$indexName.instance"
 
-        val handlerType = tableProperties.get(TYPE)
-        if (handlerType.isEmpty || handlerType.get.trim.isEmpty) {
+        val spatialIndexType = tableProperties.get(TYPE)
+        if (spatialIndexType.isEmpty || spatialIndexType.get.trim.isEmpty) {
           throw new MalformedCarbonCommandException(
-            s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
+            s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
             s"$TYPE property must be specified.")
         }
         val sourceColumnsOption = tableProperties.get(SOURCE_COLUMNS)
         if (sourceColumnsOption.isEmpty || sourceColumnsOption.get.trim.isEmpty) {
           throw new MalformedCarbonCommandException(
-            s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
+            s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
             s"$SOURCE_COLUMNS property must be specified.")
         }
         val sourcesWithoutSpaces = sourceColumnsOption.get.replaceAll("\\s", "")
@@ -136,7 +137,7 @@ object CarbonParserUtil {
         val sources = sourcesWithoutSpaces.split(",")
         if (sources.distinct.length != sources.size) {
           throw new MalformedCarbonCommandException(
-            s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
+            s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
             s"$SOURCE_COLUMNS property cannot have duplicate columns.")
         }
         val sourceTypes = StringBuilder.newBuilder
@@ -145,44 +146,44 @@ object CarbonParserUtil {
             case Some(field) => sourceTypes.append(field.dataType.get).append(",")
             case None =>
               throw new MalformedCarbonCommandException(
-                s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
+                s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
                 s"Source column: $column in property " +
                 s"$SOURCE_COLUMNS must be a column in the table.")
           }
         }
         tableProperties.put(SOURCE_COLUMNS, sourcesWithoutSpaces)
         tableProperties.put(SOURCE_COLUMN_TYPES, sourceTypes.dropRight(1).toString())
-        val handlerClass = tableProperties.get(HANDLER_CLASS)
-        val handlerClassName: String = handlerClass match {
+        val spatialIndexClass = tableProperties.get(SPATIAL_INDEX_CLASS)
+        val spatialIndexClassName: String = spatialIndexClass match {
           case Some(className) => className.trim
           case None =>
-            // use handler type to find the default implementation
-            if (handlerType.get.trim.equalsIgnoreCase(CarbonCommonConstants.GEOHASH)) {
+            // use spatial index type to find the default implementation
+            if (spatialIndexType.get.trim.equalsIgnoreCase(GeoConstants.GEOHASH)) {
               // Use GeoHash default implementation
-              val className = CustomIndex.CUSTOM_INDEX_DEFAULT_IMPL
-              tableProperties.put(HANDLER_CLASS, className)
+              val className = "org.apache.carbondata.geo.GeoHashIndex"
+              tableProperties.put(SPATIAL_INDEX_CLASS, className)
               className
             } else {
               throw new MalformedCarbonCommandException(
-                s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property is invalid. " +
-                s"Unsupported value: ${ handlerType.get } specified for property $TYPE.")
+                s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property is invalid. " +
+                s"Unsupported value: ${ spatialIndexType.get } specified for property $TYPE.")
             }
         }
         try {
-          val handlerClass: Class[_] = java.lang.Class.forName(handlerClassName)
-          val instance = handlerClass.newInstance().asInstanceOf[CustomIndex[_]]
-          instance.init(handler, tableProperties.asJava)
-          tableProperties.put(HANDLER_INSTANCE, CustomIndex.getCustomInstance(instance))
+          val spatialIndexClass : Class[_] = java.lang.Class.forName(spatialIndexClassName)
+          val instance = spatialIndexClass.newInstance().asInstanceOf[CustomIndex[_]]
+          instance.init(indexName, tableProperties.asJava)
+          tableProperties.put(SPATIAL_INDEX_INSTANCE, CustomIndex.getCustomInstance(instance))
         } catch {
           case ex@(_: ClassNotFoundException | _: InstantiationError | _: IllegalAccessException |
                    _: ClassCastException) =>
-            val err = s"Carbon ${ CarbonCommonConstants.INDEX_HANDLER } property process failed. "
+            val err = s"Carbon ${ CarbonCommonConstants.SPATIAL_INDEX } property process failed. "
             LOGGER.error(err, ex)
             throw new MalformedCarbonCommandException(err, ex)
         }
-        // Add index handler as a sort column if it is not already present in it.
-        CarbonScalaUtil.addIndexHandlerToSortColumns(handler, sources, tableProperties)
-        fields += Field(handler, Some("BigInt"), Some(handler), Some(null), index = true)
+        // Insert spatial column as a sort column if it is not already present in it.
+        CarbonScalaUtil.insertColumnToSortColumns(indexName, sources, tableProperties)
+        fields += Field(indexName, Some("BigInt"), Some(indexName), Some(null), spatialIndex = true)
       }
     }
     fields
@@ -210,14 +211,15 @@ object CarbonParserUtil {
       isAlterFlow: Boolean = false,
       tableComment: Option[String] = None): TableModel = {
 
-    // Process index handler property
-    val indexFields = processIndexProperty(tableProperties, fields)
-    val allFields = fields ++ indexFields
+    // Process spatial index property
+    val indexFields = processSpatialIndexProperty(tableProperties, fields)
+    val allFields = indexFields ++ fields
 
     // do not allow below key words as column name
     validateColumnNames(allFields)
+    CommonUtil.validateForSpatialTypeColumn(tableProperties)
 
-    fields.zipWithIndex.foreach { case (field, index) =>
+    allFields.zipWithIndex.foreach { case (field, index) =>
       field.schemaOrdinal = index
     }
 
@@ -301,7 +303,7 @@ object CarbonParserUtil {
       }
 
       // validate if both local dictionary include and exclude contains same column
-      CarbonScalaUtil.validateDuplicateLocalDictIncludeExcludeColmns(tableProperties)
+      CarbonScalaUtil.validateDuplicateColumnsForLocalDict(tableProperties)
     }
 
     // get no inverted index columns from table properties.
@@ -336,7 +338,7 @@ object CarbonParserUtil {
 
     if (tableProperties.get(CarbonCommonConstants.COLUMN_META_CACHE).isDefined) {
       // validate the column_meta_cache option
-      val tableColumns = dims.view.filterNot(_.index).map(x => x.name.get) ++
+      val tableColumns = dims.view.filterNot(_.spatialIndex).map(x => x.name.get) ++
                          msrs.map(x => x.name.get)
       CommonUtil.validateColumnMetaCacheFields(
         dbName.getOrElse(CarbonCommonConstants.DATABASE_DEFAULT_NAME),
@@ -374,12 +376,12 @@ object CarbonParserUtil {
     }
     // long_string_columns columns cannot be in no_inverted_index columns
     var longStringColumns = varcharColumns.map(_.toUpperCase)
-    var noInvColIntersecLongStrCols = longStringColumns
+    var noInvColIntersectLongStrCols = longStringColumns
       .intersect(noInvertedIdxCols.map(_.toUpperCase))
-    if (!noInvColIntersecLongStrCols.isEmpty) {
+    if (!noInvColIntersectLongStrCols.isEmpty) {
       throw new MalformedCarbonCommandException(
         s"Column(s): ${
-          noInvColIntersecLongStrCols.mkString(",")
+          noInvColIntersectLongStrCols.mkString(",")
         } both in no_inverted_index and long_string_columns which is not allowed.")
     }
     // long_string_columns columns cannot be in partition columns
@@ -643,7 +645,7 @@ object CarbonParserUtil {
       validateLongStringColumns(fields, varcharCols)
     }
 
-    // All columns in sortkey should be there in create table cols
+    // All columns in sort_columns should be there in create table cols
     var sortKeyOption = tableProperties.get(CarbonCommonConstants.SORT_COLUMNS)
     if (!sortKeyOption.isDefined) {
       // default no columns are selected for sorting in no_sort scope
@@ -709,7 +711,7 @@ object CarbonParserUtil {
         dimFields += field
       } else if (isDetectAsDimensionDataType(field.dataType.get)) {
         dimFields += field
-        // consider all String and binary cols as noDicitonaryDims by default
+        // consider all String and binary cols as noDictionaryDims by default
         if ((DataTypes.STRING.getName.equalsIgnoreCase(field.dataType.get)) ||
             (DataTypes.BINARY.getName.equalsIgnoreCase(field.dataType.get))) {
           noDictionaryDims :+= field.column
@@ -945,14 +947,6 @@ object CarbonParserUtil {
       throw new MalformedCarbonCommandException(errorMessage)
     }
 
-    // Validate QUOTECHAR length
-    if (options.exists(_._1.equalsIgnoreCase("QUOTECHAR"))) {
-      val quoteChar: String = options.get("quotechar").get.head._2
-      if (quoteChar.length > 1 ) {
-        throw new MalformedCarbonCommandException("QUOTECHAR cannot be more than one character.")
-      }
-    }
-
     // Validate COMMENTCHAR length
     if (options.exists(_._1.equalsIgnoreCase("COMMENTCHAR"))) {
       val commentChar: String = options.get("commentchar").get.head._2
@@ -1053,77 +1047,31 @@ object CarbonParserUtil {
   private def normalizeType(field: Field): Field = {
     val dataType = field.dataType.getOrElse("NIL")
     dataType match {
-      case "string" =>
-        Field(field.column, Some("String"), field.name, Some(null), field.parent,
-          field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-          field.columnComment)
-      case "smallint" =>
-        Field(field.column, Some("SmallInt"), field.name, Some(null),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
-      case "integer" | "int" =>
-        Field(field.column, Some("Integer"), field.name, Some(null),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
-      case "long" => Field(field.column, Some("Long"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment)
-      case "double" => Field(field.column, Some("Double"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment)
-      case "float" => Field(field.column, Some("Double"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment)
-      case "timestamp" =>
-        Field(field.column, Some("Timestamp"), field.name, Some(null),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
-      case "date" =>
-        Field(field.column, Some("Date"), field.name, Some(null),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
-      case "numeric" => Field(field.column, Some("Numeric"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment)
+      case "string" => field.copy(dataType = Some("String"))
+      case "smallint" => field.copy(dataType = Some("SmallInt"))
+      case "integer" | "int" => field.copy(dataType = Some("Integer"))
+      case "long" => field.copy(dataType = Some("Long"))
+      case "double" => field.copy(dataType = Some("Double"))
+      case "float" => field.copy(dataType = Some("Double"))
+      case "timestamp" => field.copy(dataType = Some("Timestamp"))
+      case "date" => field.copy(dataType = Some("Date"))
+      case "numeric" => field.copy(dataType = Some("Numeric"))
       case "array" =>
-        Field(field.column, Some("Array"), field.name,
-          field.children.map(f => f.map(normalizeType(_))),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
+        field.copy(dataType = Some("Array"), children = field.children.map(_.map(normalizeType)))
       case "struct" =>
-        Field(field.column, Some("Struct"), field.name,
-          field.children.map(f => f.map(normalizeType(_))),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
+        field.copy(dataType = Some("Struct"), children = field.children.map(_.map(normalizeType)))
       case "map" =>
-        Field(field.column, Some("Map"), field.name,
-          field.children.map(f => f.map(normalizeType(_))),
-          field.parent, field.storeType, field.schemaOrdinal,
-          field.precision, field.scale, field.rawSchema, field.columnComment)
-      case "bigint" => Field(field.column, Some("BigInt"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment, field.index)
-      case "decimal" => Field(field.column, Some("Decimal"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment)
-      case "boolean" => Field(field.column, Some("Boolean"), field.name, Some(null), field.parent,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale, field.rawSchema,
-        field.columnComment)
+        field.copy(dataType = Some("Map"), children = field.children.map(_.map(normalizeType)))
+      case "bigint" => field.copy(dataType = Some("BigInt"))
+      case "decimal" => field.copy(dataType = Some("Decimal"))
+      case "boolean" => field.copy(dataType = Some("Boolean"))
+      case "binary" => field.copy(dataType = Some("Binary"))
       // checking if the nested data type contains the child type as decimal(10,0),
       // if it is present then extracting the precision and scale. resetting the data type
       // with Decimal.
       case _ if dataType.startsWith("decimal") =>
         val (precision, scale) = CommonUtil.getScaleAndPrecision(dataType)
-        Field(field.column,
-          Some("Decimal"),
-          field.name,
-          Some(null),
-          field.parent,
-          field.storeType, field.schemaOrdinal, precision,
-          scale,
-          field.rawSchema,
-          field.columnComment
-        )
+        field.copy(dataType = Some("Decimal"), precision = precision, scale = scale)
       case _ =>
         field
     }
@@ -1131,67 +1079,25 @@ object CarbonParserUtil {
 
   private def addParent(field: Field): Field = {
     field.dataType.getOrElse("NIL") match {
-      case "Array" => Field(field.column, Some("Array"), field.name,
-        field.children.map(f => f.map(appendParentForEachChild(_, field.column))), field.parent,
-        field.storeType, field.schemaOrdinal, rawSchema = field.rawSchema,
-        columnComment = field.columnComment)
-      case "Struct" => Field(field.column, Some("Struct"), field.name,
-        field.children.map(f => f.map(appendParentForEachChild(_, field.column))), field.parent,
-        field.storeType, field.schemaOrdinal, rawSchema = field.rawSchema,
-        columnComment = field.columnComment)
-      case "Map" => Field(field.column, Some("Map"), field.name,
-        field.children.map(f => f.map(appendParentForEachChild(_, field.column))), field.parent,
-        field.storeType, field.schemaOrdinal, rawSchema = field.rawSchema,
-        columnComment = field.columnComment)
+      case "Array" | "Struct" | "Map" =>
+        field.copy(children = field.children.map(_.map(appendParentForEachChild(_, field.column))))
       case _ => field
     }
   }
 
   private def appendParentForEachChild(field: Field, parentName: String): Field = {
     field.dataType.getOrElse("NIL") match {
-      case "String" => Field(parentName + "." + field.column, Some("String"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "binary" => Field(parentName + "." + field.column, Some("Binary"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "SmallInt" => Field(parentName + "." + field.column, Some("SmallInt"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Integer" => Field(parentName + "." + field.column, Some("Integer"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Long" => Field(parentName + "." + field.column, Some("Long"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Double" => Field(parentName + "." + field.column, Some("Double"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Float" => Field(parentName + "." + field.column, Some("Double"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Timestamp" => Field(parentName + "." + field.column, Some("Timestamp"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Date" => Field(parentName + "." + field.column, Some("Date"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Numeric" => Field(parentName + "." + field.column, Some("Numeric"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Array" => Field(parentName + "." + field.column, Some("Array"),
-        Some(parentName + "." + field.name.getOrElse(None)),
-        field.children
-          .map(f => f.map(appendParentForEachChild(_, parentName + "." + field.column))),
-        parentName)
-      case "Struct" => Field(parentName + "." + field.column, Some("Struct"),
-        Some(parentName + "." + field.name.getOrElse(None)),
-        field.children
-          .map(f => f.map(appendParentForEachChild(_, parentName + "." + field.column))),
-        parentName)
-      case "Map" => Field(parentName + "." + field.column, Some("Map"),
-        Some(parentName + "." + field.name.getOrElse(None)),
-        field.children
-          .map(f => f.map(appendParentForEachChild(_, parentName + "." + field.column))),
-        parentName)
-      case "BigInt" => Field(parentName + "." + field.column, Some("BigInt"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case "Decimal" => Field(parentName + "." + field.column, Some("Decimal"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName,
-        field.storeType, field.schemaOrdinal, field.precision, field.scale)
-      case "Boolean" => Field(parentName + "." + field.column, Some("Boolean"),
-        Some(parentName + "." + field.name.getOrElse(None)), Some(null), parentName)
-      case _ => field
+      case "Array" | "Struct" | "Map" =>
+        val newChildren = field.children
+          .map(_.map(appendParentForEachChild(_, parentName + "." + field.column)))
+        field.copy(column = parentName + "." + field.column,
+          name = Some(parentName + "." + field.name.getOrElse(None)),
+          children = newChildren,
+          parent = parentName)
+      case _ =>
+        field.copy(column = parentName + "." + field.column,
+          name = Some(parentName + "." + field.name.getOrElse(None)),
+          parent = parentName)
     }
   }
 

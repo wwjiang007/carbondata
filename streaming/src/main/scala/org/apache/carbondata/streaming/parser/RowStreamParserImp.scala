@@ -21,9 +21,9 @@ import java.text.SimpleDateFormat
 import java.util
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
 import org.apache.spark.sql.types.StructType
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants
@@ -35,15 +35,15 @@ import org.apache.carbondata.processing.loading.constants.DataLoadProcessorConst
  */
 class RowStreamParserImp extends CarbonStreamParser {
 
-  var configuration: Configuration = null
-  var isVarcharTypeMapping: Array[Boolean] = null
-  var structType: StructType = null
-  var encoder: ExpressionEncoder[Row] = null
+  var configuration: Configuration = _
+  var isVarcharTypeMapping: Array[Boolean] = _
+  var structType: StructType = _
+  var encoder: ExpressionEncoder[Row] = _
 
-  var timeStampFormat: SimpleDateFormat = null
-  var dateFormat: SimpleDateFormat = null
-  var complexDelimiters: util.ArrayList[String] = new util.ArrayList[String]()
-  var serializationNullFormat: String = null
+  var timeStampFormat: SimpleDateFormat = _
+  var dateFormat: SimpleDateFormat = _
+  val complexDelimiters: util.ArrayList[String] = new util.ArrayList[String]()
+  var serializationNullFormat: String = _
 
   override def initialize(configuration: Configuration,
       structType: StructType, isVarcharTypeMapping: Array[Boolean]): Unit = {

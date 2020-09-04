@@ -19,16 +19,17 @@ package org.apache.carbondata.view
 
 import java.util
 
-import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
+import scala.collection.JavaConverters._
+
 import org.apache.spark.sql.{CarbonEnv, CarbonUtils, SparkSession}
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.util.ThreadLocalSessionInfo
-import org.apache.carbondata.core.view.MVManager
+import org.apache.carbondata.core.metadata.schema.table.CarbonTable
+import org.apache.carbondata.core.view.{MVCatalog, MVCatalogFactory, MVManager, MVSchema, MVStatus}
 
 class MVManagerInSpark(session: SparkSession) extends MVManager {
   override def getDatabases: util.List[String] = {
-    CarbonUtils.threadSet(CarbonCommonConstants.DISABLE_SQL_REWRITE, "true")
+    CarbonUtils.threadSet(CarbonCommonConstants.CARBON_ENABLE_MV, "true")
     try {
       val databaseList = session.catalog.listDatabases()
       val databaseNameList = new util.ArrayList[String]()
@@ -37,34 +38,68 @@ class MVManagerInSpark(session: SparkSession) extends MVManager {
       }
       databaseNameList
     } finally {
-      CarbonUtils.threadUnset(CarbonCommonConstants.DISABLE_SQL_REWRITE)
+      CarbonUtils.threadUnset(CarbonCommonConstants.CARBON_ENABLE_MV)
     }
+  }
+
+  override def getDatabaseLocation(databaseName: String): String = {
+    CarbonEnv.getDatabaseLocation(databaseName, session)
   }
 }
 
 object MVManagerInSpark {
 
-  private val MANAGER_MAP_BY_SESSION =
-    new util.HashMap[SparkSession, MVManagerInSpark]()
+  private var viewManager: MVManagerInSpark = null
 
+  // returns single MVManager instance for all the current sessions.
   def get(session: SparkSession): MVManagerInSpark = {
-    var viewManager = MANAGER_MAP_BY_SESSION.get(session)
     if (viewManager == null) {
-      MANAGER_MAP_BY_SESSION.synchronized {
-        viewManager = MANAGER_MAP_BY_SESSION.get(session)
+      this.synchronized {
         if (viewManager == null) {
           viewManager = new MVManagerInSpark(session)
-          MANAGER_MAP_BY_SESSION.put(session, viewManager)
-          session.sparkContext.addSparkListener(new SparkListener {
-            override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
-              CarbonEnv.carbonEnvMap.remove(session)
-              ThreadLocalSessionInfo.unsetAll()
-            }
-          })
         }
       }
     }
     viewManager
   }
 
+  def disableMVOnTable(sparkSession: SparkSession,
+      carbonTable: CarbonTable,
+      isOverwriteTable: Boolean = false): Unit = {
+    if (carbonTable == null) {
+      return
+    }
+    val viewManager = MVManagerInSpark.get(sparkSession)
+    val viewSchemas = new util.ArrayList[MVSchema]()
+    for (viewSchema <- viewManager.getSchemasOnTable(carbonTable).asScala) {
+      if (viewSchema.isRefreshOnManual) {
+        viewSchemas.add(viewSchema)
+      }
+    }
+    viewManager.setStatus(viewSchemas, MVStatus.DISABLED)
+    if (isOverwriteTable) {
+      if (!viewSchemas.isEmpty) {
+        viewManager.onTruncate(viewSchemas)
+      }
+    }
+  }
+
+  /**
+   * when first time MVCatalogs are initialized, it stores session info also,
+   * but when carbon session is newly created, catalog map will not be cleared,
+   * so if session info is different, remove the entry from map.
+   */
+  def getOrReloadMVCatalog(sparkSession: SparkSession): MVCatalogInSpark = {
+    val catalogFactory = new MVCatalogFactory[MVSchemaWrapper] {
+      override def newCatalog(): MVCatalog[MVSchemaWrapper] = {
+        new MVCatalogInSpark(sparkSession)
+      }
+    }
+    val viewManager = MVManagerInSpark.get(sparkSession)
+    var viewCatalog = viewManager.getCatalog(catalogFactory, false).asInstanceOf[MVCatalogInSpark]
+    if (!viewCatalog.session.equals(sparkSession)) {
+      viewCatalog = viewManager.getCatalog(catalogFactory, true).asInstanceOf[MVCatalogInSpark]
+    }
+    viewCatalog
+  }
 }

@@ -32,7 +32,7 @@ class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
   private val LOGGER = LogServiceFactory.getLogService(this.getClass.getCanonicalName)
 
   def saveAsCarbonFile(parameters: Map[String, String] = Map()): Unit = {
-    // create a new table using dataframe's schema and write its content into the table
+    // create a new table using DataFrame's schema and write its content into the table
     sqlContext.sparkSession.sql(
       makeCreateTableString(dataFrame.schema, new CarbonOption(parameters))).collect()
     writeToCarbonFile(parameters)
@@ -86,7 +86,9 @@ class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
       "TABLE_BLOCKSIZE" -> options.tableBlockSize,
       "TABLE_BLOCKLET_SIZE" -> options.tableBlockletSize,
       "TABLE_PAGE_SIZE_INMB" -> options.tablePageSizeInMb,
-      "STREAMING" -> Option(options.isStreaming.toString)
+      "STREAMING" -> Option(options.isStreaming.toString),
+      "DATEFORMAT" -> options.dateformat,
+      "TIMESTAMPFORMAT" -> options.timestampformat
     ).filter(_._2.isDefined)
       .map(property => s"'${property._1}' = '${property._2.get}'").mkString(",")
 

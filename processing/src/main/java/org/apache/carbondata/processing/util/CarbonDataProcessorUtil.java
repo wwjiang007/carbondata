@@ -333,9 +333,13 @@ public final class CarbonDataProcessorUtil {
     Set<String> columnNames = new HashSet<String>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
     List<CarbonDimension> dimensions =
         schema.getCarbonTable().getVisibleDimensions();
+    Map<String, String> properties =
+        schema.getCarbonTable().getTableInfo().getFactTable().getTableProperties();
+    String spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX);
     for (CarbonDimension dimension : dimensions) {
-      if (!dimension.isIndexColumn()) {
-        // skip the non-schema index column
+      if (spatialProperty != null && !dimension.getColName()
+          .equalsIgnoreCase(spatialProperty.trim())) {
+        // skip the non-schema column
         columnNames.add(dimension.getColName());
       }
     }

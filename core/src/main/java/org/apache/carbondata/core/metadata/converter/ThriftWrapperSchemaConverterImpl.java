@@ -105,8 +105,6 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     }
 
     switch (encoder) {
-      case DICTIONARY:
-        return org.apache.carbondata.format.Encoding.DICTIONARY;
       case DELTA:
         return org.apache.carbondata.format.Encoding.DELTA;
       case RLE:
@@ -121,6 +119,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         return org.apache.carbondata.format.Encoding.DIRECT_DICTIONARY;
       case INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY:
         return org.apache.carbondata.format.Encoding.INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY;
+      case DICTIONARY:
       default:
         return org.apache.carbondata.format.Encoding.DICTIONARY;
     }
@@ -208,7 +207,6 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     thriftColumnSchema.setInvisible(wrapperColumnSchema.isInvisible());
     thriftColumnSchema.setColumnReferenceId(wrapperColumnSchema.getColumnReferenceId());
     thriftColumnSchema.setSchemaOrdinal(wrapperColumnSchema.getSchemaOrdinal());
-    thriftColumnSchema.setIndexColumn(wrapperColumnSchema.isIndexColumn());
     if (wrapperColumnSchema.isSortColumn()) {
       Map<String, String> properties = wrapperColumnSchema.getColumnProperties();
       if (null == properties) {
@@ -264,7 +262,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
   }
 
   /* (non-Javadoc)
-   * convert from wrapper to external tableschema
+   * convert from wrapper to external table schema
    */
   @Override
   public org.apache.carbondata.format.TableSchema fromWrapperToExternalTableSchema(
@@ -304,7 +302,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
   }
 
   /* (non-Javadoc)
-   * convert from wrapper to external tableinfo
+   * convert from wrapper to external table info
    */
   @Override
   public org.apache.carbondata.format.TableInfo fromWrapperToExternalTableInfo(
@@ -412,8 +410,6 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
       return null;
     }
     switch (encoder) {
-      case DICTIONARY:
-        return Encoding.DICTIONARY;
       case DELTA:
         return Encoding.DELTA;
       case RLE:
@@ -428,6 +424,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         return Encoding.INT_LENGTH_COMPLEX_CHILD_BYTE_ARRAY;
       case DIRECT_DICTIONARY:
         return Encoding.DIRECT_DICTIONARY;
+      case DICTIONARY:
       default:
         return Encoding.DICTIONARY;
     }
@@ -447,8 +444,6 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     switch (dataType) {
       case BOOLEAN:
         return DataTypes.BOOLEAN;
-      case STRING:
-        return DataTypes.STRING;
       case INT:
         return DataTypes.INT;
       case SHORT:
@@ -477,13 +472,14 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         return DataTypes.FLOAT;
       case BYTE:
         return DataTypes.BYTE;
+      case STRING:
       default:
         return DataTypes.STRING;
     }
   }
 
   /* (non-Javadoc)
-   * convert from external to wrapper columnschema
+   * convert from external to wrapper column schema
    */
   @Override
   public ColumnSchema fromExternalToWrapperColumnSchema(
@@ -509,7 +505,6 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
     wrapperColumnSchema.setInvisible(externalColumnSchema.isInvisible());
     wrapperColumnSchema.setColumnReferenceId(externalColumnSchema.getColumnReferenceId());
     wrapperColumnSchema.setSchemaOrdinal(externalColumnSchema.getSchemaOrdinal());
-    wrapperColumnSchema.setIndexColumn(externalColumnSchema.isIndexColumn());
     wrapperColumnSchema.setSortColumn(false);
     Map<String, String> properties = externalColumnSchema.getColumnProperties();
     if (properties != null) {
@@ -558,7 +553,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
   }
 
   /* (non-Javadoc)
-   * convert from external to wrapper tableschema
+   * convert from external to wrapper table schema
    */
   @Override
   public TableSchema fromExternalToWrapperTableSchema(
@@ -603,7 +598,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
   }
 
   /* (non-Javadoc)
-   * convert from external to wrapper tableinfo
+   * convert from external to wrapper table info
    */
   @Override
   public TableInfo fromExternalToWrapperTableInfo(
@@ -625,10 +620,10 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
   }
 
   private List<ParentColumnTableRelation> fromExternalToWrapperParentTableColumnRelations(
-      List<org.apache.carbondata.format.ParentColumnTableRelation> thirftParentColumnRelation) {
+      List<org.apache.carbondata.format.ParentColumnTableRelation> thriftParentColumnRelation) {
     List<ParentColumnTableRelation> parentColumnTableRelationList = new ArrayList<>();
     for (org.apache.carbondata.format.ParentColumnTableRelation carbonTableRelation :
-        thirftParentColumnRelation) {
+        thriftParentColumnRelation) {
       RelationIdentifier relationIdentifier =
           new RelationIdentifier(carbonTableRelation.getRelationIdentifier().getDatabaseName(),
               carbonTableRelation.getRelationIdentifier().getTableName(),

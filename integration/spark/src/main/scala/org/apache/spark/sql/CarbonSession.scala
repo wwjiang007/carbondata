@@ -41,10 +41,13 @@ import org.apache.carbondata.streaming.CarbonStreamingQueryListener
  * Implemented this class only to use our own SQL DDL commands.
  * User needs to use {CarbonSession.getOrCreateCarbon} to create Carbon session.
  */
+@deprecated("only use for backward compatibility, please switch to use CarbonExtensions", "2.0")
 class CarbonSession(@transient val sc: SparkContext,
     @transient private val existingSharedState: Option[SharedState],
     @transient private val useHiveMetaStore: Boolean = true
 ) extends SparkSession(sc) { self =>
+
+  logWarning("CarbonSession is deprecated since 2.0, please switch to CarbonExtensions")
 
   def this(sc: SparkContext) {
     this(sc, None)
@@ -97,7 +100,7 @@ class CarbonSession(@transient val sc: SparkContext,
    */
   @InterfaceAudience.Developer(Array("Index"))
   def isIndexHit(sqlStatement: String, indexName: String): Boolean = {
-    // explain command will output the dataMap information only if enable.query.statistics = true
+    // explain command will output the index information only if enable.query.statistics = true
     val message = sql(s"EXPLAIN $sqlStatement").collect()
     message(0).getString(0).contains(indexName)
   }
@@ -149,14 +152,14 @@ object CarbonSession {
 
   private val statementId = new AtomicLong(0)
 
-  private var enableInMemCatlog: Boolean = false
+  private var isInMemoryCatalog: Boolean = false
 
   private[sql] val threadStatementId = new ThreadLocal[Long]()
 
   implicit class CarbonBuilder(builder: Builder) {
 
     def enableInMemoryCatalog(): Builder = {
-      enableInMemCatlog = true
+      isInMemoryCatalog = true
       builder
     }
     def getOrCreateCarbonSession(): SparkSession = {
@@ -171,7 +174,7 @@ object CarbonSession {
 
     def getOrCreateCarbonSession(storePath: String,
         metaStorePath: String): SparkSession = synchronized {
-      if (!enableInMemCatlog) {
+      if (!isInMemoryCatalog) {
         builder.enableHiveSupport()
       }
       val options =
@@ -246,7 +249,7 @@ object CarbonSession {
           sc
         }
 
-        session = new CarbonSession(sparkContext, None, !enableInMemCatlog)
+        session = new CarbonSession(sparkContext, None, !isInMemoryCatalog)
 
         val carbonProperties = CarbonProperties.getInstance()
         if (StringUtils.isNotBlank(storePath)) {

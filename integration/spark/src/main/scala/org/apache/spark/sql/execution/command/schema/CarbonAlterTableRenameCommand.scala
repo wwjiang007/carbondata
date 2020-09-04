@@ -21,7 +21,7 @@ import org.apache.spark.sql.{CarbonEnv, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.CatalogTablePartition
 import org.apache.spark.sql.execution.command.{AlterTableRenameModel, MetadataCommand}
-import org.apache.spark.sql.hive.{CarbonRelation, CarbonSessionCatalogUtil}
+import org.apache.spark.sql.hive.{CarbonRelation, CarbonSessionCatalogUtil, MockClassForAlterRevertTests}
 import org.apache.spark.util.AlterTableUtil
 
 import org.apache.carbondata.common.exceptions.sql.MalformedCarbonCommandException
@@ -81,7 +81,7 @@ private[sql] case class CarbonAlterTableRenameCommand(
     }
     // if table have created MV, not support table rename
     if (MVManagerInSpark.get(sparkSession).hasSchemaOnTable(oldCarbonTable) ||
-        oldCarbonTable.hasMVCreated || oldCarbonTable.isMV) {
+        oldCarbonTable.isMV) {
       throw new MalformedCarbonCommandException(
         "alter rename is not supported for MV table or for tables which have child MV")
     }
@@ -99,7 +99,7 @@ private[sql] case class CarbonAlterTableRenameCommand(
       if (SegmentStatusManager.isLoadInProgressInTable(carbonTable)) {
         throw new ConcurrentOperationException(carbonTable, "loading", "alter table rename")
       }
-      // invalid data map for the old table, see CARBON-1690
+      // invalid index for the old table, see CARBON-1690
       val oldAbsoluteTableIdentifier = carbonTable.getAbsoluteTableIdentifier
       IndexStoreManager.getInstance().clearIndex(oldAbsoluteTableIdentifier)
       // get the latest carbon table and check for column existence
@@ -140,6 +140,7 @@ private[sql] case class CarbonAlterTableRenameCommand(
         tableInfo,
         schemaEvolutionEntry,
         carbonTable.getTablePath)(sparkSession)
+      new MockClassForAlterRevertTests().mockForAlterRevertTest()
 
       val alterTableRenamePostEvent: AlterTableRenamePostEvent = AlterTableRenamePostEvent(
         carbonTable,

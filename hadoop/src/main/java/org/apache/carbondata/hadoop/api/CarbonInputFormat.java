@@ -84,7 +84,6 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
-import org.apache.hadoop.mapreduce.security.TokenCache;
 import org.apache.log4j.Logger;
 
 /**
@@ -126,7 +125,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
   protected int numSegments = 0;
   protected int numStreamSegments = 0;
   protected int numStreamFiles = 0;
-  protected int hitedStreamFiles = 0;
+  protected int hitStreamFiles = 0;
   protected int numBlocks = 0;
   protected List fileLists = null;
 
@@ -144,8 +143,8 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
     return numStreamFiles;
   }
 
-  public int getHitedStreamFiles() {
-    return hitedStreamFiles;
+  public int getHitStreamFiles() {
+    return hitStreamFiles;
   }
 
   public int getNumBlocks() {
@@ -259,22 +258,11 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
     if (projection == null || projection.isEmpty()) {
       return;
     }
-    String[] allColumns = projection.getAllColumns();
-    StringBuilder builder = new StringBuilder();
-    for (String column : allColumns) {
-      builder.append(column).append(",");
-    }
-    String columnString = builder.toString();
-    columnString = columnString.substring(0, columnString.length() - 1);
-    configuration.set(COLUMN_PROJECTION, columnString);
+    setColumnProjection(configuration, projection.getAllColumns());
   }
 
   public static String getColumnProjection(Configuration configuration) {
     return configuration.get(COLUMN_PROJECTION);
-  }
-
-  public static void setFgIndexPruning(Configuration configuration, boolean enable) {
-    configuration.set(FG_INDEX_PRUNING, String.valueOf(enable));
   }
 
   public static boolean isFgIndexPruningEnable(Configuration configuration) {
@@ -390,12 +378,9 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
   }
 
   /**
-   * {@inheritDoc}
-   * Configurations FileInputFormat.INPUT_DIR
-   * are used to get table path to read.
-   *
-   * @param job
-   * @return List<InputSplit> list of CarbonInputSplit
+   * get list of block/blocklet and make them to CarbonInputSplit
+   * @param job JobContext with Configuration
+   * @return list of CarbonInputSplit
    * @throws IOException
    */
   @Override
@@ -406,10 +391,10 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
    * table. If the job fails for some reason then an embedded job is fired to
    * get the count.
    */
-  Long getDistributedCount(CarbonTable table,
-      List<PartitionSpec> partitionNames, List<Segment> validSegments) {
+  Long getDistributedCount(CarbonTable table, List<PartitionSpec> partitionNames,
+      List<Segment> validSegments, Configuration configuration) {
     IndexInputFormat indexInputFormat =
-        new IndexInputFormat(table, null, validSegments, new ArrayList<String>(),
+        new IndexInputFormat(table, null, validSegments, new ArrayList<>(),
             partitionNames, false, null, false, false);
     indexInputFormat.setIsWriteToFile(false);
     try {
@@ -417,25 +402,26 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
       if (indexJob == null) {
         throw new ExceptionInInitializerError("Unable to create index job");
       }
-      return indexJob.executeCountJob(indexInputFormat);
+      return indexJob.executeCountJob(indexInputFormat, configuration);
     } catch (Exception e) {
       LOG.error("Failed to get count from index server. Initializing fallback", e);
       IndexJob indexJob = IndexUtil.getEmbeddedJob();
-      return indexJob.executeCountJob(indexInputFormat);
+      return indexJob.executeCountJob(indexInputFormat, configuration);
     }
   }
 
   List<ExtendedBlocklet> getDistributedBlockRowCount(CarbonTable table,
       List<PartitionSpec> partitionNames, List<Segment> validSegments,
-      List<Segment> invalidSegments, List<String> segmentsToBeRefreshed) {
+      List<Segment> invalidSegments, List<String> segmentsToBeRefreshed,
+      Configuration configuration) {
     return getDistributedSplit(table, null, partitionNames, validSegments, invalidSegments,
-        segmentsToBeRefreshed, true);
+        segmentsToBeRefreshed, true, configuration);
   }
 
   private List<ExtendedBlocklet> getDistributedSplit(CarbonTable table,
       FilterResolverIntf filterResolverIntf, List<PartitionSpec> partitionNames,
       List<Segment> validSegments, List<Segment> invalidSegments,
-      List<String> segmentsToBeRefreshed, boolean isCountJob) {
+      List<String> segmentsToBeRefreshed, boolean isCountJob, Configuration configuration) {
     try {
       IndexJob indexJob = (IndexJob) IndexUtil.createIndexJob(IndexUtil.DISTRIBUTED_JOB_NAME);
       if (indexJob == null) {
@@ -443,7 +429,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
       }
       return IndexUtil
           .executeIndexJob(table, filterResolverIntf, indexJob, partitionNames, validSegments,
-              invalidSegments, null, false, segmentsToBeRefreshed, isCountJob);
+              invalidSegments, null, false, segmentsToBeRefreshed, isCountJob, configuration);
     } catch (Exception e) {
       // Check if fallback is disabled for testing purposes then directly throw exception.
       if (CarbonProperties.getInstance().isFallBackDisabled()) {
@@ -451,9 +437,10 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
       }
       LOG.error("Exception occurred while getting splits using index server. Initiating Fall "
           + "back to embedded mode", e);
-      return IndexUtil.executeIndexJob(table, filterResolverIntf,
-          IndexUtil.getEmbeddedJob(), partitionNames, validSegments,
-          invalidSegments, null, true, segmentsToBeRefreshed, isCountJob);
+      return IndexUtil
+          .executeIndexJob(table, filterResolverIntf, IndexUtil.getEmbeddedJob(), partitionNames,
+              validSegments, invalidSegments, null, true, segmentsToBeRefreshed, isCountJob,
+              configuration);
     }
   }
 
@@ -486,9 +473,6 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
     QueryStatisticsRecorder recorder = CarbonTimeStatisticsFactory.createDriverRecorder();
     QueryStatistic statistic = new QueryStatistic();
 
-    // get tokens for all the required FileSystem for table path
-    TokenCache.obtainTokensForNamenodes(job.getCredentials(),
-        new Path[] { new Path(carbonTable.getTablePath()) }, job.getConfiguration());
     List<ExtendedBlocklet> prunedBlocklets =
         getPrunedBlocklets(job, carbonTable, expression, segmentIds, invalidSegments,
             segmentsToBeRefreshed);
@@ -497,7 +481,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
       // matchedPartitions variable will be null in two cases as follows
       // 1. the table is not a partition table
       // 2. the table is a partition table, and all partitions are matched by query
-      // for partition table, the task id of carbaondata file name is the partition id.
+      // for partition table, the task id of carbondata file name is the partition id.
       // if this partition is not required, here will skip it.
       resultFilteredBlocks.add(blocklet.getInputSplit());
     }
@@ -512,11 +496,11 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
    * get number of block by counting distinct file path of blocklets
    */
   private int getBlockCount(List<ExtendedBlocklet> blocklets) {
-    Set<String> filepaths = new HashSet<>();
+    Set<String> filePaths = new HashSet<>();
     for (ExtendedBlocklet blocklet: blocklets) {
-      filepaths.add(blocklet.getPath());
+      filePaths.add(blocklet.getPath());
     }
-    return filepaths.size();
+    return filePaths.size();
   }
 
   /**
@@ -537,7 +521,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
     List<PartitionSpec> partitionsToPrune = getPartitionsToPrune(job.getConfiguration());
     // First prune using default index on driver side.
     TableIndex defaultIndex = IndexStoreManager.getInstance().getDefaultIndex(carbonTable);
-    List<ExtendedBlocklet> prunedBlocklets = null;
+    List<ExtendedBlocklet> prunedBlocklets;
     // This is to log the event, so user will know what is happening by seeing logs.
     LOG.info("Started block pruning ...");
     boolean isDistributedPruningEnabled = CarbonProperties.getInstance()
@@ -546,7 +530,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
       try {
         prunedBlocklets =
             getDistributedSplit(carbonTable, filter.getResolver(), partitionsToPrune, segmentIds,
-                invalidSegments, segmentsToBeRefreshed, false);
+                invalidSegments, segmentsToBeRefreshed, false, job.getConfiguration());
       } catch (Exception e) {
         // Check if fallback is disabled then directly throw exception otherwise try driver
         // pruning.
@@ -559,7 +543,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
       if (carbonTable.isTransactionalTable()) {
         IndexExprWrapper indexExprWrapper =
             IndexChooser.getDefaultIndex(getOrCreateCarbonTable(job.getConfiguration()), null);
-        IndexUtil.loadIndexes(carbonTable, indexExprWrapper, segmentIds, partitionsToPrune);
+        IndexUtil.loadIndexes(carbonTable, indexExprWrapper, segmentIds);
       }
       prunedBlocklets = defaultIndex.prune(segmentIds, filter, partitionsToPrune);
 
@@ -573,7 +557,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
 
       IndexChooser chooser = new IndexChooser(getOrCreateCarbonTable(job.getConfiguration()));
 
-      // Get the available CG indexs and prune further.
+      // Get the available CG indexes and prune further.
       IndexExprWrapper cgIndexExprWrapper = chooser.chooseCGIndex(filter.getResolver());
 
       if (cgIndexExprWrapper != null) {
@@ -586,7 +570,8 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
           if (distributedCG && indexJob != null) {
             cgPrunedBlocklets = IndexUtil
                 .executeIndexJob(carbonTable, filter.getResolver(), indexJob, partitionsToPrune,
-                    segmentIds, invalidSegments, IndexLevel.CG, new ArrayList<String>());
+                    segmentIds, invalidSegments, IndexLevel.CG, new ArrayList<>(),
+                    job.getConfiguration());
           } else {
             cgPrunedBlocklets = cgIndexExprWrapper.prune(segmentIds, partitionsToPrune);
           }
@@ -623,7 +608,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
           fgPrunedBlocklets = IndexUtil
               .executeIndexJob(carbonTable, filter.getResolver(), indexJob, partitionsToPrune,
                   segmentIds, invalidSegments, fgIndexExprWrapper.getIndexLevel(),
-                  new ArrayList<String>());
+                  new ArrayList<>(), job.getConfiguration());
           // note that the 'fgPrunedBlocklets' has extra index related info compared with
           // 'prunedBlocklets', so the intersection should keep the elements in 'fgPrunedBlocklets'
           prunedBlocklets =
@@ -641,7 +626,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
   private List<ExtendedBlocklet> intersectFilteredBlocklets(CarbonTable carbonTable,
       List<ExtendedBlocklet> previousIndexPrunedBlocklets,
       List<ExtendedBlocklet> otherIndexPrunedBlocklets) {
-    List<ExtendedBlocklet> prunedBlocklets = null;
+    List<ExtendedBlocklet> prunedBlocklets;
     if (BlockletIndexUtil.isCacheLevelBlock(carbonTable)) {
       prunedBlocklets = new ArrayList<>();
       for (ExtendedBlocklet otherBlocklet : otherIndexPrunedBlocklets) {
@@ -705,18 +690,15 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
         .dataConverter(getDataTypeConverter(configuration))
         .build();
     String readDeltaOnly = configuration.get(READ_ONLY_DELTA);
-    if (readDeltaOnly != null && Boolean.parseBoolean(readDeltaOnly)) {
+    if (Boolean.parseBoolean(readDeltaOnly)) {
       queryModel.setReadOnlyDelta(true);
     }
     return queryModel;
   }
 
   /**
-   * This method will create an Implict Expression and set it as right child in the given
+   * This method will create an Implicit Expression and set it as right child in the given
    * expression
-   *
-   * @param expression
-   * @param inputSplit
    */
   private void checkAndAddImplicitExpression(Expression expression, InputSplit inputSplit) {
     if (inputSplit instanceof CarbonMultiBlockSplit) {
@@ -793,7 +775,7 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
   /**
    * It is optional, if user does not set then it reads from store
    *
-   * @param configuration
+   * @param configuration hadoop configuration
    * @param converterClass is the Data type converter for different computing engine
    */
   public static void setDataTypeConverter(
@@ -825,11 +807,11 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
 
   public static String getDatabaseName(Configuration configuration)
       throws InvalidConfigurationException {
-    String databseName = configuration.get(DATABASE_NAME);
-    if (null == databseName) {
+    String databaseName = configuration.get(DATABASE_NAME);
+    if (null == databaseName) {
       throw new InvalidConfigurationException("Database name is not set.");
     }
-    return databseName;
+    return databaseName;
   }
 
   public static void setTableName(Configuration configuration, String tableName) {
@@ -850,15 +832,14 @@ public abstract class CarbonInputFormat<T> extends FileInputFormat<Void, T> {
   /**
    * Project all Columns for carbon reader
    *
-   * @return String araay of columnNames
-   * @param carbonTable
+   * @return String array of columnNames
    */
   public String[] projectAllColumns(CarbonTable carbonTable) {
     List<ColumnSchema> colList = carbonTable.getTableInfo().getFactTable().getListOfColumns();
     List<String> projectColumns = new ArrayList<>();
     // complex type and add just the parent column name while skipping the child columns.
     for (ColumnSchema col : colList) {
-      if (!col.getColumnName().contains(".")) {
+      if (!col.isComplexColumn()) {
         projectColumns.add(col.getColumnName());
       }
     }

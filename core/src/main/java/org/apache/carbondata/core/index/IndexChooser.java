@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.carbondata.common.annotations.InterfaceAudience;
@@ -43,7 +44,7 @@ import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.TrueConditio
 
 /**
  * This chooser does 2 jobs.
- * 1. Based on filter expression it converts the available Indexs to Index expression.
+ * 1. Based on filter expression it converts the available Indexes to Index expression.
  *   For example, there are 2 Indexes available on table1
  *   Index1 : column1
  *   Index2 : column2
@@ -341,7 +342,7 @@ public class IndexChooser {
       IndexTuple that = (IndexTuple) o;
 
       if (order != that.order) return false;
-      return index != null ? index.equals(that.index) : that.index == null;
+      return Objects.equals(index, that.index);
     }
 
     @Override

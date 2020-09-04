@@ -62,8 +62,9 @@ private[sql] case class CarbonAlterTableDropColumnCommand(
         throw new MalformedCarbonCommandException(
           "alter table drop column is not supported for index indexSchema")
       }
-      // Do not allow index handler's source columns to be dropped.
-      AlterTableUtil.validateForIndexHandlerSources(carbonTable, alterTableDropColumnModel.columns)
+      // Do not allow spatial index source columns to be dropped.
+      AlterTableUtil.validateColumnsWithSpatialIndexProperties(carbonTable,
+        alterTableDropColumnModel.columns)
       val partitionInfo = carbonTable.getPartitionInfo()
       val tableColumns = carbonTable.getCreateOrderColumn().asScala
       if (partitionInfo != null) {
@@ -104,7 +105,7 @@ private[sql] case class CarbonAlterTableDropColumnCommand(
 
       var dictionaryColumns = Seq[org.apache.carbondata.core.metadata.schema.table.column
       .ColumnSchema]()
-      // TODO: if deleted column list includes bucketted column throw an error
+      // TODO: if deleted column list includes bucketed column throw an error
       alterTableDropColumnModel.columns.foreach { column =>
         var columnExist = false
         tableColumns.foreach { tableColumn =>
@@ -159,12 +160,12 @@ private[sql] case class CarbonAlterTableDropColumnCommand(
       val delCols = deletedColumnSchema.map { deleteCols =>
         schemaConverter.fromExternalToWrapperColumnSchema(deleteCols)
       }
-      val (tableIdentifier, schemaParts) = AlterTableUtil.updateSchemaInfo(
+      val tableIdentifier = AlterTableUtil.updateSchemaInfo(
         carbonTable,
         schemaEvolutionEntry,
         tableInfo)(sparkSession)
       // get the columns in schema order and filter the dropped column in the column set
-      val cols = carbonTable.getCreateOrderColumn().asScala
+      val cols = carbonTable.getCreateOrderColumn.asScala
         .collect { case carbonColumn if !carbonColumn.isInvisible => carbonColumn.getColumnSchema }
         .filterNot(column => delCols.contains(column))
       // When we call
@@ -180,7 +181,7 @@ private[sql] case class CarbonAlterTableDropColumnCommand(
         Some(cols)
       }
       CarbonSessionCatalogUtil.alterDropColumns(
-        tableIdentifier, schemaParts, columns, sparkSession)
+        tableIdentifier, columns, sparkSession)
       sparkSession.catalog.refreshTable(tableIdentifier.quotedString)
       // TODO: 1. add check for deletion of index tables
 

@@ -37,7 +37,7 @@ import org.apache.spark.sql.{CarbonEnv, SparkSession}
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema
 
 /**
- * This class will have carbon catalog and refresh the relation from cache if the carbontable in
+ * This class will have carbon catalog and refresh the relation from cache if the carbon table in
  * carbon catalog is not same as cached carbon relation's carbon table
  *
  * @param externalCatalog
@@ -112,25 +112,6 @@ class CarbonHiveSessionCatalog(
     CarbonSessionCatalogUtil.getClient(sparkSession)
   }
 
-  override def alterAddColumns(tableIdentifier: TableIdentifier,
-      schemaParts: String,
-      cols: Option[Seq[ColumnSchema]]): Unit = {
-    CarbonSessionCatalogUtil.alterAddColumns(tableIdentifier, schemaParts, cols, sparkSession)
-  }
-
-  override def alterDropColumns(tableIdentifier: TableIdentifier,
-      schemaParts: String,
-      cols: Option[Seq[ColumnSchema]]): Unit = {
-    CarbonSessionCatalogUtil.alterDropColumns(tableIdentifier, schemaParts, cols, sparkSession)
-  }
-
-  override def alterColumnChangeDataTypeOrRename(tableIdentifier: TableIdentifier,
-      schemaParts: String,
-      cols: Option[Seq[ColumnSchema]]): Unit = {
-    CarbonSessionCatalogUtil.alterColumnChangeDataTypeOrRename(
-      tableIdentifier, schemaParts, cols, sparkSession)
-  }
-
   /**
    * This is alternate way of getting partition information. It first fetches all partitions from
    * hive and then apply filter instead of querying hive along with filters.
@@ -145,7 +126,7 @@ class CarbonHiveSessionCatalog(
   }
 
   /**
-   * Update the storageformat with new location information
+   * Update the storage format with new location information
    */
   override def updateStorageLocation(
       path: Path,

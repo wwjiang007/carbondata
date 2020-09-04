@@ -127,8 +127,8 @@ private[sql] case class CarbonAlterTableColRenameDataTypeChangeCommand(
         throw new MalformedCarbonCommandException(
           "alter table column rename is not supported for index indexSchema")
       }
-      // Do not allow index handler's source columns to be changed.
-      AlterTableUtil.validateForIndexHandlerSources(carbonTable,
+      // Do not allow spatial index column and its source columns to be changed.
+      AlterTableUtil.validateColumnsWithSpatialIndexProperties(carbonTable,
         List(alterTableColRenameAndDataTypeChangeModel.columnName))
       val operationContext = new OperationContext
       operationContext.setProperty("childTableColumnRename", childTableColumnRename)
@@ -313,10 +313,10 @@ private[sql] case class CarbonAlterTableColRenameDataTypeChangeCommand(
     } else {
       Some(carbonColumns)
     }
-    val (tableIdentifier, schemaParts) = AlterTableUtil.updateSchemaInfo(
+    val tableIdentifier = AlterTableUtil.updateSchemaInfo(
       carbonTable, schemaEvolutionEntry, tableInfo)(sparkSession)
     CarbonSessionCatalogUtil.alterColumnChangeDataTypeOrRename(
-      tableIdentifier, schemaParts, columns, sparkSession)
+      tableIdentifier, columns, sparkSession)
     sparkSession.catalog.refreshTable(tableIdentifier.quotedString)
   }
 

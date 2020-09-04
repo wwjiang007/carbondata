@@ -22,13 +22,13 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.{UnresolvedAlias, UnresolvedAttribute}
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, HiveTableRelation}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, ScalaUDF}
-import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, Command, DeserializeToObject, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, Command, DeserializeToObject, LocalRelation, LogicalPlan}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.util.ThreadLocalSessionInfo
+import org.apache.carbondata.core.util.{CarbonProperties, ThreadLocalSessionInfo}
 import org.apache.carbondata.core.view.{MVCatalog, MVCatalogFactory}
 import org.apache.carbondata.mv.plans.modular.{ModularPlan, Select}
 import org.apache.carbondata.view.{MVCatalogInSpark, MVManagerInSpark, MVSchemaWrapper}
@@ -39,15 +39,24 @@ import org.apache.carbondata.view.MVFunctions.DUMMY_FUNCTION
  */
 class MVRewriteRule(session: SparkSession) extends Rule[LogicalPlan] {
 
-  private val logger = MVRewriteRule.LOGGER
-
-  private val catalogFactory = new MVCatalogFactory[MVSchemaWrapper] {
-    override def newCatalog(): MVCatalog[MVSchemaWrapper] = {
-      new MVCatalogInSpark(session)
+  override def apply(logicalPlan: LogicalPlan): LogicalPlan = {
+    // only query need to check this rule
+    logicalPlan match {
+      case _: Command => return logicalPlan
+      case _: LocalRelation => return logicalPlan
+      case _ =>
+    }
+    try {
+      tryRewritePlan(logicalPlan)
+    } catch {
+      case e =>
+        // if exception is thrown while rewriting the query, will fallback to original query plan.
+        MVRewriteRule.LOGGER.warn("Failed to rewrite plan with mv: " + e.getMessage)
+        logicalPlan
     }
   }
 
-  override def apply(logicalPlan: LogicalPlan): LogicalPlan = {
+  private def tryRewritePlan(logicalPlan: LogicalPlan): LogicalPlan = {
     var canApply = true
     logicalPlan.transformAllExpressions {
       // first check if any mv UDF is applied it is present is in plan
@@ -66,7 +75,7 @@ class MVRewriteRule(session: SparkSession) extends Rule[LogicalPlan] {
     }
     logicalPlan.transform {
       case Aggregate(groupBy, aggregations, child) =>
-        // check for if plan is for dataload for preaggregate table, then skip applying mv
+        // check for if plan is for data load for pre-aggregate table, then skip applying mv
         val haveDummyFunction = aggregations.exists {
           aggregation =>
             if (aggregation.isInstanceOf[UnresolvedAlias]) {
@@ -83,25 +92,10 @@ class MVRewriteRule(session: SparkSession) extends Rule[LogicalPlan] {
     if (!canApply) {
       return logicalPlan
     }
-    val sessionInformation = ThreadLocalSessionInfo.getCarbonSessionInfo
-    if (sessionInformation != null && sessionInformation.getThreadParams != null) {
-      val disableViewRewrite = sessionInformation.getThreadParams.getProperty(
-        CarbonCommonConstants.DISABLE_SQL_REWRITE)
-      if (disableViewRewrite != null &&
-        disableViewRewrite.equalsIgnoreCase("true")) {
-        return logicalPlan
-      }
+    if (!CarbonProperties.getInstance().isMVEnabled) {
+      return logicalPlan
     }
-    // when first time MVCatalogs are initialized, it stores session info also,
-    // but when carbon session is newly created, catalog map will not be cleared,
-    // so if session info is different, remove the entry from map.
-    val viewManager = MVManagerInSpark.get(session)
-    var viewCatalog = viewManager.getCatalog(catalogFactory, false)
-      .asInstanceOf[MVCatalogInSpark]
-    if (!viewCatalog.session.equals(session)) {
-      viewCatalog = viewManager.getCatalog(catalogFactory, true)
-        .asInstanceOf[MVCatalogInSpark]
-    }
+    val viewCatalog = MVManagerInSpark.getOrReloadMVCatalog(session)
     if (viewCatalog != null && hasSuitableMV(logicalPlan, viewCatalog)) {
       val viewRewrite = new MVRewrite(viewCatalog, logicalPlan, session)
       val rewrittenPlan = viewRewrite.rewrittenPlan

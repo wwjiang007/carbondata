@@ -121,8 +121,6 @@ public class ColumnSchema implements Serializable, Writable, Cloneable {
 
   private boolean isSortColumn = false;
 
-  private boolean indexColumn = false;
-
   /**
    * aggregate function used in pre aggregate table
    */
@@ -134,7 +132,7 @@ public class ColumnSchema implements Serializable, Writable, Cloneable {
   private List<ParentColumnTableRelation> parentColumnTableRelations;
 
   /**
-   * timeseries function applied on column
+   * time-series function applied on column
    */
   private String timeSeriesFunction = "";
 
@@ -416,7 +414,7 @@ public class ColumnSchema implements Serializable, Writable, Cloneable {
   }
 
   /**
-   * return columnproperties
+   * return column properties
    */
   public Map<String, String> getColumnProperties() {
     return columnProperties;
@@ -535,7 +533,6 @@ public class ColumnSchema implements Serializable, Writable, Cloneable {
       }
     }
     out.writeBoolean(isLocalDictColumn);
-    out.writeBoolean(indexColumn);
   }
 
   @Override
@@ -585,7 +582,6 @@ public class ColumnSchema implements Serializable, Writable, Cloneable {
       }
     }
     this.isLocalDictColumn = in.readBoolean();
-    this.indexColumn = in.readBoolean();
   }
 
   /**
@@ -595,14 +591,6 @@ public class ColumnSchema implements Serializable, Writable, Cloneable {
   public boolean isComplexColumn() {
     return this.getColumnName()
         .contains(".val") || this.getColumnName().contains(".");
-  }
-
-  public boolean isIndexColumn() {
-    return indexColumn;
-  }
-
-  public void setIndexColumn(boolean indexColumn) {
-    this.indexColumn = indexColumn;
   }
 
   public ColumnSchema clone() {

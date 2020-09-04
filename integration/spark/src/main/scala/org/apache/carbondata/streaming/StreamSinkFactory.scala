@@ -26,19 +26,19 @@ import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd}
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.command.management.CommonLoadUtils
 import org.apache.spark.sql.execution.streaming.{CarbonAppendableStreamSink, Sink}
 
+import org.apache.carbondata.common.Maps
 import org.apache.carbondata.common.logging.LogServiceFactory
-import org.apache.carbondata.core.constants.CarbonCommonConstants
+import org.apache.carbondata.core.constants.{CarbonCommonConstants, CarbonLoadOptionConstants}
 import org.apache.carbondata.core.datastore.compression.CompressorFactory
 import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.locks.{CarbonLockFactory, ICarbonLock, LockUsage}
-import org.apache.carbondata.core.metadata.encoder.Encoding
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.events.{OperationContext, OperationListenerBus}
-import org.apache.carbondata.processing.loading.events.LoadEvents.{LoadMetadataEvent, LoadTablePostExecutionEvent, LoadTablePreExecutionEvent, LoadTablePreStatusUpdateEvent}
 import org.apache.carbondata.processing.loading.model.{CarbonLoadModel, CarbonLoadModelBuilder, LoadOption}
 import org.apache.carbondata.processing.util.CarbonBadRecordUtil
 import org.apache.carbondata.streaming.segment.StreamSegment
@@ -92,26 +92,22 @@ object StreamSinkFactory {
       carbonTable,
       parameters,
       "")
-    // fire pre event before streamin is started
+    // fire pre event before streaming is started
     // in case of streaming options and optionsFinal can be same
     val operationContext = new OperationContext
-    val loadTablePreExecutionEvent = new LoadTablePreExecutionEvent(
-      carbonTable.getCarbonTableIdentifier,
+    val (tableIndexes, indexOperationContext) = CommonLoadUtils.firePreLoadEvents(sparkSession,
       carbonLoadModel,
+      "",
       carbonLoadModel.getFactFilePath,
+      parameters.asJava,
+      parameters.asJava,
       false,
-      parameters.asJava,
-      parameters.asJava,
-      false
-    )
-    OperationListenerBus.getInstance().fireEvent(loadTablePreExecutionEvent, operationContext)
+      false,
+      None,
+      operationContext)
     // prepare the stream segment
     val segmentId = getStreamSegmentId(carbonTable)
     carbonLoadModel.setSegmentId(segmentId)
-
-    // Used to generate load commands for child tables in case auto-handoff is fired.
-    val loadMetaEvent = new LoadMetadataEvent(carbonTable, false, parameters.asJava)
-    OperationListenerBus.getInstance().fireEvent(loadMetaEvent, operationContext)
 
     // default is carbon appended stream sink
     val carbonAppendableStreamSink = new CarbonAppendableStreamSink(
@@ -122,12 +118,13 @@ object StreamSinkFactory {
       carbonLoadModel,
       operationContext)
 
-    // fire post event before streamin is started
-    val loadTablePostExecutionEvent = new LoadTablePostExecutionEvent(
-      carbonTable.getCarbonTableIdentifier,
-      carbonLoadModel
-    )
-    OperationListenerBus.getInstance().fireEvent(loadTablePostExecutionEvent, operationContext)
+    // fire post event before streaming is started
+    CommonLoadUtils.firePostLoadEvents(sparkSession,
+      carbonLoadModel,
+      tableIndexes,
+      indexOperationContext,
+      carbonTable,
+      operationContext)
     carbonAppendableStreamSink
   }
 
@@ -178,6 +175,7 @@ object StreamSinkFactory {
       parameters: Map[String, String],
       segmentId: String): CarbonLoadModel = {
     val carbonProperty: CarbonProperties = CarbonProperties.getInstance()
+    val tableProperties = carbonTable.getTableInfo.getFactTable.getTableProperties
     carbonProperty.addProperty("zookeeper.enable.lock", "false")
     val optionsFinal = LoadOption.fillOptionWithDefaultValue(parameters.asJava)
     optionsFinal.put("sort_scope", "no_sort")
@@ -187,6 +185,20 @@ object StreamSinkFactory {
     }
     optionsFinal
       .put("bad_record_path", CarbonBadRecordUtil.getBadRecordsPath(parameters.asJava, carbonTable))
+    // If DATEFORMAT is not present in load options, check from table properties.
+    if (optionsFinal.get("dateformat").isEmpty) {
+      optionsFinal.put("dateformat", Maps.getOrDefault(tableProperties,
+        "dateformat", CarbonProperties.getInstance
+          .getProperty(CarbonCommonConstants.CARBON_DATE_FORMAT,
+            CarbonCommonConstants.CARBON_DATE_DEFAULT_FORMAT)))
+    }
+    // If TIMESTAMPFORMAT is not present in load options, check from table properties.
+    if (optionsFinal.get("timestampformat").isEmpty) {
+      optionsFinal.put("timestampformat", Maps.getOrDefault(tableProperties,
+        "timestampformat", CarbonProperties.getInstance
+          .getProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT,
+            CarbonCommonConstants.CARBON_TIMESTAMP_DEFAULT_FORMAT)))
+    }
     val carbonLoadModel = new CarbonLoadModel()
     new CarbonLoadModelBuilder(carbonTable).build(
       parameters.asJava,

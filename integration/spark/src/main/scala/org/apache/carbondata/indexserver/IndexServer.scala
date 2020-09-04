@@ -19,7 +19,7 @@ package org.apache.carbondata.indexserver
 import java.net.InetSocketAddress
 import java.security.PrivilegedAction
 import java.util.UUID
-import java.util.concurrent.{Executors, ExecutorService}
+import java.util.concurrent.{Executors, ExecutorService, ScheduledExecutorService, TimeUnit}
 
 import scala.collection.JavaConverters._
 
@@ -39,7 +39,7 @@ import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.index.IndexInputFormat
 import org.apache.carbondata.core.indexstore.{ExtendedBlockletWrapperContainer, SegmentWrapperContainer}
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
-import org.apache.carbondata.core.util.CarbonProperties
+import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil}
 import org.apache.carbondata.events.{IndexServerEvent, OperationContext, OperationListenerBus}
 
 @ProtocolInfo(protocolName = "org.apache.carbondata.indexserver.ServerInterface",
@@ -101,6 +101,10 @@ object IndexServer extends ServerInterface {
     CarbonProperties.getInstance
       .getProperty(CarbonCommonConstants.CARBON_MAX_EXECUTOR_LRU_CACHE_SIZE) != null
   private val operationContext: OperationContext = new OperationContext
+
+  private val agePeriod: String = CarbonProperties.getInstance
+    .getProperty(CarbonCommonConstants.CARBON_INDEXSERVER_TEMPFOLDER_DELETETIME,
+      CarbonCommonConstants.CARBON_INDEXSERVER_TEMPFOLDER_DELETETIME_DEFAULT)
 
   /**
    * Perform the operation 'f' on behalf of the login user.
@@ -192,8 +196,8 @@ object IndexServer extends ServerInterface {
       val sparkSession = SparkSQLUtil.getSparkSession
       val databaseName = carbonTable.getDatabaseName
       val tableName = carbonTable.getTableName
-      val jobgroup: String = " Invalided Segment Cache for " + databaseName + "." + tableName
-      sparkSession.sparkContext.setLocalProperty("spark.job.description", jobgroup)
+      val jobGroup: String = " Invalided Segment Cache for " + databaseName + "." + tableName
+      sparkSession.sparkContext.setLocalProperty("spark.job.description", jobGroup)
       sparkSession.sparkContext.setLocalProperty("spark.jobGroup.id", jobGroupId)
       if (!isFallBack) {
         val indexServerEvent = IndexServerEvent(sparkSession,
@@ -213,7 +217,7 @@ object IndexServer extends ServerInterface {
 
   override def showCache(tableId: String = "", executorCache: Boolean): Array[String] = {
     doAs {
-      val jobgroup: String = "Show Cache " + (tableId match {
+      val jobGroup: String = "Show Cache " + (tableId match {
         case "" =>
           if (executorCache) {
             "for all the Executors."
@@ -224,7 +228,7 @@ object IndexServer extends ServerInterface {
       })
       val sparkSession = SparkSQLUtil.getSparkSession
       sparkSession.sparkContext.setLocalProperty("spark.jobGroup.id", UUID.randomUUID().toString)
-      sparkSession.sparkContext.setLocalProperty("spark.job.description", jobgroup)
+      sparkSession.sparkContext.setLocalProperty("spark.job.description", jobGroup)
       new DistributedShowCacheRDD(sparkSession, tableId, executorCache).collect()
     }
   }
@@ -269,6 +273,10 @@ object IndexServer extends ServerInterface {
         .CARBON_ENABLE_INDEX_SERVER, "true")
       CarbonProperties.getInstance().addNonSerializableProperty(CarbonCommonConstants
         .IS_DRIVER_INSTANCE, "true")
+      // when restart index service clean the tmp folder
+      CarbonUtil.cleanTempFolderForIndexServer()
+      // create a thread to aging the temp folder
+      indexTempFolderCleanUpScheduleThread()
       LOGGER.info(s"Index cache server running on ${ server.getPort } port")
     }
   }
@@ -297,6 +305,14 @@ object IndexServer extends ServerInterface {
   def getClient: ServerInterface = {
     val sparkSession = SparkSQLUtil.getSparkSession
     val configuration = SparkSQLUtil.sessionState(sparkSession).newHadoopConf()
+    getClient(configuration)
+  }
+
+  /**
+   * @return Return a new Client to communicate with the Index Server.
+   */
+  def getClient(configuration: Configuration): ServerInterface = {
+
     import org.apache.hadoop.ipc.RPC
     RPC.getProtocolProxy(classOf[ServerInterface],
       RPC.getProtocolVersion(classOf[ServerInterface]),
@@ -306,7 +322,7 @@ object IndexServer extends ServerInterface {
   }
 
   /**
-   * This class to define the acl for indexserver ,similar to HDFSPolicyProvider.
+   * This class to define the acl for index server ,similar to HDFSPolicyProvider.
    * key in Service can be configured in hadoop-policy.xml or in  Configuration().This ACL
    * will be used for Authorization in
    * org.apache.hadoop.security.authorize.ServiceAuthorizationManager#authorize
@@ -315,5 +331,18 @@ object IndexServer extends ServerInterface {
     override def getServices: Array[Service] = {
       Array(new Service("security.indexserver.protocol.acl", classOf[ServerInterface]))
     }
+  }
+
+  def indexTempFolderCleanUpScheduleThread(): Unit = {
+    val runnable = new Runnable() {
+      def run() {
+        val age = System.currentTimeMillis() - agePeriod.toLong
+        CarbonUtil.agingTempFolderForIndexServer(age)
+        LOGGER.info(s"Complete age temp folder ${CarbonUtil.getIndexServerTempPath}")
+      }
+    }
+    val ags: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor
+    ags.scheduleAtFixedRate(runnable, 1000, 3600000, TimeUnit.MILLISECONDS)
+    LOGGER.info("index server temp folders aging thread start")
   }
 }

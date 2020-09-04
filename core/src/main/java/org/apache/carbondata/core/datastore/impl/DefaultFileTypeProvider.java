@@ -100,9 +100,8 @@ public class DefaultFileTypeProvider implements FileTypeInterface {
 
     FileFactory.FileType fileType = FileFactory.getFileType(path);
     switch (fileType) {
-      case LOCAL:
-        return new LocalCarbonFile(FileFactory.getUpdatedFilePath(path));
       case HDFS:
+      case HDFS_LOCAL:
         return new HDFSCarbonFile(path, conf);
       case S3:
         return new S3CarbonFile(path, conf);
@@ -110,6 +109,7 @@ public class DefaultFileTypeProvider implements FileTypeInterface {
         return new AlluxioCarbonFile(path);
       case VIEWFS:
         return new ViewFSCarbonFile(path);
+      case LOCAL:
       default:
         return new LocalCarbonFile(FileFactory.getUpdatedFilePath(path));
     }

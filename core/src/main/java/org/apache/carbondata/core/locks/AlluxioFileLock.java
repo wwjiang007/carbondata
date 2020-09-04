@@ -26,7 +26,7 @@ import org.apache.log4j.Logger;
 
 /**
  * This class is used to handle the Alluxio File locking.
- * This is acheived using the concept of acquiring the data out stream using Append option.
+ * This is achieved by using the concept of acquiring the data out stream using Append option.
  */
 public class AlluxioFileLock extends HdfsFileLock {
 
@@ -61,21 +61,5 @@ public class AlluxioFileLock extends HdfsFileLock {
    */
   public AlluxioFileLock(String lockFileLocation, String lockFile) {
     super(lockFileLocation, lockFile);
-  }
-
-  /* (non-Javadoc)
-   * @see org.apache.carbondata.core.locks.ICarbonLock#unlock()
-   */
-  @Override
-  public boolean unlock() {
-    return super.unlock();
-  }
-
-  /* (non-Javadoc)
-   * @see org.apache.carbondata.core.locks.ICarbonLock#lock()
-   */
-  @Override
-  public boolean lock() {
-    return super.lock();
   }
 }

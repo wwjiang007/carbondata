@@ -18,9 +18,12 @@
 package org.apache.carbondata.processing.loading.converter.impl;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
+import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.constants.CarbonLoadOptionConstants;
 import org.apache.carbondata.core.datastore.row.CarbonRow;
 import org.apache.carbondata.core.util.CarbonTimeStatisticsFactory;
@@ -83,14 +86,18 @@ public class RowConverterImpl implements RowConverter {
     List<FieldConverter> fieldConverterList = new ArrayList<>();
     List<FieldConverter> nonSchemaFieldConverterList = new ArrayList<>();
     long lruCacheStartTime = System.currentTimeMillis();
-
+    Map<String, String> properties =
+        configuration.getTableSpec().getCarbonTable().getTableInfo().getFactTable()
+            .getTableProperties();
+    String spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX);
     for (int i = 0; i < fields.length; i++) {
       FieldConverter fieldConverter = FieldEncoderFactory.getInstance()
           .createFieldEncoder(fields[i], i, nullFormat, isEmptyBadRecord, isConvertToBinary,
               (String) configuration.getDataLoadProperty(
                   CarbonLoadOptionConstants.CARBON_OPTIONS_BINARY_DECODER),
               configuration);
-      if (fields[i].getColumn().isIndexColumn()) {
+      if (spatialProperty != null && fields[i].getColumn().getColName()
+          .equalsIgnoreCase(spatialProperty.trim())) {
         nonSchemaFieldConverterList.add(fieldConverter);
       } else {
         fieldConverterList.add(fieldConverter);
@@ -107,18 +114,35 @@ public class RowConverterImpl implements RowConverter {
   public CarbonRow convert(CarbonRow row) throws CarbonDataLoadingException {
     logHolder.setLogged(false);
     logHolder.clear();
+    Map<String, String> properties =
+        configuration.getTableSpec().getCarbonTable().getTableInfo().getFactTable()
+            .getTableProperties();
+    String spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX);
+    boolean isSpatialColumn = false;
+    Object[] rawData = row.getRawData();
+    if (rawData == null) {
+      rawData = row.getData() == null ? null : row.getData().clone();
+    }
     for (int i = 0; i < fieldConverters.length; i++) {
-      if (configuration.isIndexColumnsPresent() && !fieldConverters[i].getDataField().getColumn()
-          .isIndexColumn()) {
-        // Skip the conversion for schema columns if the conversion is required only for index
+      if (spatialProperty != null) {
+        isSpatialColumn = fieldConverters[i].getDataField().getColumn().getColName()
+            .equalsIgnoreCase(spatialProperty.trim());
+      }
+      if (configuration.isNonSchemaColumnsPresent() && !isSpatialColumn) {
+        // Skip the conversion for schema columns if the conversion is required only for non-schema
         // columns
         continue;
       }
       fieldConverters[i].convert(row, logHolder);
       if (!logHolder.isLogged() && logHolder.isBadRecordNotAdded()) {
-        badRecordLogger.addBadRecordsToBuilder(row.getRawData(), logHolder.getReason());
+        String reason = logHolder.getReason();
+        if (reason.equalsIgnoreCase(CarbonCommonConstants.STRING_LENGTH_EXCEEDED_MESSAGE)) {
+          reason = String.format(reason, Arrays.toString(rawData),
+              this.fields[i].getColumn().getColName());
+        }
+        badRecordLogger.addBadRecordsToBuilder(rawData, reason);
         if (badRecordLogger.isDataLoadFail()) {
-          String error = "Data load failed due to bad record: " + logHolder.getReason();
+          String error = "Data load failed due to bad record: " + reason;
           if (!badRecordLogger.isBadRecordLoggerEnable()) {
             error += "Please enable bad record logger to know the detail reason.";
           }
@@ -156,13 +180,18 @@ public class RowConverterImpl implements RowConverter {
     boolean isEmptyBadRecord = Boolean.parseBoolean(
         configuration.getDataLoadProperty(DataLoadProcessorConstants.IS_EMPTY_DATA_BAD_RECORD)
             .toString());
+    Map<String, String> properties =
+        configuration.getTableSpec().getCarbonTable().getTableInfo().getFactTable()
+            .getTableProperties();
+    String spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX);
     for (int i = 0; i < fields.length; i++) {
       FieldConverter fieldConverter = FieldEncoderFactory.getInstance()
           .createFieldEncoder(fields[i], i, nullFormat, isEmptyBadRecord, isConvertToBinary,
               (String) configuration.getDataLoadProperty(
                   CarbonLoadOptionConstants.CARBON_OPTIONS_BINARY_DECODER),
               configuration);
-      if (fields[i].getColumn().isIndexColumn()) {
+      if (spatialProperty != null && fields[i].getColumn().getColName()
+          .equalsIgnoreCase(spatialProperty.trim())) {
         nonSchemaFieldConverterList.add(fieldConverter);
       } else {
         fieldConverterList.add(fieldConverter);

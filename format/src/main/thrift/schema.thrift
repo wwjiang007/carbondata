@@ -133,11 +133,6 @@ struct ColumnSchema{
   **/
   /** Deprecated */
 	17: optional list<ParentColumnTableRelation> parentColumnTableRelations;
-
-  /**
-   * To specify if it is an index column. Its Default value is false
-	 */
-	18: optional bool indexColumn;
 }
 
 /**

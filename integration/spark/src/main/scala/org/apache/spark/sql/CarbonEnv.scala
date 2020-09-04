@@ -19,10 +19,12 @@ package org.apache.spark.sql
 
 import java.util.concurrent.ConcurrentHashMap
 
+import org.apache.spark.internal.config.ConfigEntry
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.{NoSuchDatabaseException, NoSuchTableException}
 import org.apache.spark.sql.catalyst.catalog.SessionCatalog
 import org.apache.spark.sql.events.{MergeBloomIndexEventListener, MergeIndexEventListener}
+import org.apache.spark.sql.execution.command.CreateFunctionCommand
 import org.apache.spark.sql.hive._
 import org.apache.spark.sql.listeners._
 import org.apache.spark.sql.profiler.Profiler
@@ -61,7 +63,11 @@ class CarbonEnv {
 
   var initialized = false
 
-  def init(sparkSession: SparkSession): Unit = {
+  def init(sparkSession: SparkSession): Unit = this.synchronized {
+    // after locking, check initialized at first
+    if (initialized) {
+      return
+    }
     val properties = CarbonProperties.getInstance()
     var storePath = properties.getProperty(CarbonCommonConstants.STORE_LOCATION)
     if (storePath == null) {
@@ -74,7 +80,15 @@ class CarbonEnv {
 
     sparkSession.udf.register("getTupleId", () => "")
     sparkSession.udf.register("getPositionId", () => "")
-    sparkSession.udf.register("NI", (anyRef: AnyRef) => true)
+    // add NI as a temp function, for queries to not hit SI table, it will be added as HiveSimpleUDF
+    CreateFunctionCommand(
+      databaseName = None,
+      functionName = "NI",
+      className = "org.apache.spark.sql.hive.NonIndexUDFExpression",
+      resources = Seq(),
+      isTemp = true,
+      ignoreIfExists = false,
+      replace = true).run(sparkSession)
 
     // register for lucene indexSchema
     // TODO: move it to proper place, it should be registered by indexSchema implementation
@@ -87,43 +101,34 @@ class CarbonEnv {
     // added for handling timeseries function like hour, minute, day, month, year
     sparkSession.udf.register(MVFunctions.TIME_SERIES_FUNCTION, new TimeSeriesFunction)
 
-    // acquiring global level lock so global configuration will be updated by only one thread
-    CarbonEnv.carbonEnvMap.synchronized {
-      if (!initialized) {
-        // update carbon session parameters , preserve thread parameters
-        val currentThreadSesssionInfo = ThreadLocalSessionInfo.getCarbonSessionInfo
-        carbonSessionInfo = new CarbonSessionInfo()
-        // We should not corrupt the information in carbonSessionInfo object which is at the
-        // session level. Instead create a new object and in that set the user specified values in
-        // thread/session params
-        val threadLevelCarbonSessionInfo = new CarbonSessionInfo()
-        if (currentThreadSesssionInfo != null) {
-          threadLevelCarbonSessionInfo.setThreadParams(currentThreadSesssionInfo.getThreadParams)
-        }
-        ThreadLocalSessionInfo.setCarbonSessionInfo(threadLevelCarbonSessionInfo)
-        ThreadLocalSessionInfo.setConfigurationToCurrentThread(sparkSession
-          .sessionState.newHadoopConf())
-        val config = new CarbonSQLConf(sparkSession)
-        if (sparkSession.conf.getOption(CarbonCommonConstants.ENABLE_UNSAFE_SORT).isEmpty) {
-          config.addDefaultCarbonParams()
-        }
-        // add session params after adding DefaultCarbonParams
-        config.addDefaultCarbonSessionParams()
-        carbonMetaStore = {
-          // trigger event for CarbonEnv create
-          val operationContext = new OperationContext
-          val carbonEnvInitPreEvent: CarbonEnvInitPreEvent =
-            CarbonEnvInitPreEvent(sparkSession, carbonSessionInfo, storePath)
-          OperationListenerBus.getInstance.fireEvent(carbonEnvInitPreEvent, operationContext)
-
-          CarbonMetaStoreFactory.createCarbonMetaStore(sparkSession.conf)
-        }
-        CarbonProperties.getInstance
-          .addNonSerializableProperty(CarbonCommonConstants.IS_DRIVER_INSTANCE, "true")
-        initialized = true
-      }
+    // update carbon session parameters , preserve thread parameters
+    val currentThreadSessionInfo = ThreadLocalSessionInfo.getCarbonSessionInfo
+    carbonSessionInfo = new CarbonSessionInfo()
+    // We should not corrupt the information in carbonSessionInfo object which is at the
+    // session level. Instead create a new object and in that set the user specified values in
+    // thread/session params
+    val threadLevelCarbonSessionInfo = new CarbonSessionInfo()
+    if (currentThreadSessionInfo != null) {
+      threadLevelCarbonSessionInfo.setThreadParams(currentThreadSessionInfo.getThreadParams)
     }
+    ThreadLocalSessionInfo.setCarbonSessionInfo(threadLevelCarbonSessionInfo)
+    ThreadLocalSessionInfo.setConfigurationToCurrentThread(
+      sparkSession.sessionState.newHadoopConf())
+    // add default dynamic session params
+    CarbonSQLConf.addDefaultSessionParams(sparkSession);
+    carbonMetaStore = {
+      // trigger event for CarbonEnv create
+      val operationContext = new OperationContext
+      val carbonEnvInitPreEvent: CarbonEnvInitPreEvent =
+        CarbonEnvInitPreEvent(sparkSession, carbonSessionInfo, storePath)
+      OperationListenerBus.getInstance.fireEvent(carbonEnvInitPreEvent, operationContext)
+      CarbonMetaStoreFactory.createCarbonMetaStore(sparkSession.conf)
+    }
+    CarbonProperties.getInstance
+      .addNonSerializableProperty(CarbonCommonConstants.IS_DRIVER_INSTANCE, "true")
     Profiler.initialize(sparkSession.sparkContext)
+    CarbonToSparkAdapter.addSparkSessionListener(sparkSession)
+    initialized = true
     LOGGER.info("Initialize CarbonEnv completed...")
   }
 }
@@ -138,14 +143,23 @@ object CarbonEnv {
   val LOGGER = LogServiceFactory.getLogService(this.getClass.getName)
 
   def getInstance(sparkSession: SparkSession): CarbonEnv = {
-      var carbonEnv: CarbonEnv = carbonEnvMap.get(sparkSession)
-      if (carbonEnv == null) {
-        carbonEnv = new CarbonEnv
-        carbonEnv.init(sparkSession)
-        CarbonToSparkAdapter.addSparkSessionListener(sparkSession)
-        carbonEnvMap.put(sparkSession, carbonEnv)
+    var carbonEnv: CarbonEnv = carbonEnvMap.get(sparkSession)
+    if (carbonEnv == null) {
+      // if carbonEnv is null, need to create create CarbonEnv
+      // use global level lock, it will be fine for only creating CarbonEnv object
+      CarbonEnv.carbonEnvMap.synchronized {
+        // need to double check whether CarbonEnv exists or not
+        carbonEnv = carbonEnvMap.get(sparkSession)
+        if (carbonEnv == null) {
+          carbonEnv = new CarbonEnv
+          carbonEnvMap.put(sparkSession, carbonEnv)
+        }
       }
-      carbonEnv
+    }
+    if (!carbonEnv.initialized) {
+      carbonEnv.init(sparkSession)
+    }
+    carbonEnv
   }
 
   /**
@@ -171,8 +185,7 @@ object CarbonEnv {
       .addListener(classOf[BuildIndexPostExecutionEvent], new MergeBloomIndexEventListener)
       .addListener(classOf[DropTableCacheEvent], DropCacheMVEventListener)
       .addListener(classOf[DropTableCacheEvent], DropCacheBloomEventListener)
-      .addListener(classOf[ShowTableCacheEvent], ShowCachePreMVEventListener)
-      .addListener(classOf[ShowTableCacheEvent], ShowCacheIndexEventListener)
+      .addListener(classOf[ShowTableCacheEvent], ShowCacheEventListener)
       .addListener(classOf[LoadTablePreStatusUpdateEvent], new SILoadEventListener)
       .addListener(classOf[LoadTablePostStatusUpdateEvent],
         new SILoadEventListenerForFailedSegments)
@@ -320,7 +333,7 @@ object CarbonEnv {
     if ((!EnvHelper.isLegacy(sparkSession)) &&
         (dbName.equals("default") || databaseLocation.endsWith(".db"))) {
       val carbonStorePath = CarbonProperties.getStorePath()
-      val hiveStorePath = sparkSession.conf.get("spark.sql.warehouse.dir", carbonStorePath)
+      val hiveStorePath = sparkSession.conf.get("spark.sql.warehouse.dir")
       // if carbon.store does not point to spark.sql.warehouse.dir then follow the old table path
       // format
       if (carbonStorePath != null && !hiveStorePath.equals(carbonStorePath)) {

@@ -43,7 +43,7 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.{CarbonReflectionUtils, CollectionAccumulator, SparkUtil}
 
-import org.apache.carbondata.common.Strings
+import org.apache.carbondata.common.{Maps, Strings}
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.converter.SparkDataTypeConverterImpl
 import org.apache.carbondata.core.constants.{CarbonCommonConstants, CarbonLoadOptionConstants, SortScopeOptions}
@@ -89,7 +89,12 @@ object CommonLoadUtils {
     import org.apache.spark.sql.functions.udf
     // extracting only segment from tupleId
     val getSegIdUDF = udf((tupleId: String) =>
-      CarbonUpdateUtil.getRequiredFieldFromTID(tupleId, TupleIdEnum.SEGMENT_ID))
+      // this is in case of the external segment, where the tuple id has external path with #
+      if (tupleId.contains("#")) {
+        CarbonUpdateUtil.getRequiredFieldFromTID(tupleId, TupleIdEnum.EXTERNAL_SEGMENT_ID)
+      } else {
+        CarbonUpdateUtil.getRequiredFieldFromTID(tupleId, TupleIdEnum.SEGMENT_ID)
+      })
     // getting all fields except tupleId field as it is not required in the value
     val otherFields = CarbonScalaUtil.getAllFieldsWithoutTupleIdField(fields)
     // extract tupleId field which will be used as a key
@@ -126,7 +131,6 @@ object CommonLoadUtils {
             TableIdentifier(tableName, databaseNameOp))).collect {
           case l: LogicalRelation => l
         }.head
-      sizeInBytes = logicalPartitionRelation.relation.sizeInBytes
       finalPartition = getCompletePartitionValues(partition, table)
     }
     (sizeInBytes, table, dbName, logicalPartitionRelation, finalPartition)
@@ -192,7 +196,7 @@ object CommonLoadUtils {
       .addProperty(CarbonCommonConstants.NUM_CORES_LOADING, numCoresLoading)
   }
 
-  def getCurrentParitions(sparkSession: SparkSession,
+  def getCurrentPartitions(sparkSession: SparkSession,
       table: CarbonTable): util.List[PartitionSpec] = {
     val currPartitions = if (table.isHivePartitionTable) {
       CarbonFilters.getCurrentPartitions(
@@ -212,7 +216,8 @@ object CommonLoadUtils {
       options: Map[String, String]): util.Map[String, String] = {
     val tableProperties = table.getTableInfo.getFactTable.getTableProperties
     val optionsFinal = LoadOption.fillOptionWithDefaultValue(options.asJava)
-    //    EnvHelper.setDefaultHeader(sparkSession, optionsFinal)
+    // For legacy store, it uses a different header option by default.
+    EnvHelper.setDefaultHeader(SparkSQLUtil.getSparkSession, optionsFinal)
     /**
      * Priority of sort_scope assignment :
      * -----------------------------------
@@ -263,6 +268,20 @@ object CommonLoadUtils {
     }
     optionsFinal
       .put("bad_record_path", CarbonBadRecordUtil.getBadRecordsPath(options.asJava, table))
+    // If DATEFORMAT is not present in load options, check from table properties.
+    if (optionsFinal.get("dateformat").isEmpty) {
+      optionsFinal.put("dateformat", Maps.getOrDefault(tableProperties,
+        "dateformat", CarbonProperties.getInstance
+          .getProperty(CarbonCommonConstants.CARBON_DATE_FORMAT,
+            CarbonCommonConstants.CARBON_DATE_DEFAULT_FORMAT)))
+    }
+    // If TIMESTAMPFORMAT is not present in load options, check from table properties.
+    if (optionsFinal.get("timestampformat").isEmpty) {
+      optionsFinal.put("timestampformat", Maps.getOrDefault(tableProperties,
+        "timestampformat", CarbonProperties.getInstance
+          .getProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT,
+            CarbonCommonConstants.CARBON_TIMESTAMP_DEFAULT_FORMAT)))
+    }
     optionsFinal
   }
 
@@ -378,7 +397,7 @@ object CommonLoadUtils {
     val finalRDD = convertRDD.mapPartitionsWithIndex { case(index, rows) =>
       DataTypeUtil.setDataTypeConverter(new SparkDataTypeConverterImpl)
       ThreadLocalSessionInfo.setConfigurationToCurrentThread(conf.value.value)
-      DataLoadProcessorStepOnSpark.inputAndconvertFunc(
+      DataLoadProcessorStepOnSpark.inputAndConvertFunc(
         rows,
         index,
         modelBroadcast,
@@ -391,7 +410,7 @@ object CommonLoadUtils {
   }
 
   /**
-   * Transform the rdd to logical plan as per the sortscope. If it is global sort scope then it
+   * Transform the rdd to logical plan as per the sort_scope. If it is global sort scope then it
    * will convert to sort logical plan otherwise project plan.
    */
   def transformQueryWithRow(rdd: RDD[Row],
@@ -439,7 +458,7 @@ object CommonLoadUtils {
       catalogAttributes.find(_.name.equalsIgnoreCase(a.name)).get
     })
     attributes = attributes.map { attr =>
-      // Update attribute datatypes in case of dictionary columns, in case of dictionary columns
+      // Update attribute data types in case of dictionary columns, in case of dictionary columns
       // datatype is always int
       val column = table.getColumnByName(attr.name)
       val updatedDataType = if (column.getDataType ==
@@ -491,7 +510,7 @@ object CommonLoadUtils {
     }
     val partitionsLen = updatedRdd.partitions.length
 
-    // If it is global sort scope then appl sort logical plan on the sort columns
+    // If it is global sort scope then apply sort logical plan on the sort columns
     if (sortScope == SortScopeOptions.SortScope.GLOBAL_SORT) {
       // Because if the number of partitions greater than 1, there will be action operator(sample)
       // in sortBy operator. So here we cache the rdd to avoid do input and convert again.
@@ -517,7 +536,12 @@ object CommonLoadUtils {
         } else {
           attributes.take(table.getSortColumns.size())
         }
-      val dataTypes = sortColumns.map(_.dataType)
+      val attributesWithIndex = attributes.zipWithIndex
+      val dataTypes = sortColumns.map { column =>
+        val attributeWithIndex =
+          attributesWithIndex.find(x => x._1.name.equalsIgnoreCase(column.name))
+        (column.dataType, attributeWithIndex.get._2)
+      }
       val sortedRDD: RDD[InternalRow] =
         GlobalSortHelper.sortBy(updatedRdd, numPartitions, dataTypes)
       val outputOrdering = sortColumns.map(SortOrder(_, Ascending))
@@ -539,7 +563,7 @@ object CommonLoadUtils {
   }
 
   /**
-   * Transform the rdd to logical plan as per the sortscope. If it is global sort scope then it
+   * Transform the rdd to logical plan as per the sort_scope. If it is global sort scope then it
    * will convert to sort logical plan otherwise project plan.
    */
   def transformQueryWithInternalRow(rdd: RDD[InternalRow],
@@ -550,15 +574,14 @@ object CommonLoadUtils {
       curAttributes: Seq[AttributeReference],
       sortScope: SortScopeOptions.SortScope,
       table: CarbonTable,
-      partition: Map[String, Option[String]],
-      isInsertFromStageCommand: Boolean): (LogicalPlan, Int, Option[RDD[InternalRow]]) = {
+      partition: Map[String, Option[String]]): (LogicalPlan, Int, Option[RDD[InternalRow]]) = {
     // keep partition column to end if exists
     var colSchema = table.getTableInfo
       .getFactTable
       .getListOfColumns
       .asScala
     if (table.getPartitionInfo != null) {
-      colSchema = colSchema.filterNot(x => x.isInvisible || x.getColumnName.contains(".") ||
+      colSchema = colSchema.filterNot(x => x.isInvisible || x.isComplexColumn ||
                                            x.getSchemaOrdinal == -1 ||
                                            table.getPartitionInfo.getColumnSchemaList.contains(x))
       colSchema = colSchema ++ table
@@ -568,13 +591,13 @@ object CommonLoadUtils {
         .getColumnSchemaList.size()))
         .asInstanceOf[Array[ColumnSchema]]
     } else {
-      colSchema = colSchema.filterNot(x => x.isInvisible || x.getColumnName.contains(".") ||
+      colSchema = colSchema.filterNot(x => x.isInvisible || x.isComplexColumn ||
                                            x.getSchemaOrdinal == -1)
     }
     val updatedRdd: RDD[InternalRow] = CommonLoadUtils.getConvertedInternalRow(
       colSchema,
       rdd,
-      isInsertFromStageCommand)
+      sortScope == SortScopeOptions.SortScope.GLOBAL_SORT)
     transformQuery(updatedRdd,
       sparkSession,
       loadModel,
@@ -597,7 +620,7 @@ object CommonLoadUtils {
       df: DataFrame,
       carbonLoadModel: CarbonLoadModel): LogicalPlan = {
     SparkUtil.setNullExecutionId(sparkSession)
-    // In case of update, we don't need the segmrntid column in case of partitioning
+    // In case of update, we don't need the segmentId column in case of partitioning
     val dropAttributes = df.logicalPlan.output.dropRight(1)
     val finalOutput = catalogTable.schema.map { attr =>
       dropAttributes.find { d =>
@@ -728,7 +751,7 @@ object CommonLoadUtils {
   def getConvertedInternalRow(
       columnSchema: Seq[ColumnSchema],
       rdd: RDD[InternalRow],
-      isInsertFromStageCommand: Boolean): RDD[InternalRow] = {
+      isGlobalSortPartition: Boolean): RDD[InternalRow] = {
     // Converts the data as per the loading steps before give it to writer or sorter
     var timeStampIndex = scala.collection.mutable.Set[Int]()
     var dateIndex = scala.collection.mutable.Set[Int]()
@@ -746,8 +769,9 @@ object CommonLoadUtils {
       i = i + 1
     }
     val updatedRdd: RDD[InternalRow] = rdd.map { internalRowOriginal =>
-      val internalRow = if (isInsertFromStageCommand) {
-        // Insert stage command, logical plan already consist of LogicalRDD of internalRow.
+      val internalRow = if (isGlobalSortPartition) {
+        // Insert stage command & global sort partition flow (where we persist rdd[internalRow]),
+        // logical plan already consist of LogicalRDD of internalRow.
         // When it is converted to DataFrame, spark is reusing the same internalRow.
         // So, need to have a copy before the last transformation.
         // TODO: Even though copying internalRow is faster, we should avoid it
@@ -789,11 +813,11 @@ object CommonLoadUtils {
 
   def getTimeAndDateFormatFromLoadModel(loadModel: CarbonLoadModel): (SimpleDateFormat,
     SimpleDateFormat) = {
-    var timeStampformatString = loadModel.getTimestampFormat
-    if (timeStampformatString.isEmpty) {
-      timeStampformatString = loadModel.getDefaultTimestampFormat
+    var timestampFormatString = loadModel.getTimestampFormat
+    if (timestampFormatString.isEmpty) {
+      timestampFormatString = loadModel.getDefaultTimestampFormat
     }
-    val timeStampFormat = new SimpleDateFormat(timeStampformatString)
+    val timeStampFormat = new SimpleDateFormat(timestampFormatString)
     var dateFormatString = loadModel.getDateFormat
     if (dateFormatString.isEmpty) {
       dateFormatString = loadModel.getDefaultDateFormat
@@ -837,8 +861,6 @@ object CommonLoadUtils {
   def loadDataWithPartition(loadParams: CarbonLoadParams): Seq[Row] = {
     val table = loadParams.carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
     val catalogTable: CatalogTable = loadParams.logicalPartitionRelation.catalogTable.get
-    // Clean up the already dropped partitioned data
-    SegmentFileStore.cleanSegments(table, null, false)
     CarbonUtils.threadSet("partition.operationcontext", loadParams.operationContext)
     val attributes = if (loadParams.scanResultRDD.isDefined) {
       // take the already re-arranged attributes
@@ -847,7 +869,7 @@ object CommonLoadUtils {
       // input data from csv files. Convert to logical plan
       val allCols = new ArrayBuffer[String]()
       // get only the visible dimensions from table
-      allCols ++= table.getVisibleDimensions.asScala.filterNot(_.isIndexColumn).map(_.getColName)
+      allCols ++= table.getVisibleDimensions.asScala.map(_.getColName)
       allCols ++= table.getVisibleMeasures.asScala.map(_.getColName)
       StructType(
         allCols.filterNot(_.equals(CarbonCommonConstants.DEFAULT_INVISIBLE_DUMMY_MEASURE)).map(
@@ -977,9 +999,7 @@ object CommonLoadUtils {
               attributes,
               sortScope,
               table,
-              loadParams.finalPartition,
-              loadParams.optionsOriginal
-                .contains(DataLoadProcessorConstants.IS_INSERT_STAGE_COMMAND))
+              loadParams.finalPartition)
           partitionsLen = partitions
           persistedRDD = persistedRDDLocal
           transformedPlan
@@ -1067,7 +1087,7 @@ object CommonLoadUtils {
         }
       }
 
-      // Prepriming for Partition table here
+      // Pre-priming for Partition table here
       if (!StringUtils.isEmpty(loadParams.carbonLoadModel.getSegmentId)) {
         DistributedRDDUtils.triggerPrepriming(loadParams.sparkSession,
           table,
@@ -1098,7 +1118,7 @@ object CommonLoadUtils {
     val specs =
       SegmentFileStore.getPartitionSpecs(loadParams.carbonLoadModel.getSegmentId,
         loadParams.carbonLoadModel.getTablePath,
-        SegmentStatusManager.readLoadMetadata(CarbonTablePath.getMetadataPath(table.getTablePath)))
+        loadParams.carbonLoadModel.getLoadMetadataDetails.asScala.toArray)
     if (specs != null) {
       specs.asScala.map { spec =>
         Row(spec.getPartitions.asScala.mkString("/"), spec.getLocation.toString, spec.getUuid)

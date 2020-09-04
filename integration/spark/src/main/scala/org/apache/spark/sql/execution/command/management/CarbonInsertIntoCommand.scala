@@ -28,22 +28,23 @@ import org.apache.spark.sql.{AnalysisException, CarbonEnv, CarbonToSparkAdapter,
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Literal, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
-import org.apache.spark.sql.execution.command.AtomicRunnableCommand
+import org.apache.spark.sql.execution.command.{AtomicRunnableCommand, UpdateTableModel}
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.util.CausedBy
 
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.converter.SparkDataTypeConverterImpl
+import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.indexstore.PartitionSpec
 import org.apache.carbondata.core.metadata.schema.table.{CarbonTable, TableInfo, TableSchema}
-import org.apache.carbondata.core.metadata.schema.table.column.{CarbonColumn, ColumnSchema}
-import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatus, SegmentStatusManager}
+import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema
+import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentStatus}
 import org.apache.carbondata.core.util.{CarbonProperties, DataTypeUtil, ThreadLocalSessionInfo}
 import org.apache.carbondata.core.util.path.CarbonTablePath
-import org.apache.carbondata.events.exception.PreEventException
 import org.apache.carbondata.events.OperationContext
+import org.apache.carbondata.events.exception.PreEventException
 import org.apache.carbondata.processing.loading.TableProcessingOperations
 import org.apache.carbondata.processing.loading.exception.NoRetryException
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel
@@ -63,7 +64,8 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
     var tableInfo: TableInfo,
     var internalOptions: Map[String, String] = Map.empty,
     var partition: Map[String, Option[String]] = Map.empty,
-    var operationContext: OperationContext = new OperationContext)
+    var operationContext: OperationContext = new OperationContext,
+    var updateModel: Option[UpdateTableModel] = None)
   extends AtomicRunnableCommand {
 
   var table: CarbonTable = _
@@ -137,7 +139,7 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
     val hadoopConf = sparkSession.sessionState.newHadoopConf()
     CarbonProperties.getInstance().addProperty("zookeeper.enable.lock", "false")
     val factPath = ""
-    currPartitions = CommonLoadUtils.getCurrentParitions(sparkSession, table)
+    currPartitions = CommonLoadUtils.getCurrentPartitions(sparkSession, table)
     CommonLoadUtils.setNumberOfCoresWhileLoading(sparkSession)
     val optionsFinal: util.Map[String, String] = CommonLoadUtils.getFinalLoadOptions(table, options)
     val carbonLoadModel: CarbonLoadModel = CommonLoadUtils.prepareLoadModel(
@@ -161,9 +163,9 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
         null
       }
     val convertedStaticPartition = getConvertedStaticPartitionMap(partitionColumnSchema)
-    val (reArrangedIndex, selectedColumnSchema) = getReArrangedIndexAndSelectedSchema(
-      tableInfo,
-      partitionColumnSchema)
+    val (reArrangedIndex, selectedColumnSchema) = getReArrangedIndexAndSelectedSchema(tableInfo,
+      partitionColumnSchema,
+      carbonLoadModel)
     val newLogicalPlan = getReArrangedLogicalPlan(
       reArrangedIndex,
       selectedColumnSchema,
@@ -199,13 +201,20 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
           options = options.asJava,
           isOverwriteTable = isOverwriteTable,
           isDataFrame = true,
-          updateModel = None,
+          updateModel = updateModel,
           operationContext = operationContext)
 
-      // Clean up the old invalid segment data before creating a new entry for new load.
-      SegmentStatusManager.deleteLoadsAndUpdateMetadata(table, false, currPartitions)
       // add the start entry for the new load in the table status file
-      if (!table.isHivePartitionTable) {
+      if ((updateModel.isEmpty || updateModel.isDefined && updateModel.get.loadAsNewSegment)
+          && !table.isHivePartitionTable) {
+        if (updateModel.isDefined ) {
+          carbonLoadModel.setFactTimeStamp(updateModel.get.updatedTimeStamp)
+        }
+        CarbonLoaderUtil.readAndUpdateLoadProgressInTableMeta(
+          carbonLoadModel,
+          isOverwriteTable)
+        isUpdateTableStatusRequired = true
+      } else if (!table.isHivePartitionTable) {
         CarbonLoaderUtil.readAndUpdateLoadProgressInTableMeta(
           carbonLoadModel,
           isOverwriteTable)
@@ -239,7 +248,7 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
         partitionStatus,
         None,
         Some(scanResultRdd),
-        None,
+        updateModel,
         operationContext)
       LOGGER.info("Sort Scope : " + carbonLoadModel.getSortScope)
       val (rows, loadResult) = insertData(loadParams)
@@ -440,6 +449,13 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
 
   def insertData(loadParams: CarbonLoadParams): (Seq[Row], LoadMetadataDetails) = {
     var rows = Seq.empty[Row]
+    val loadDataFrame = if (updateModel.isDefined && !updateModel.get.loadAsNewSegment) {
+      // TODO: handle the update flow for new insert into flow without converter step
+      throw new UnsupportedOperationException(
+        "Update flow is not supported without no converter step yet.")
+    } else {
+      Some(dataFrame)
+    }
     val table = loadParams.carbonLoadModel.getCarbonDataLoadSchema.getCarbonTable
     var loadResult : LoadMetadataDetails = null
     if (table.isHivePartitionTable) {
@@ -450,9 +466,9 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
         loadParams.partitionStatus,
         isOverwriteTable,
         loadParams.hadoopConf,
-        None,
+        loadDataFrame,
         loadParams.scanResultRDD,
-        None,
+        updateModel,
         operationContext)
     }
     (rows, loadResult)
@@ -468,10 +484,13 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
 
   def getReArrangedIndexAndSelectedSchema(
       tableInfo: TableInfo,
-      partitionColumnSchema: mutable.Buffer[ColumnSchema]): (Seq[Int], Seq[ColumnSchema]) = {
+      partitionColumnSchema: mutable.Buffer[ColumnSchema],
+      carbonLoadModel: CarbonLoadModel): (Seq[Int], Seq[ColumnSchema]) = {
     var reArrangedIndex: Seq[Int] = Seq()
     var selectedColumnSchema: Seq[ColumnSchema] = Seq()
     var partitionIndex: Seq[Int] = Seq()
+    val properties = tableInfo.getFactTable.getTableProperties.asScala
+    val spatialProperty = properties.get(CarbonCommonConstants.SPATIAL_INDEX)
     // internal order ColumnSchema (non-flat structure)
     val columnSchema = (table.getVisibleDimensions.asScala ++
                         table.getVisibleMeasures.asScala).map(_.getColumnSchema)
@@ -495,6 +514,10 @@ case class CarbonInsertIntoCommand(databaseNameOp: Option[String],
     }
     columnSchema.foreach {
       col =>
+        if (spatialProperty.isDefined &&
+            col.getColumnName.equalsIgnoreCase(spatialProperty.get.trim)) {
+          carbonLoadModel.setNonSchemaColumnsPresent(true)
+        }
         var skipPartitionColumn = false
         if (partitionColumnNames != null &&
             partitionColumnNames.contains(col.getColumnName)) {

@@ -19,9 +19,8 @@ package org.apache.spark.sql.hive
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.{CarbonEnv, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.index.CarbonIndexUtil
-import org.apache.spark.sql.secondaryindex.util.FileInternalUtil
 
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.constants.CarbonCommonConstants
@@ -49,8 +48,8 @@ object CarbonHiveIndexMetadataUtil {
       tableName: String,
       sparkSession: SparkSession): Unit = {
     try {
-      val tabelIdentifier = TableIdentifier(tableName, Some(databaseName))
-      sparkSession.sessionState.catalog.dropTable(tabelIdentifier, true, false)
+      val tableIdentifier = TableIdentifier(tableName, Some(databaseName))
+      sparkSession.sessionState.catalog.dropTable(tableIdentifier, true, false)
     } catch {
       case e: Exception =>
         LOGGER.error(
@@ -106,9 +105,6 @@ object CarbonHiveIndexMetadataUtil {
     sparkSession.sql(
       s"""ALTER TABLE $dbName.$parentTableName SET SERDEPROPERTIES ('indexInfo'='$newIndexInfo')
         """.stripMargin).collect()
-    FileInternalUtil.touchSchemaFileTimestamp(dbName, parentTableName,
-      parentCarbonTable.getTablePath, System.currentTimeMillis())
-    FileInternalUtil.touchStoreTimeStamp()
     refreshTable(dbName, parentTableName, sparkSession)
   }
 
@@ -133,19 +129,15 @@ object CarbonHiveIndexMetadataUtil {
   }
 
   def transformToRemoveNI(expression: Expression): Expression = {
-    val newExpWithoutNI = expression.transform {
+    expression.transform {
       case hiveUDF: HiveSimpleUDF if hiveUDF.function.isInstanceOf[NonIndexUDFExpression] =>
         hiveUDF.asInstanceOf[HiveSimpleUDF].children.head
-      case scalaUDF: ScalaUDF if "NI".equalsIgnoreCase(scalaUDF.udfName.get) =>
-        scalaUDF.children.head
     }
-    newExpWithoutNI
   }
 
   def checkNIUDF(condition: Expression): Boolean = {
     condition match {
       case hiveUDF: HiveSimpleUDF if hiveUDF.function.isInstanceOf[NonIndexUDFExpression] => true
-      case scalaUDF: ScalaUDF if "NI".equalsIgnoreCase(scalaUDF.udfName.get) => true
       case _ => false
     }
   }

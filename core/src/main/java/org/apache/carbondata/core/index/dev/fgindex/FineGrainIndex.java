@@ -28,7 +28,7 @@ import org.apache.carbondata.core.index.dev.Index;
 import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.scan.expression.Expression;
-import org.apache.carbondata.core.scan.filter.executer.FilterExecuter;
+import org.apache.carbondata.core.scan.filter.executer.FilterExecutor;
 
 /**
  * Index for Fine Grain level, see {@link org.apache.carbondata.core.index.IndexLevel#FG}
@@ -39,7 +39,7 @@ public abstract class FineGrainIndex implements Index<FineGrainBlocklet> {
 
   @Override
   public List<FineGrainBlocklet> prune(Expression filter, SegmentProperties segmentProperties,
-      List<PartitionSpec> partitions, CarbonTable carbonTable, FilterExecuter filterExecuter) {
+      CarbonTable carbonTable, FilterExecutor filterExecutor) {
     throw new UnsupportedOperationException("Filter expression not supported");
   }
 
@@ -51,6 +51,11 @@ public abstract class FineGrainIndex implements Index<FineGrainBlocklet> {
   @Override
   public Map<String, Long> getRowCountForEachBlock(Segment segment, List<PartitionSpec> partitions,
       Map<String, Long> blockletToRowCountMap) {
+    throw new UnsupportedOperationException("Operation not supported");
+  }
+
+  @Override
+  public boolean validatePartitionInfo(List<PartitionSpec> partitions) {
     throw new UnsupportedOperationException("Operation not supported");
   }
 

@@ -28,7 +28,7 @@ import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager;
 import org.apache.carbondata.core.statusmanager.SegmentUpdateStatusManager;
-import org.apache.carbondata.core.util.OutputFilesInfoHolder;
+import org.apache.carbondata.core.util.DataLoadMetrics;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 
 public class CarbonLoadModel implements Serializable {
@@ -167,11 +167,11 @@ public class CarbonLoadModel implements Serializable {
   private boolean isLoadWithoutConverterStep;
 
   /**
-   * Whether index columns are present. This flag should be set only when all the schema
-   * columns are already converted. Now, just need to generate and convert index columns present in
-   * data fields.
+   * Whether non-schema columns are present. This flag should be set only when all the schema
+   * columns are already converted. Now, just need to generate and convert non-schema columns
+   * present in data fields.
    */
-  private boolean isIndexColumnsPresent;
+  private boolean nonSchemaColumnsPresent;
 
   /**
    * for insert into flow, schema is already re-arranged. No need to re-arrange the data
@@ -226,7 +226,7 @@ public class CarbonLoadModel implements Serializable {
    */
   private int bucketId;
 
-  private OutputFilesInfoHolder outputFilesInfoHolder;
+  private DataLoadMetrics metrics;
 
   private boolean skipParsers = false;
 
@@ -428,7 +428,7 @@ public class CarbonLoadModel implements Serializable {
     copy.rangePartitionColumn = rangePartitionColumn;
     copy.scaleFactor = scaleFactor;
     copy.totalSize = totalSize;
-    copy.outputFilesInfoHolder = outputFilesInfoHolder;
+    copy.metrics = metrics;
     copy.isLoadWithoutConverterWithoutReArrangeStep = isLoadWithoutConverterWithoutReArrangeStep;
     return copy;
   }
@@ -482,7 +482,7 @@ public class CarbonLoadModel implements Serializable {
     copyObj.rangePartitionColumn = rangePartitionColumn;
     copyObj.scaleFactor = scaleFactor;
     copyObj.totalSize = totalSize;
-    copyObj.outputFilesInfoHolder = outputFilesInfoHolder;
+    copyObj.metrics = metrics;
     copyObj.isLoadWithoutConverterStep = isLoadWithoutConverterStep;
     copyObj.isLoadWithoutConverterWithoutReArrangeStep = isLoadWithoutConverterWithoutReArrangeStep;
     return copyObj;
@@ -881,20 +881,12 @@ public class CarbonLoadModel implements Serializable {
     return scaleFactor;
   }
 
-  public OutputFilesInfoHolder getOutputFilesInfoHolder() {
-    return outputFilesInfoHolder;
+  public DataLoadMetrics getMetrics() {
+    return metrics;
   }
 
-  public void setOutputFilesInfoHolder(OutputFilesInfoHolder outputFilesInfoHolder) {
-    this.outputFilesInfoHolder = outputFilesInfoHolder;
-  }
-
-  public boolean isIndexColumnsPresent() {
-    return isIndexColumnsPresent;
-  }
-
-  public void setIndexColumnsPresent(boolean indexColumnsPresent) {
-    isIndexColumnsPresent = indexColumnsPresent;
+  public void setMetrics(DataLoadMetrics metrics) {
+    this.metrics = metrics;
   }
 
   public boolean isLoadWithoutConverterWithoutReArrangeStep() {
@@ -904,5 +896,13 @@ public class CarbonLoadModel implements Serializable {
   public void setLoadWithoutConverterWithoutReArrangeStep(
       boolean loadWithoutConverterWithoutReArrangeStep) {
     isLoadWithoutConverterWithoutReArrangeStep = loadWithoutConverterWithoutReArrangeStep;
+  }
+
+  public boolean isNonSchemaColumnsPresent() {
+    return nonSchemaColumnsPresent;
+  }
+
+  public void setNonSchemaColumnsPresent(boolean nonSchemaColumnsPresent) {
+    this.nonSchemaColumnsPresent = nonSchemaColumnsPresent;
   }
 }

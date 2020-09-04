@@ -198,7 +198,7 @@ public final class DataLoadProcessBuilder {
     configuration.setSchemaUpdatedTimeStamp(carbonTable.getTableLastUpdatedTime());
     configuration.setHeader(loadModel.getCsvHeaderColumns());
     configuration.setSegmentId(loadModel.getSegmentId());
-    configuration.setIndexColumnsPresent(loadModel.isIndexColumnsPresent());
+    configuration.setNonSchemaColumnsPresent(loadModel.isNonSchemaColumnsPresent());
     List<LoadMetadataDetails> loadMetadataDetails = loadModel.getLoadMetadataDetails();
     if (loadMetadataDetails != null) {
       for (LoadMetadataDetails detail : loadMetadataDetails) {
@@ -210,7 +210,7 @@ public final class DataLoadProcessBuilder {
     }
     configuration.setSkipParsers(loadModel.isSkipParsers());
     configuration.setTaskNo(loadModel.getTaskNo());
-    configuration.setOutputFilesInfoHolder(loadModel.getOutputFilesInfoHolder());
+    configuration.setMetrics(loadModel.getMetrics());
     String[] complexDelimiters = new String[loadModel.getComplexDelimiters().size()];
     loadModel.getComplexDelimiters().toArray(complexDelimiters);
     configuration

@@ -37,7 +37,7 @@ import org.apache.carbondata.core.metadata.blocklet.index.BlockletIndex;
 import org.apache.carbondata.core.util.BitSetGroup;
 
 /**
- * wrapper for blocklet data map data
+ * wrapper for blocklet index data
  */
 public class BlockletDataRefNode implements DataRefNode {
 
@@ -150,18 +150,14 @@ public class BlockletDataRefNode implements DataRefNode {
   public MeasureRawColumnChunk[] readMeasureChunks(FileReader fileReader, int[][] columnIndexRange)
       throws IOException {
     MeasureColumnChunkReader measureColumnChunkReader = getMeasureColumnChunkReader(fileReader);
-    MeasureRawColumnChunk[] measureRawColumnChunks =
-        measureColumnChunkReader.readRawMeasureChunks(fileReader, columnIndexRange);
-    return measureRawColumnChunks;
+    return measureColumnChunkReader.readRawMeasureChunks(fileReader, columnIndexRange);
   }
 
   @Override
   public MeasureRawColumnChunk readMeasureChunk(FileReader fileReader, int columnIndex)
       throws IOException {
     MeasureColumnChunkReader measureColumnChunkReader = getMeasureColumnChunkReader(fileReader);
-    MeasureRawColumnChunk measureRawColumnChunk =
-        measureColumnChunkReader.readRawMeasureChunk(fileReader, columnIndex);
-    return measureRawColumnChunk;
+    return measureColumnChunkReader.readRawMeasureChunk(fileReader, columnIndex);
   }
 
   private DimensionColumnChunkReader getDimensionColumnChunkReader(FileReader fileReader) {
@@ -222,7 +218,8 @@ public class BlockletDataRefNode implements DataRefNode {
     return blockInfos.size();
   }
 
-  public List<TableBlockInfo> getBlockInfos() {
-    return blockInfos;
+  @Override
+  public TableBlockInfo getTableBlockInfo() {
+    return blockInfos.get(index);
   }
 }

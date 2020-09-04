@@ -22,7 +22,6 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -48,7 +47,6 @@ import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.schema.BucketingInfo;
 import org.apache.carbondata.core.metadata.schema.PartitionInfo;
 import org.apache.carbondata.core.metadata.schema.SchemaReader;
-import org.apache.carbondata.core.metadata.schema.index.IndexClassProvider;
 import org.apache.carbondata.core.metadata.schema.indextable.IndexMetadata;
 import org.apache.carbondata.core.metadata.schema.indextable.IndexTableInfo;
 import org.apache.carbondata.core.metadata.schema.partition.PartitionType;
@@ -96,7 +94,7 @@ public class CarbonTable implements Serializable, Writable {
   // An ordered list, same order as when creating this table by user
   private List<CarbonColumn> createOrderColumn;
 
-  // Implicit columns that for internal usage, like positionid and tupleid for update/delete
+  // Implicit columns that for internal usage, like positionId and tupleId for update/delete
   // operation. see CARBON_IMPLICIT_COLUMN_POSITIONID, CARBON_IMPLICIT_COLUMN_TUPLEID
   private List<CarbonDimension> implicitDimensions;
 
@@ -147,7 +145,7 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * During creation of TableInfo from hivemetastore the IndexSchemas and the columns
+   * During creation of TableInfo from hive metastore the IndexSchemas and the columns
    * DataTypes are not converted to the appropriate child classes.
    * This method will cast the same to the appropriate classes
    */
@@ -302,12 +300,10 @@ public class CarbonTable implements Serializable, Writable {
   private void fillCreateOrderColumn() {
     List<CarbonColumn> columns = new ArrayList<CarbonColumn>();
     for (CarbonDimension dimension : visibleDimensions) {
-      if (!dimension.getColumnSchema().isIndexColumn()) {
-        columns.add(dimension);
-      }
+      columns.add(dimension);
     }
     columns.addAll(visibleMeasures);
-    Collections.sort(columns, new Comparator<CarbonColumn>() {
+    columns.sort(new Comparator<CarbonColumn>() {
 
       @Override
       public int compare(CarbonColumn o1, CarbonColumn o2) {
@@ -342,7 +338,7 @@ public class CarbonTable implements Serializable, Writable {
           complexDimension.initializeChildDimensionsList(columnSchema.getNumberOfChild());
           allDimensions.add(complexDimension);
           dimensionOrdinal =
-              readAllComplexTypeChildrens(dimensionOrdinal, columnSchema.getNumberOfChild(),
+              readAllComplexTypeChildren(dimensionOrdinal, columnSchema.getNumberOfChild(),
                   listOfColumns, complexDimension);
           i = dimensionOrdinal - 1;
           complexTypeOrdinal = assignComplexOrdinal(complexDimension, complexTypeOrdinal);
@@ -378,7 +374,7 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * This method will add implicit dimension into carbontable
+   * This method will add implicit dimension into carbon table
    */
   private void addImplicitDimension(int dimensionOrdinal, List<CarbonDimension> dimensions) {
     dimensions.add(new CarbonImplicitDimension(dimensionOrdinal,
@@ -398,7 +394,7 @@ public class CarbonTable implements Serializable, Writable {
    * Read all primitive/complex children and set it as list of child carbon dimension to parent
    * dimension
    */
-  private int readAllComplexTypeChildrens(int dimensionOrdinal, int childCount,
+  private int readAllComplexTypeChildren(int dimensionOrdinal, int childCount,
       List<ColumnSchema> listOfColumns, CarbonDimension parentDimension) {
     for (int i = 0; i < childCount; i++) {
       ColumnSchema columnSchema = listOfColumns.get(dimensionOrdinal);
@@ -410,7 +406,7 @@ public class CarbonTable implements Serializable, Writable {
           complexDimension.initializeChildDimensionsList(columnSchema.getNumberOfChild());
           parentDimension.getListOfChildDimensions().add(complexDimension);
           dimensionOrdinal =
-              readAllComplexTypeChildrens(dimensionOrdinal, columnSchema.getNumberOfChild(),
+              readAllComplexTypeChildren(dimensionOrdinal, columnSchema.getNumberOfChild(),
                   listOfColumns, complexDimension);
         } else {
           CarbonDimension carbonDimension =
@@ -427,18 +423,18 @@ public class CarbonTable implements Serializable, Writable {
    * Read all primitive/complex children and set it as list of child carbon dimension to parent
    * dimension
    */
-  private int assignComplexOrdinal(CarbonDimension parentDimension, int complexDimensionOrdianl) {
+  private int assignComplexOrdinal(CarbonDimension parentDimension, int complexDimensionOrdinal) {
     for (int i = 0; i < parentDimension.getNumberOfChild(); i++) {
       CarbonDimension dimension = parentDimension.getListOfChildDimensions().get(i);
       if (dimension.getNumberOfChild() > 0) {
-        dimension.setComplexTypeOridnal(++complexDimensionOrdianl);
-        complexDimensionOrdianl = assignComplexOrdinal(dimension, complexDimensionOrdianl);
+        dimension.setComplexTypeOrdinal(++complexDimensionOrdinal);
+        complexDimensionOrdinal = assignComplexOrdinal(dimension, complexDimensionOrdinal);
       } else {
         parentDimension.getListOfChildDimensions().get(i)
-            .setComplexTypeOridnal(++complexDimensionOrdianl);
+            .setComplexTypeOrdinal(++complexDimensionOrdinal);
       }
     }
-    return complexDimensionOrdianl;
+    return complexDimensionOrdinal;
   }
 
   /**
@@ -449,14 +445,14 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * @return the tabelName
+   * @return the tableName
    */
   public String getTableName() {
     return tableInfo.getFactTable().getTableName();
   }
 
   /**
-   * @return the tabelId
+   * @return the tableId
    */
   public String getTableId() {
     return tableInfo.getFactTable().getTableId();
@@ -639,9 +635,7 @@ public class CarbonTable implements Serializable, Writable {
    */
   public CarbonColumn getColumnByName(String columnName) {
     List<CarbonColumn> columns = createOrderColumn;
-    Iterator<CarbonColumn> colItr = columns.iterator();
-    while (colItr.hasNext()) {
-      CarbonColumn col = colItr.next();
+    for (CarbonColumn col : columns) {
       if (col.getColName().equalsIgnoreCase(columnName)) {
         return col;
       }
@@ -723,15 +717,11 @@ public class CarbonTable implements Serializable, Writable {
   public String getBucketHashMethod() {
     String configuredMethod = tableInfo.getFactTable().getTableProperties()
         .get(CarbonCommonConstants.BUCKET_HASH_METHOD);
-    if (configuredMethod == null) {
-      return CarbonCommonConstants.BUCKET_HASH_METHOD_DEFAULT;
-    } else {
-      if (CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE.equals(configuredMethod)) {
-        return CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE;
-      }
-      // by default we use spark_hash_expression hash method
-      return CarbonCommonConstants.BUCKET_HASH_METHOD_DEFAULT;
+    if (CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE.equals(configuredMethod)) {
+      return CarbonCommonConstants.BUCKET_HASH_METHOD_NATIVE;
     }
+    // by default we use spark_hash_expression hash method
+    return CarbonCommonConstants.BUCKET_HASH_METHOD_DEFAULT;
   }
 
   /**
@@ -871,33 +861,6 @@ public class CarbonTable implements Serializable, Writable {
   }
 
   /**
-   * Return true if MV created on this table
-   */
-  public boolean hasMVCreated() throws IOException {
-    List<IndexSchema> schemas = IndexStoreManager.getInstance().getIndexSchemasOfTable(this);
-    return schemas.stream().anyMatch(schema ->
-        schema.getProviderName().equalsIgnoreCase(IndexClassProvider.MV.toString()));
-  }
-
-  /**
-   * Return true if this table is a MV table (child table of other table)
-   */
-  public boolean isMVTable() {
-    String parentTables = tableInfo.getFactTable().getTableProperties()
-        .get(CarbonCommonConstants.PARENT_TABLES);
-    return null != parentTables && !parentTables.isEmpty();
-  }
-
-  /**
-   * Return true if this table is a MV table (child table of other table)
-   */
-  public boolean isChildTableForMV() {
-    return null != tableInfo.getFactTable().getTableProperties()
-        .get(CarbonCommonConstants.PARENT_TABLES) && !tableInfo.getFactTable().getTableProperties()
-        .get(CarbonCommonConstants.PARENT_TABLES).isEmpty();
-  }
-
-  /**
    * Return true if this table is a MV table (child table of other table)
    */
   public boolean isMV() {
@@ -955,7 +918,7 @@ public class CarbonTable implements Serializable, Writable {
    * methods returns true if operation is allowed for the corresponding Index or not
    * if this operation makes Index stale it is not allowed
    *
-   * @param carbonTable carbontable to be operated
+   * @param carbonTable carbon table to be operated
    * @param operation   which operation on the table,such as drop column,change datatype.
    * @param targets     objects which the operation impact on,such as column
    * @return true allow;false not allow
@@ -978,7 +941,7 @@ public class CarbonTable implements Serializable, Writable {
       }
     } catch (Exception e) {
       // since method returns true or false and based on that calling function throws exception, no
-      // need to throw the catched exception
+      // need to throw the catch exception
       LOGGER.error(e.getMessage(), e);
       return true;
     }

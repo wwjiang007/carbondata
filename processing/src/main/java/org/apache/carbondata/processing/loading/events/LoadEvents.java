@@ -20,7 +20,6 @@ package org.apache.carbondata.processing.loading.events;
 import java.util.Map;
 
 import org.apache.carbondata.core.metadata.CarbonTableIdentifier;
-import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.events.Event;
 import org.apache.carbondata.processing.loading.model.CarbonLoadModel;
 
@@ -50,12 +49,6 @@ public class LoadEvents {
       this.optionsFinal = optionsFinal;
       this.userProvidedOptions = userProvidedOptions;
       this.isOverWriteTable = isOverWriteTable;
-    }
-
-    public LoadTablePreExecutionEvent(CarbonTableIdentifier carbonTableIdentifier,
-        CarbonLoadModel carbonLoadModel) {
-      this.carbonTableIdentifier = carbonTableIdentifier;
-      this.carbonLoadModel = carbonLoadModel;
     }
 
     public CarbonTableIdentifier getCarbonTableIdentifier() {
@@ -132,35 +125,6 @@ public class LoadEvents {
 
     public CarbonTableIdentifier getCarbonTableIdentifier() {
       return carbonTableIdentifier;
-    }
-  }
-
-  /**
-   * Load Even class will be fired from the Load and compaction class
-   * to creating all the load commands for all preaggregate data map
-   */
-  public static class LoadMetadataEvent extends Event {
-    private CarbonTable carbonTable;
-    private boolean isCompaction;
-    private Map<String, String> options;
-
-    public LoadMetadataEvent(CarbonTable carbonTable, boolean isCompaction,
-        Map<String, String> options) {
-      this.carbonTable = carbonTable;
-      this.isCompaction = isCompaction;
-      this.options = options;
-    }
-
-    public boolean isCompaction() {
-      return isCompaction;
-    }
-
-    public CarbonTable getCarbonTable() {
-      return carbonTable;
-    }
-
-    public Map<String, String> getOptions() {
-      return options;
     }
   }
 

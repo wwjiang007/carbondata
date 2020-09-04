@@ -117,7 +117,7 @@ public class LocalCarbonFile implements CarbonFile {
     try {
       return file.getCanonicalPath();
     } catch (IOException e) {
-      LOGGER.error("Exception occured" + e.getMessage(), e);
+      LOGGER.error("Exception occurred" + e.getMessage(), e);
     }
     return null;
   }
@@ -137,9 +137,9 @@ public class LocalCarbonFile implements CarbonFile {
     return file.length();
   }
 
-  public boolean renameTo(String changetoName) {
-    changetoName = FileFactory.getUpdatedFilePath(changetoName);
-    return file.renameTo(new File(changetoName));
+  public boolean renameTo(String changeToName) {
+    changeToName = FileFactory.getUpdatedFilePath(changeToName);
+    return file.renameTo(new File(changeToName));
   }
 
   public boolean delete() {
@@ -163,8 +163,7 @@ public class LocalCarbonFile implements CarbonFile {
   }
 
   @Override
-  public CarbonFile[] listFiles(boolean recursive, int maxCount)
-      throws IOException {
+  public CarbonFile[] listFiles(boolean recursive, int maxCount) {
     // ignore the maxCount for local filesystem
     return listFiles();
   }
@@ -256,7 +255,7 @@ public class LocalCarbonFile implements CarbonFile {
       tempFile.renameForce(fileName);
       fileTruncatedSuccessfully = true;
     } catch (IOException e) {
-      LOGGER.error("Exception occured while truncating the file " + e.getMessage(), e);
+      LOGGER.error("Exception occurred while truncating the file " + e.getMessage(), e);
     } finally {
       CarbonUtil.closeStreams(source, destination);
     }
@@ -331,7 +330,7 @@ public class LocalCarbonFile implements CarbonFile {
   }
 
   /**
-   * return the datainputStream which is seek to the offset of file
+   * return the DataInputStream which is seek to the offset of file
    *
    * @param bufferSize
    * @param offset
@@ -484,5 +483,21 @@ public class LocalCarbonFile implements CarbonFile {
   @Override
   public int hashCode() {
     return Objects.hash(file.getAbsolutePath());
+  }
+
+  @Override
+  public List<CarbonFile> listDirs() throws IOException {
+    if (!file.isDirectory()) {
+      return new ArrayList<CarbonFile>();
+    }
+    File[] files = file.listFiles();
+    if (null == files) {
+      return new ArrayList<CarbonFile>();
+    }
+    List<CarbonFile> carbonFiles = new ArrayList<CarbonFile>();
+    for (File value : files) {
+      carbonFiles.add(new LocalCarbonFile(value));
+    }
+    return carbonFiles;
   }
 }

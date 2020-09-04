@@ -54,7 +54,6 @@ import org.apache.carbondata.core.indexstore.Blocklet;
 import org.apache.carbondata.core.indexstore.BlockletDetailsFetcher;
 import org.apache.carbondata.core.indexstore.BlockletIndexWrapper;
 import org.apache.carbondata.core.indexstore.ExtendedBlocklet;
-import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.indexstore.SegmentBlockIndexInfo;
 import org.apache.carbondata.core.indexstore.SegmentPropertiesFetcher;
 import org.apache.carbondata.core.indexstore.TableBlockIndexUniqueIdentifier;
@@ -64,7 +63,7 @@ import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.IndexSchema;
 import org.apache.carbondata.core.metadata.schema.table.column.ColumnSchema;
 import org.apache.carbondata.core.scan.filter.FilterUtil;
-import org.apache.carbondata.core.scan.filter.executer.FilterExecuter;
+import org.apache.carbondata.core.scan.filter.executer.FilterExecutor;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.carbondata.core.segmentmeta.SegmentColumnMetaDataInfo;
 import org.apache.carbondata.core.segmentmeta.SegmentMetaDataInfo;
@@ -72,6 +71,9 @@ import org.apache.carbondata.core.util.BlockletIndexUtil;
 import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.events.Event;
+
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.hadoop.fs.Path;
 
 /**
  * Index for blocklet
@@ -136,14 +138,14 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
    */
   public Map<Segment, List<CoarseGrainIndex>> getIndexes(List<Segment> segments,
       IndexFilter filter) throws IOException {
-    return getIndexes(segments, null, filter);
+    return getIndexes(segments, new HashSet<>(), filter);
   }
 
   /**
    * Get the index for all segments
    */
   public Map<Segment, List<CoarseGrainIndex>> getIndexes(List<Segment> segments,
-      List<PartitionSpec> partitionsToPrune, IndexFilter filter) throws IOException {
+      Set<Path> partitionLocations, IndexFilter filter) throws IOException {
     List<TableBlockIndexUniqueIdentifierWrapper> tableBlockIndexUniqueIdentifierWrappers =
         new ArrayList<>();
     Map<Segment, List<CoarseGrainIndex>> indexMap = new HashMap<>();
@@ -152,9 +154,9 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
       segmentMap.put(segment.getSegmentNo(), segment);
       Set<TableBlockIndexUniqueIdentifier> identifiers =
           getTableBlockIndexUniqueIdentifiers(segment);
-      if (null != partitionsToPrune) {
+      if (!partitionLocations.isEmpty()) {
         // get tableBlockIndexUniqueIdentifierWrappers from segment file info
-        getTableBlockUniqueIdentifierWrappers(partitionsToPrune,
+        getTableBlockUniqueIdentifierWrappers(partitionLocations,
             tableBlockIndexUniqueIdentifierWrappers, identifiers);
       } else {
         SegmentMetaDataInfo segmentMetaDataInfo = segment.getSegmentMetaDataInfo();
@@ -190,24 +192,22 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
   }
 
   /**
-   * get tableBlockUniqueIdentifierWrappers from segment info. If partitionsToPrune is defined,
+   * get tableBlockUniqueIdentifierWrappers from segment info. If partitionLocations is defined,
    * then get tableBlockUniqueIdentifierWrappers for the matched partitions.
    */
-  private void getTableBlockUniqueIdentifierWrappers(List<PartitionSpec> partitionsToPrune,
+  private void getTableBlockUniqueIdentifierWrappers(Set<Path> partitionLocations,
       List<TableBlockIndexUniqueIdentifierWrapper> tableBlockIndexUniqueIdentifierWrappers,
       Set<TableBlockIndexUniqueIdentifier> identifiers) {
     for (TableBlockIndexUniqueIdentifier tableBlockIndexUniqueIdentifier : identifiers) {
-      if (null != partitionsToPrune) {
+      if (!partitionLocations.isEmpty()) {
         // add only tableBlockUniqueIdentifier that matches the partition
         // get the indexFile Parent path and compare with the PartitionPath, if matches, then add
         // the corresponding tableBlockIndexUniqueIdentifier for pruning
-        for (PartitionSpec partitionSpec : partitionsToPrune) {
-          if (partitionSpec.getLocation().toString()
-              .equalsIgnoreCase(tableBlockIndexUniqueIdentifier.getIndexFilePath())) {
-            tableBlockIndexUniqueIdentifierWrappers.add(
-                new TableBlockIndexUniqueIdentifierWrapper(tableBlockIndexUniqueIdentifier,
-                    this.getCarbonTable()));
-          }
+        if (partitionLocations
+            .contains(new Path(tableBlockIndexUniqueIdentifier.getIndexFilePath()))) {
+          tableBlockIndexUniqueIdentifierWrappers.add(
+              new TableBlockIndexUniqueIdentifierWrapper(tableBlockIndexUniqueIdentifier,
+                  this.getCarbonTable()));
         }
       } else {
         tableBlockIndexUniqueIdentifierWrappers.add(
@@ -220,7 +220,7 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
   /**
    * Using blockLevel minmax values, identify if segment has to be added for further pruning and to
    * load segment index info to cache
-   * @param segment to be identified if needed for loading block indexs
+   * @param segment to be identified if needed for loading block indexes
    * @param segmentMetaDataInfo list of block level min max values
    * @param filter filter expression
    * @param identifiers tableBlockIndexUniqueIdentifiers
@@ -290,11 +290,11 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
     FilterResolverIntf resolver =
         new IndexFilter(segmentProperties, this.getCarbonTable(), filter.getExpression())
             .getResolver();
-    // prepare filter executer using datmapFilter resolver
-    FilterExecuter filterExecuter =
-        FilterUtil.getFilterExecuterTree(resolver, segmentProperties, null, null, false);
+    // prepare filter executor using IndexFilter resolver
+    FilterExecutor filterExecutor =
+        FilterUtil.getFilterExecutorTree(resolver, segmentProperties, null, null, false);
     // check if block has to be pruned based on segment minmax
-    BitSet scanRequired = filterExecuter.isScanRequired(max, min, minMaxFlag);
+    BitSet scanRequired = filterExecutor.isScanRequired(max, min, minMaxFlag);
     if (!scanRequired.isEmpty()) {
       isScanRequired = true;
     }
@@ -328,18 +328,18 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
 
   @Override
   public List<CoarseGrainIndex> getIndexes(Segment segment) throws IOException {
-    return getIndexes(segment, null);
+    return getIndexes(segment, new HashSet<>());
   }
 
   @Override
   public List<CoarseGrainIndex> getIndexes(Segment segment,
-      List<PartitionSpec> partitionsToPrune) throws IOException {
+      Set<Path> partitionLocations) throws IOException {
     List<CoarseGrainIndex> indexes = new ArrayList<>();
     Set<TableBlockIndexUniqueIdentifier> identifiers =
         getTableBlockIndexUniqueIdentifiers(segment);
     List<TableBlockIndexUniqueIdentifierWrapper> tableBlockIndexUniqueIdentifierWrappers =
         new ArrayList<>(identifiers.size());
-    getTableBlockUniqueIdentifierWrappers(partitionsToPrune,
+    getTableBlockUniqueIdentifierWrappers(partitionLocations,
         tableBlockIndexUniqueIdentifierWrappers, identifiers);
     List<BlockletIndexWrapper> blockletIndexWrappers =
         cache.getAll(tableBlockIndexUniqueIdentifierWrappers);
@@ -353,9 +353,13 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
       throws IOException {
     SegmentBlockIndexInfo segmentBlockIndexInfo = segmentMap.get(segment.getSegmentNo());
     Set<TableBlockIndexUniqueIdentifier> tableBlockIndexUniqueIdentifiers = null;
-    if (null != segmentBlockIndexInfo) {
-      segment.setSegmentMetaDataInfo(
-          segmentMap.get(segment.getSegmentNo()).getSegmentMetaDataInfo());
+    if (null != segmentBlockIndexInfo &&
+            CollectionUtils.isNotEmpty(
+                    segmentBlockIndexInfo.getTableBlockIndexUniqueIdentifiers())) {
+      if (null != segmentBlockIndexInfo.getSegmentMetaDataInfo()) {
+        segment.setSegmentMetaDataInfo(
+                segmentMap.get(segment.getSegmentNo()).getSegmentMetaDataInfo());
+      }
       return segmentBlockIndexInfo.getTableBlockIndexUniqueIdentifiers();
     } else {
       tableBlockIndexUniqueIdentifiers =
@@ -370,7 +374,7 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
   }
 
   /**
-   * Get the blocklet detail information based on blockletid, blockid and segmentId. This method is
+   * Get the blocklet detail information based on blockletId, blockId and segmentId. This method is
    * exclusively for BlockletIndexFactory as detail information is only available in this
    * default index.
    */
@@ -443,19 +447,19 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
 
   @Override
   public List<IndexInputSplit> toDistributable(Segment segment) {
-    List<IndexInputSplit> distributables = new ArrayList<>();
+    List<IndexInputSplit> distributableList = new ArrayList<>();
     try {
       BlockletIndexInputSplit distributable = new BlockletIndexInputSplit();
       distributable.setSegment(segment);
       distributable.setIndexSchema(INDEX_SCHEMA);
       distributable.setSegmentPath(CarbonTablePath.getSegmentPath(identifier.getTablePath(),
           segment.getSegmentNo()));
-      distributables.add(new IndexInputSplitWrapper(UUID.randomUUID().toString(),
+      distributableList.add(new IndexInputSplitWrapper(UUID.randomUUID().toString(),
           distributable).getDistributable());
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
-    return distributables;
+    return distributableList;
   }
 
   @Override
@@ -592,7 +596,7 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
     List<TableBlockIndexUniqueIdentifierWrapper> identifiersWrapper = new ArrayList<>();
     String parent = indexFilePath.substring(0, indexFilePath.lastIndexOf("/"));
     String name =
-        indexFilePath.substring(indexFilePath.lastIndexOf("/") + 1, indexFilePath.length());
+        indexFilePath.substring(indexFilePath.lastIndexOf("/") + 1);
     if (indexFilePath.endsWith(CarbonTablePath.INDEX_FILE_EXT)) {
       identifiersWrapper.add(new TableBlockIndexUniqueIdentifierWrapper(
           new TableBlockIndexUniqueIdentifier(parent, name, null, segmentId),
@@ -627,13 +631,13 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
 
   @Override
   public SegmentProperties getSegmentProperties(Segment segment) throws IOException {
-    return getSegmentProperties(segment, null);
+    return getSegmentProperties(segment, new HashSet<>());
   }
 
   @Override
-  public SegmentProperties getSegmentProperties(Segment segment, List<PartitionSpec> partitions)
+  public SegmentProperties getSegmentProperties(Segment segment, Set<Path> partitionLocations)
       throws IOException {
-    List<CoarseGrainIndex> indexes = getIndexes(segment, partitions);
+    List<CoarseGrainIndex> indexes = getIndexes(segment, partitionLocations);
     assert (indexes.size() > 0);
     CoarseGrainIndex coarseGrainIndex = indexes.get(0);
     assert (coarseGrainIndex instanceof BlockIndex);
@@ -649,18 +653,17 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
   }
 
   @Override
-  public List<Blocklet> getAllBlocklets(Segment segment, List<PartitionSpec> partitions)
+  public List<Blocklet> getAllBlocklets(Segment segment, Set<Path> partitionLocations)
       throws IOException {
     List<Blocklet> blocklets = new ArrayList<>();
-    List<CoarseGrainIndex> indexes = getIndexes(segment, partitions);
+    List<CoarseGrainIndex> indexes = getIndexes(segment, partitionLocations);
     if (indexes.size() == 0) {
       return blocklets;
     }
     SegmentProperties segmentProperties = getSegmentPropertiesFromIndex(indexes.get(0));
     for (CoarseGrainIndex index : indexes) {
       blocklets.addAll(index
-          .prune((FilterResolverIntf) null, segmentProperties, partitions,
-              null, this.getCarbonTable()));
+          .prune(null, segmentProperties, null, this.getCarbonTable()));
     }
     return blocklets;
   }
@@ -677,10 +680,10 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
   }
 
   @Override
-  public List<IndexInputSplit> getAllUncachedDistributables(
-      List<IndexInputSplit> distributables) throws IOException {
-    List<IndexInputSplit> distributablesToBeLoaded = new ArrayList<>(distributables.size());
-    for (IndexInputSplit distributable : distributables) {
+  public List<IndexInputSplit> getAllUncached(
+      List<IndexInputSplit> distributableList) throws IOException {
+    List<IndexInputSplit> distributableToBeLoaded = new ArrayList<>(distributableList.size());
+    for (IndexInputSplit distributable : distributableList) {
       Segment segment = distributable.getSegment();
       Set<TableBlockIndexUniqueIdentifier> tableBlockIndexUniqueIdentifiers =
           getTableBlockIndexUniqueIdentifiers(segment);
@@ -692,20 +695,19 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
           new TableBlockIndexUniqueIdentifierWrapper(validIdentifier, this.getCarbonTable()))) {
         ((BlockletIndexInputSplit) distributable)
             .setTableBlockIndexUniqueIdentifier(validIdentifier);
-        distributablesToBeLoaded.add(distributable);
+        distributableToBeLoaded.add(distributable);
       }
     }
-    return distributablesToBeLoaded;
+    return distributableToBeLoaded;
   }
 
   private Set<TableBlockIndexUniqueIdentifier> getTableSegmentUniqueIdentifiers(Segment segment)
       throws IOException {
-    Set<TableBlockIndexUniqueIdentifier> tableBlockIndexUniqueIdentifiers =
-        segmentMap.get(segment.getSegmentNo()).getTableBlockIndexUniqueIdentifiers();
-    if (tableBlockIndexUniqueIdentifiers == null) {
-      tableBlockIndexUniqueIdentifiers = BlockletIndexUtil.getSegmentUniqueIdentifiers(segment);
+    SegmentBlockIndexInfo segmentBlockIndexInfo = segmentMap.get(segment.getSegmentNo());
+    if (segmentBlockIndexInfo == null) {
+      return BlockletIndexUtil.getSegmentUniqueIdentifiers(segment);
     }
-    return tableBlockIndexUniqueIdentifiers;
+    return segmentBlockIndexInfo.getTableBlockIndexUniqueIdentifiers();
   }
 
   public void updateSegmentIndex(
@@ -717,9 +719,9 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
   }
 
   @Override
-  public List<IndexInputSplit> getAllUncachedDistributables(List<Segment> validSegments,
+  public List<IndexInputSplit> getAllUncached(List<Segment> validSegments,
       IndexExprWrapper indexExprWrapper) throws IOException {
-    List<IndexInputSplit> distributablesToBeLoaded = new ArrayList<>();
+    List<IndexInputSplit> distributableToBeLoaded = new ArrayList<>();
     for (Segment segment : validSegments) {
       IndexInputSplitWrapper indexInputSplitWrappers =
           indexExprWrapper.toDistributableSegment(segment);
@@ -731,11 +733,11 @@ public class BlockletIndexFactory extends CoarseGrainIndexFactory
         if (identifier.getIndexFilePath() == null || blockletIndexWrapper == null) {
           ((BlockletIndexInputSplit) indexInputSplitWrappers.getDistributable())
               .setTableBlockIndexUniqueIdentifier(identifier);
-          distributablesToBeLoaded.add(indexInputSplitWrappers.getDistributable());
+          distributableToBeLoaded.add(indexInputSplitWrappers.getDistributable());
         }
       }
     }
-    return distributablesToBeLoaded;
+    return distributableToBeLoaded;
   }
 
   @Override

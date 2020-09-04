@@ -26,8 +26,8 @@ import org.apache.carbondata.core.datastore.impl.FileFactory;
 import org.apache.hadoop.conf.Configuration;
 
 public class SDKUtil {
-  public static ArrayList listFiles(String sourceImageFolder, final String suf) {
-    return listFiles(sourceImageFolder, suf, new Configuration(true));
+  public static ArrayList listFiles(String sourceFolder, final String suf) {
+    return listFiles(sourceFolder, suf, new Configuration(true));
   }
 
   public static ArrayList listFiles(String sourceImageFolder,
@@ -73,6 +73,10 @@ public class SDKUtil {
   public static Object[] getSplitList(String path, String suf,
                                       int numOfSplit) {
     return getSplitList(path, suf, numOfSplit, new Configuration());
+  }
+
+  public static Object[] readObjects(Object[] input, int i) {
+    return (Object[]) input[i];
   }
 
 }

@@ -120,7 +120,7 @@ public class SegmentUpdateStatusManager {
    */
   private void updateUpdateDetails(String updateVersion) {
     if (updateVersion != null) {
-      List<SegmentUpdateDetails> newupdateDetails = new ArrayList<>();
+      List<SegmentUpdateDetails> newUpdateDetails = new ArrayList<>();
       for (SegmentUpdateDetails updateDetail : updateDetails) {
         if (updateDetail.getDeltaFileStamps() != null) {
           if (updateDetail.getDeltaFileStamps().contains(updateVersion)) {
@@ -128,14 +128,14 @@ public class SegmentUpdateStatusManager {
             set.add(updateVersion);
             updateDetail.setDeltaFileStamps(set);
             updateDetail.setSegmentStatus(SegmentStatus.SUCCESS);
-            newupdateDetails.add(updateDetail);
+            newUpdateDetails.add(updateDetail);
           }
         } else if (updateDetail.getDeleteDeltaStartTimestamp().equalsIgnoreCase(updateVersion)) {
           updateDetail.setSegmentStatus(SegmentStatus.SUCCESS);
-          newupdateDetails.add(updateDetail);
+          newUpdateDetails.add(updateDetail);
         }
       }
-      updateDetails = newupdateDetails.toArray(new SegmentUpdateDetails[0]);
+      updateDetails = newUpdateDetails.toArray(new SegmentUpdateDetails[0]);
     }
   }
 
@@ -169,7 +169,7 @@ public class SegmentUpdateStatusManager {
 
   /**
    *
-   * @param key will be like (segid/blockname)  0/0-0-5464654654654
+   * @param key will be like (segmentId/blockName)  0/0-0-5464654654654
    * @return
    */
   public SegmentUpdateDetails getDetailsForABlock(String key) {
@@ -203,7 +203,7 @@ public class SegmentUpdateStatusManager {
   }
 
   /**
-   * This will return the lock object used to lock the table update status file before updation.
+   * This will return the lock object used to lock the table update status file before updating.
    *
    * @return
    */
@@ -252,25 +252,19 @@ public class SegmentUpdateStatusManager {
           String firstPart = fileName.substring(0, fileName.indexOf('.'));
 
           long timestamp = Long.parseLong(firstPart
-              .substring(firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN) + 1,
-                  firstPart.length()));
-          if (Long.compare(timestamp, endTimeStampFinal) <= 0
-              && Long.compare(timestamp, startTimeStampFinal) >= 0) {
+              .substring(firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN) + 1));
+          if (timestamp <= endTimeStampFinal && timestamp >= startTimeStampFinal) {
 
             // if marked for delete then it is invalid.
-            if (!isBlockValid(segmentId, fileName)) {
-              return false;
-            }
-
-            return true;
+            return isBlockValid(segmentId, fileName);
           }
         }
         return false;
       }
     });
 
-    for (CarbonFile cfile : files) {
-      updatedDeltaFilesList.add(cfile.getCanonicalPath());
+    for (CarbonFile file : files) {
+      updatedDeltaFilesList.add(file.getCanonicalPath());
     }
 
     return updatedDeltaFilesList;
@@ -293,11 +287,11 @@ public class SegmentUpdateStatusManager {
   private List<String> getDeltaFiles(String blockPath, String segment, String extension) {
     Path path = new Path(blockPath);
     String completeBlockName = path.getName();
-    String blockNameWithoutExtn =
+    String blockNameWithoutExtension =
         completeBlockName.substring(0, completeBlockName.lastIndexOf('.'));
     //blockName without timestamp
     final String blockNameFromTuple =
-        blockNameWithoutExtn.substring(0, blockNameWithoutExtn.lastIndexOf("-"));
+        blockNameWithoutExtension.substring(0, blockNameWithoutExtension.lastIndexOf("-"));
     return getDeltaFiles(path.getParent().toString(), blockNameFromTuple, extension, segment);
   }
 
@@ -362,7 +356,7 @@ public class SegmentUpdateStatusManager {
               new StringBuilder(blockDir).append(CarbonCommonConstants.FILE_SEPARATOR)
                   .append(block.getBlockName()).append("-")
                   .append(block.getDeleteDeltaStartTimestamp()).append(extension).toString());
-          // If deltatimestamps list has data then it has multiple delta file so construct the file
+          // If delta timestamp list has data then it has multiple delta file so construct the file
           // directly with list of deltas with out listing
         } else if (block.getDeltaFileStamps() != null && block.getDeltaFileStamps().size() > 0) {
           for (String delta : block.getDeltaFileStamps()) {
@@ -372,7 +366,7 @@ public class SegmentUpdateStatusManager {
                     .toString());
           }
         } else {
-          // It is for backward compatability.It lists the files.
+          // It is for backward compatibility.It lists the files.
           return getFilePaths(blockDir, blockNameFromTuple, extension, deleteFileList,
               deltaStartTimestamp, deltaEndTimeStamp);
         }
@@ -390,15 +384,12 @@ public class SegmentUpdateStatusManager {
         @Override
         public boolean accept(CarbonFile pathName) {
           String fileName = pathName.getName();
-          if (fileName.endsWith(extension) && pathName.getSize() > 0) {
-            return true;
-          }
-          return false;
+          return fileName.endsWith(extension) && pathName.getSize() > 0;
         }
       });
       deltaList = new ArrayList<>(files.length);
-      for (CarbonFile cfile : files) {
-        deltaList.add(cfile.getCanonicalPath());
+      for (CarbonFile file : files) {
+        deltaList.add(file.getCanonicalPath());
       }
       segmentDeleteDeltaListMap.put(blockDir, deltaList);
     }
@@ -412,8 +403,8 @@ public class SegmentUpdateStatusManager {
       // It compares whether this delta file belongs to this block or not. And also checks that
       // corresponding delta file is valid or not by considering its load start and end time with
       // the file timestamp.
-      if (blockNameFromTuple.equals(blockName) && ((Long.compare(timestamp, deltaEndTimeStamp) <= 0)
-          && (Long.compare(timestamp, deltaStartTimestamp) >= 0))) {
+      if (blockNameFromTuple.equals(blockName) && ((timestamp <= deltaEndTimeStamp)
+          && (timestamp >= deltaStartTimestamp))) {
         if (null == deleteFileList) {
           deleteFileList = new ArrayList<String>();
         }
@@ -448,16 +439,13 @@ public class SegmentUpdateStatusManager {
           @Override
           public boolean accept(CarbonFile pathName) {
             String fileName = pathName.getName();
-            if (fileName.endsWith(CarbonCommonConstants.DELETE_DELTA_FILE_EXT)
-                && pathName.getSize() > 0) {
-              String firstPart = fileName.substring(0, fileName.indexOf('.'));
-              String blkName = firstPart.substring(0, firstPart.lastIndexOf("-"));
+            if (pathName.getSize() > 0
+                && fileName.endsWith(CarbonCommonConstants.DELETE_DELTA_FILE_EXT)) {
+              String blkName = fileName.substring(0, fileName.lastIndexOf("-"));
               long timestamp =
                   Long.parseLong(CarbonTablePath.DataFileUtil.getTimeStampFromFileName(fileName));
-              if (blockName.equals(blkName) && (Long.compare(timestamp, deltaEndTimeStamp) <= 0)
-                  && (Long.compare(timestamp, deltaStartTimestamp) >= 0)) {
-                return true;
-              }
+              return blockName.equals(blkName) && timestamp <= deltaEndTimeStamp
+                  && timestamp >= deltaStartTimestamp;
             }
             return false;
           }
@@ -470,7 +458,7 @@ public class SegmentUpdateStatusManager {
   /**
    * Returns all update delta files of specified Segment.
    *
-   * @param loadMetadataDetail metadatadetails of segment
+   * @param loadMetadataDetail metadata details of segment
    * @param validUpdateFiles if true then only the valid range files will be returned.
    * @return
    */
@@ -509,24 +497,24 @@ public class SegmentUpdateStatusManager {
             Long.parseLong(CarbonTablePath.DataFileUtil.getTimeStampFromFileName(fileName));
 
         if (excludeOriginalFact) {
-          if (Long.compare(factTimeStampFinal, timestamp) == 0) {
+          if (factTimeStampFinal == timestamp) {
             continue;
           }
         }
 
         if (validUpdateFiles) {
-          if (Long.compare(timestamp, endTimeStampFinal) <= 0
-              && Long.compare(timestamp, startTimeStampFinal) >= 0) {
+          if (timestamp <= endTimeStampFinal
+              && timestamp >= startTimeStampFinal) {
             listOfCarbonFiles.add(eachFile);
           }
         } else {
           // invalid cases.
           if (isAbortedFile) {
-            if (Long.compare(timestamp, endTimeStampFinal) > 0) {
+            if (timestamp > endTimeStampFinal) {
               listOfCarbonFiles.add(eachFile);
             }
-          } else if (Long.compare(timestamp, startTimeStampFinal) < 0
-              || Long.compare(timestamp, endTimeStampFinal) > 0) {
+          } else if (timestamp < startTimeStampFinal
+              || timestamp > endTimeStampFinal) {
             listOfCarbonFiles.add(eachFile);
           }
         }
@@ -584,18 +572,17 @@ public class SegmentUpdateStatusManager {
         String firstPart = fileName.substring(0, fileName.indexOf('.'));
 
         long timestamp = Long.parseLong(firstPart
-            .substring(firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN) + 1,
-                firstPart.length()));
+            .substring(firstPart.lastIndexOf(CarbonCommonConstants.HYPHEN) + 1));
 
         if (excludeOriginalFact) {
-          if (Long.compare(factTimeStampFinal, timestamp) == 0) {
+          if (factTimeStampFinal == timestamp) {
             continue;
           }
         }
 
         if (validUpdateFiles) {
-          if (Long.compare(timestamp, endTimeStampFinal) <= 0
-              && Long.compare(timestamp, startTimeStampFinal) >= 0) {
+          if (timestamp <= endTimeStampFinal
+              && timestamp >= startTimeStampFinal) {
 
             boolean validBlock = true;
 
@@ -613,7 +600,7 @@ public class SegmentUpdateStatusManager {
           }
         } else {
           // invalid cases.
-          if (Long.compare(timestamp, startTimeStampFinal) < 0) {
+          if (timestamp < startTimeStampFinal) {
             listOfCarbonFiles.add(eachFile);
           }
         }
@@ -838,11 +825,11 @@ public class SegmentUpdateStatusManager {
         if (block.getBlockName().equalsIgnoreCase(blkName)) {
 
           if (isAbortedFile) {
-            if (Long.compare(timestamp, deltaEndTimestamp) > 0) {
+            if (timestamp > deltaEndTimestamp) {
               files.add(eachFile);
             }
-          } else if (Long.compare(timestamp, deltaStartTimestamp) < 0
-              || Long.compare(timestamp, deltaEndTimestamp) > 0) {
+          } else if (timestamp < deltaStartTimestamp
+              || timestamp > deltaEndTimestamp) {
             files.add(eachFile);
           }
         }

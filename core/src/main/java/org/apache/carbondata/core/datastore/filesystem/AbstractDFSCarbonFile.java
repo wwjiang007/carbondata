@@ -25,8 +25,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
@@ -63,6 +65,7 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
   protected FileSystem fileSystem;
   protected Configuration hadoopConf;
   protected Path path;
+  protected FileStatus fileStatus;
 
   AbstractDFSCarbonFile(String filePath) {
     this(filePath, FileFactory.getConfiguration());
@@ -89,6 +92,7 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
 
   AbstractDFSCarbonFile(FileStatus fileStatus) {
     this(fileStatus.getPath());
+    this.fileStatus = fileStatus;
   }
 
   @Override
@@ -158,9 +162,9 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
   }
 
   @Override
-  public boolean renameTo(String changetoName) {
+  public boolean renameTo(String changeToName) {
     try {
-      return fileSystem.rename(path, new Path(changetoName));
+      return fileSystem.rename(path, new Path(changeToName));
     } catch (IOException e) {
       throw new CarbonFileException("Failed to rename file: ", e);
     }
@@ -177,6 +181,9 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
   @Override
   public long getLastModifiedTime() {
     try {
+      if (this.fileStatus != null) {
+        return this.fileStatus.getModificationTime();
+      }
       return fileSystem.getFileStatus(path).getModificationTime();
     } catch (IOException e) {
       throw new CarbonFileException("Unable to get file status: ", e);
@@ -288,7 +295,7 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
   }
 
   /**
-   * return the datainputStream which is seek to the offset of file
+   * return the DataInputStream which is seek to the offset of file
    *
    * @return DataInputStream
    * @throws IOException
@@ -341,7 +348,7 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
     } else if ("LZ4".equalsIgnoreCase(compressorName)) {
       return Lz4Codec.class.getName();
     } else {
-      throw new IOException("Unsuppotted compressor: " + compressorName);
+      throw new IOException("Unsupported compressor: " + compressorName);
     }
   }
 
@@ -403,7 +410,7 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
         permission =
             FsPermission.getFileDefault().applyUMask(FsPermission.getUMask(fileSystem.getConf()));
       }
-      // Pass the permissions duringg file creation itself
+      // Pass the permissions during file creation itself
       fileSystem
           .create(path, permission, false, fileSystem.getConf().getInt("io.file.buffer.size", 4096),
               fileSystem.getDefaultReplication(path), fileSystem.getDefaultBlockSize(path), null)
@@ -432,12 +439,12 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
     if (fileSystem.exists(path)) {
       return false;
     } else {
-      // Pass the permissions duringg file creation itself
+      // Pass the permissions during file creation itself
       fileSystem.create(path, new FsPermission(FsAction.ALL, FsAction.ALL, FsAction.ALL), false,
           fileSystem.getConf().getInt("io.file.buffer.size", 4096),
           fileSystem.getDefaultReplication(path), fileSystem.getDefaultBlockSize(path), null)
           .close();
-      // haddop masks the permission accoding to configured permission, so need to set permission
+      // hadoop masks the permission according to configured permission, so need to set permission
       // forcefully
       fileSystem.setPermission(path, new FsPermission(FsAction.ALL, FsAction.ALL, FsAction.ALL));
       return true;
@@ -450,14 +457,14 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
     try {
       listStatus = fileSystem.listStatus(path);
     } catch (IOException e) {
-      LOGGER.error("Exception occured: " + e.getMessage(), e);
+      LOGGER.warn("Exception occurred: " + e.getMessage(), e);
       return new CarbonFile[0];
     }
     return getFiles(listStatus);
   }
 
   /**
-   * Get the CarbonFiles from filestatus array
+   * Get the CarbonFiles from FileStatus array
    */
   protected abstract CarbonFile[] getFiles(FileStatus[] listStatus);
 
@@ -599,5 +606,19 @@ public abstract class AbstractDFSCarbonFile implements CarbonFile {
   @Override
   public long getLength() throws IOException {
     return fileSystem.getFileStatus(path).getLen();
+  }
+
+  @Override
+  public List<CarbonFile> listDirs() throws IOException {
+    FileStatus[] listStatus = null;
+    if (null != fileStatus && fileStatus.isDirectory()) {
+      Path path = fileStatus.getPath();
+      listStatus = fileSystem.listStatus(path);
+      CarbonFile[] dirs = getFiles(listStatus);
+      List<CarbonFile> result = new ArrayList<CarbonFile>(Arrays.asList(dirs));
+      return result.stream().filter(x -> x.isDirectory()).collect(Collectors.toList());
+    } else {
+      return new ArrayList<CarbonFile>();
+    }
   }
 }

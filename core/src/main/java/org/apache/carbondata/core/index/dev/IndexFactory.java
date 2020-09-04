@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.features.TableOperation;
@@ -31,11 +32,12 @@ import org.apache.carbondata.core.index.IndexMeta;
 import org.apache.carbondata.core.index.Segment;
 import org.apache.carbondata.core.index.dev.cgindex.CoarseGrainIndex;
 import org.apache.carbondata.core.index.dev.expr.IndexInputSplitWrapper;
-import org.apache.carbondata.core.indexstore.PartitionSpec;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.IndexSchema;
 import org.apache.carbondata.events.Event;
+
+import org.apache.hadoop.fs.Path;
 
 /**
  * Factory class for creating the index.
@@ -97,10 +99,10 @@ public abstract class IndexFactory<T extends Index> {
    * matches the partition.
    */
   public Map<Segment, List<CoarseGrainIndex>> getIndexes(List<Segment> segments,
-      List<PartitionSpec> partitionSpecs, IndexFilter indexFilter) throws IOException {
+      Set<Path> partitionLocations, IndexFilter indexFilter) throws IOException {
     Map<Segment, List<CoarseGrainIndex>> indexes = new HashMap<>();
     for (Segment segment : segments) {
-      indexes.put(segment, (List<CoarseGrainIndex>) this.getIndexes(segment, partitionSpecs));
+      indexes.put(segment, (List<CoarseGrainIndex>) this.getIndexes(segment, partitionLocations));
     }
     return indexes;
   }
@@ -113,7 +115,7 @@ public abstract class IndexFactory<T extends Index> {
   /**
    * Get the index for segmentId with matched partitions
    */
-  public abstract List<T> getIndexes(Segment segment, List<PartitionSpec> partitions)
+  public abstract List<T> getIndexes(Segment segment, Set<Path> partitionLocations)
       throws IOException;
 
   /**
@@ -179,7 +181,7 @@ public abstract class IndexFactory<T extends Index> {
 
   /**
    * whether to block operation on corresponding table or column.
-   * For example, bloomfilter index will block changing datatype for bloomindex column.
+   * For example, bloom filter index will block changing datatype for bloom index column.
    * By default it will not block any operation.
    *
    * @param operation table operation

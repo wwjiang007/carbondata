@@ -44,7 +44,7 @@ trait SqlAstBuilderHelper extends SparkSqlAstBuilder {
 
     val alterTableColRenameAndDataTypeChangeModel =
       AlterTableDataTypeChangeModel(
-        CarbonParserUtil.parseDataType(typeString, values, isColumnRename),
+        CarbonParserUtil.parseDataType(typeString, values),
         CarbonParserUtil.convertDbNameToLowerCase(Option(ctx.tableIdentifier().db).map(_.getText)),
         ctx.tableIdentifier().table.getText.toLowerCase,
         ctx.identifier.getText.toLowerCase,
@@ -82,14 +82,6 @@ trait SqlAstBuilderHelper extends SparkSqlAstBuilder {
 
   override def visitCreateTable(ctx: CreateTableContext): LogicalPlan = {
     super.visitCreateTable(ctx)
-  }
-
-  override def visitShowTables(ctx: ShowTablesContext): LogicalPlan = {
-    withOrigin(ctx) {
-        CarbonShowTablesCommand(
-          Option(ctx.db).map(_.getText),
-          Option(ctx.pattern).map(string))
-    }
   }
 
   override def visitExplain(ctx: SqlBaseParser.ExplainContext): LogicalPlan = {

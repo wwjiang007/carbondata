@@ -53,6 +53,7 @@ import org.apache.carbondata.core.statusmanager.{LoadMetadataDetails, SegmentSta
 import org.apache.carbondata.core.util.{CarbonProperties, CarbonUtil}
 import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.events.{CreateTablePostExecutionEvent, CreateTablePreExecutionEvent, OperationContext, OperationListenerBus}
+import org.apache.carbondata.spark.util.CarbonSparkUtil
 
 class ErrorMessage(message: String) extends Exception(message) {
 }
@@ -315,7 +316,7 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
       //        val tablePath = tableIdentifier.getTablePath
       val carbonSchemaString = catalog.generateTableSchemaString(tableInfo, tableIdentifier)
       // set index information in index table
-      val indexTableMeta = new IndexMetadata(indexTableName, true, carbonTable.getTablePath)
+      val indexTableMeta = new IndexMetadata(tableName, true, carbonTable.getTablePath)
       tableInfo.getFactTable.getTableProperties
         .put(tableInfo.getFactTable.getTableId, indexTableMeta.serialize)
       // set index information in parent table
@@ -323,13 +324,8 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
         IndexType.SI.getIndexProviderName,
         indexTableName,
         indexProperties)
-
-      val cols = tableInfo.getFactTable.getListOfColumns.asScala.filter(!_.isInvisible)
-      val fields = new Array[String](cols.size)
-      cols.foreach(col =>
-        fields(col.getSchemaOrdinal) =
-          col.getColumnName + ' ' + checkAndPrepareDecimal(col))
-
+      val carbonRelation = CarbonSparkUtil.createCarbonRelation(tableInfo, tablePath)
+      val rawSchema = CarbonSparkUtil.getRawSchema(carbonRelation)
       val operationContext = new OperationContext
       val createTablePreExecutionEvent: CreateTablePreExecutionEvent =
         CreateTablePreExecutionEvent(sparkSession, tableIdentifier, Option(tableInfo))
@@ -340,7 +336,7 @@ private[sql] case class CarbonCreateSecondaryIndexCommand(
         try {
           sparkSession.sql(
             s"""CREATE TABLE $databaseName.$indexTableName
-               |(${ fields.mkString(",") })
+               |($rawSchema)
                |USING carbondata OPTIONS (tableName "$indexTableName",
                |dbName "$databaseName", tablePath "$tablePath", path "$tablePath",
                |parentTablePath "${ carbonTable.getTablePath }", isIndexTable "true",

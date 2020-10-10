@@ -1274,11 +1274,31 @@ public final class CarbonCommonConstants {
   public static final String CARBON_MAX_DRIVER_LRU_CACHE_SIZE = "carbon.max.driver.lru.cache.size";
 
   /**
+   * max driver lru cache size upto which partition lru cache will be loaded in memory
+   */
+  @CarbonProperty
+  public static final String CARBON_PARTITION_MAX_DRIVER_LRU_CACHE_SIZE =
+      "carbon.partition.max.driver.lru.cache.size";
+
+  /**
    * max executor lru cache size upto which lru cache will be loaded in memory
    */
   @CarbonProperty
   public static final String CARBON_MAX_EXECUTOR_LRU_CACHE_SIZE =
       "carbon.max.executor.lru.cache.size";
+
+  /**
+   * executor lru cache percent upto which lru cache will be loaded in memory.
+   * Value lies between (1 - 100)
+   */
+  @CarbonProperty
+  public static final String CARBON_EXECUTOR_LRU_CACHE_PERCENT =
+          "carbon.executor.lru.cache.percent";
+
+  /**
+   * when executor LRU cache is not configured, set it to 70% percent of executor memory size
+   */
+  public static final double CARBON_DEFAULT_EXECUTOR_LRU_CACHE_PERCENT = 0.7d;
 
   /**
    * max lru cache size default value in MB
@@ -1776,6 +1796,21 @@ public final class CarbonCommonConstants {
   public static final String CSV_FILE_EXTENSION = ".csv";
 
   /**
+   * AVRO_FILE_EXTENSION
+   */
+  public static final String AVRO_FILE_EXTENSION = ".avro";
+
+  /**
+   * JSON_FILE_EXTENSION
+   */
+  public static final String JSON_FILE_EXTENSION = ".json";
+
+  /**
+   * ORC_FILE_EXTENSION
+   */
+  public static final String ORC_FILE_EXTENSION = ".orc";
+
+  /**
    * LOG_FILE_EXTENSION
    */
   public static final String LOG_FILE_EXTENSION = ".log";
@@ -1841,6 +1876,11 @@ public final class CarbonCommonConstants {
    * UNDERSCORE
    */
   public static final String UNDERSCORE = "_";
+
+  /**
+   * EQUALS
+   */
+  public static final String EQUALS = "=";
 
   /**
    * POINT
@@ -2500,7 +2540,7 @@ public final class CarbonCommonConstants {
   public static final String CARBON_INDEXSERVER_TEMPFOLDER_DELETETIME_DEFAULT = "10800000";
 
   public static final String STRING_LENGTH_EXCEEDED_MESSAGE =
-      "Record %s of column %s exceeded " + MAX_CHARS_PER_COLUMN_DEFAULT +
+      "Record of column %s exceeded " + MAX_CHARS_PER_COLUMN_DEFAULT +
           " characters. Please consider long string data type.";
 
   /**
@@ -2512,4 +2552,27 @@ public final class CarbonCommonConstants {
    * property which defines the presto query default value
    */
   public static final String IS_QUERY_FROM_PRESTO_DEFAULT = "false";
+
+  /**
+   * the level 1 complex delimiter default value
+   */
+  public static final String COMPLEX_DELIMITER_LEVEL_1_DEFAULT = "#";
+
+  /**
+   * the level 2 complex delimiter default value
+   */
+  public static final String COMPLEX_DELIMITER_LEVEL_2_DEFAULT = "$";
+
+  /**
+   * the level 3 complex delimiter default value
+   */
+  public static final String COMPLEX_DELIMITER_LEVEL_3_DEFAULT = "@";
+
+  public static final String FILE_HEADER = "fileHeader";
+
+  @CarbonProperty(dynamicConfigurable = true)
+  public static final String CARBON_REORDER_FILTER = "carbon.reorder.filter";
+
+  public static final String CARBON_REORDER_FILTER_DEFAULT = "true";
+
 }
